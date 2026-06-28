@@ -1,0 +1,368 @@
+// BizData — Multi-Source Data Intelligence Platform
+// Schema for v1: bank reports first, generic enough for fintechs, telcos, payment processors, FX bureaus, POS, e-commerce.
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["driverAdapters"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ─── ENUMS ────────────────────────────────────────────────────────────────────
+
+enum UserRole {
+  SUPER_ADMIN
+  ADMIN
+  SUPERVISOR
+  ANALYST
+  AUDIT_OFFICER
+  DPO
+  READONLY
+}
+
+enum ProviderType {
+  BANK
+  FINTECH
+  PAYMENT_PROCESSOR
+  TELCO
+  FX_BUREAU
+  POS_AGGREGATOR
+  ECOMMERCE
+  OTHER
+}
+
+enum ProviderStatus {
+  ACTIVE
+  SUSPENDED
+  PENDING_ONBOARDING
+}
+
+enum ProviderUserRole {
+  PROVIDER_ADMIN
+  COMPLIANCE_OFFICER
+  DATA_OPERATOR
+}
+
+enum TaxpayerType {
+  INDIVIDUAL
+  CORPORATE
+  GOVERNMENT
+}
+
+enum TaxpayerStatus {
+  ACTIVE
+  INACTIVE
+  BLACKLISTED
+  DECEASED
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum SubmissionStatus {
+  RECEIVED
+  VALIDATING
+  ACCEPTED
+  PARTIALLY_ACCEPTED
+  REJECTED
+}
+
+enum ReportReviewStatus {
+  PENDING_REVIEW
+  CLEARED
+  CONFIRMED
+}
+
+enum ScanStatus {
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// ─── TENANT ───────────────────────────────────────────────────────────────────
+
+model Tenant {
+  id          String   @id @default(uuid())
+  name        String
+  shortName   String
+  contactEmail String?
+  contactPhone String?
+  address     String?
+  logoUrl     String?
+  themeColor  String?  @default("#0f766e")
+  scanThreshold Decimal @default(0.20) @db.Decimal(5, 4)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("tenants")
+}
+
+// ─── STAFF USERS ──────────────────────────────────────────────────────────────
+
+model User {
+  id             String    @id @default(uuid())
+  email          String    @unique
+  passwordHash   String
+  firstName      String
+  lastName       String
+  phone          String?
+  role           UserRole  @default(READONLY)
+  isActive       Boolean   @default(true)
+  mfaEnabled     Boolean   @default(false)
+  mfaSecret      String?
+  lastLoginAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  reviewedReports DataRecord[]           @relation("ReviewedReports")
+  scansRun        UnderdeclarationScan[] @relation("ScanRunBy")
+  auditEvents     AuditLog[]             @relation("AuditUser")
+
+  @@map("users")
+}
+
+// ─── DATA PROVIDERS (banks, fintechs, telcos, etc.) ───────────────────────────
+
+model DataProvider {
+  id           String         @id @default(uuid())
+  providerCode String         @unique // CBN code, telco code, fintech code, etc.
+  name         String
+  providerType ProviderType
+  contactEmail String?
+  contactPhone String?
+  address      String?
+  status       ProviderStatus @default(PENDING_ONBOARDING)
+  reportingFrequency String?  @default("QUARTERLY") // QUARTERLY | MONTHLY | ANNUAL
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+
+  users        DataProviderUser[]
+  submissions  DataSubmission[]
+  records      DataRecord[]
+
+  @@map("data_providers")
+}
+
+model DataProviderUser {
+  id           String           @id @default(uuid())
+  providerId   String
+  email        String           @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  phone        String?
+  role         ProviderUserRole @default(COMPLIANCE_OFFICER)
+  isActive     Boolean          @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+
+  provider     DataProvider     @relation(fields: [providerId], references: [id])
+  submissions  DataSubmission[] @relation("SubmittedByProviderUser")
+
+  @@map("data_provider_users")
+}
+
+// ─── TAXPAYERS ────────────────────────────────────────────────────────────────
+
+model Taxpayer {
+  id             String         @id @default(uuid())
+  nin            String?        @unique
+  cacRcNumber    String?        @unique
+  tin            String?        @unique
+  type           TaxpayerType
+  status         TaxpayerStatus @default(ACTIVE)
+  firstName      String?
+  lastName       String?
+  middleName     String?
+  businessName   String?
+  phone          String?
+  email          String?
+  address        String?
+  stateOfResidence String?
+  riskScore      Int            @default(100)
+  riskLevel      RiskLevel      @default(LOW)
+  riskComputedAt DateTime?
+  riskFlags      Json?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  records         DataRecord[]
+  declaredIncomes DeclaredIncome[]
+
+  @@map("taxpayers")
+}
+
+model DeclaredIncome {
+  id               String   @id @default(uuid())
+  taxpayerId       String
+  year             Int
+  assessableIncome Decimal  @db.Decimal(18, 2)
+  source           String?  // 'DIRECT_ASSESSMENT', 'PAYE', 'MANUAL_IMPORT', 'API_SYNC'
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  taxpayer         Taxpayer @relation(fields: [taxpayerId], references: [id])
+
+  @@unique([taxpayerId, year])
+  @@map("declared_incomes")
+}
+
+// ─── SUBMISSIONS ─────────────────────────────────────────────────────────────
+
+model DataSubmission {
+  id              String           @id @default(uuid())
+  providerId      String
+  submittedByUserId String?
+  submittedByStaffId String?       // when staff uploads on behalf of provider
+  periodLabel     String           // e.g. "2026-Q1", "2026-03", "2026"
+  periodYear      Int
+  periodQuarter   Int?
+  periodMonth     Int?
+  fileName        String?
+  fileSizeBytes   Int?
+  recordCount     Int              @default(0)
+  acceptedCount   Int              @default(0)
+  rejectedCount   Int              @default(0)
+  validationErrors Json?
+  status          SubmissionStatus @default(RECEIVED)
+  receivedAt      DateTime         @default(now())
+  processedAt     DateTime?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  provider         DataProvider      @relation(fields: [providerId], references: [id])
+  submittedByUser  DataProviderUser? @relation("SubmittedByProviderUser", fields: [submittedByUserId], references: [id])
+  records          DataRecord[]
+
+  @@map("data_submissions")
+}
+
+// ─── DATA RECORDS (generic — bank reports, fintech tx, telco usage, etc.) ────
+
+model DataRecord {
+  id                      String              @id @default(uuid())
+  submissionId            String
+  providerId              String
+  providerType            ProviderType
+  taxpayerId              String?
+
+  // Common identifiers (subset present depending on provider type)
+  accountNumber           String?
+  bvn                     String?
+  nin                     String?
+  phoneNumber             String?
+  walletId                String?
+  merchantId              String?
+
+  accountName             String?
+  periodLabel             String
+  periodYear              Int
+
+  // Common monetary fields
+  totalInflow             Decimal?            @db.Decimal(18, 2)
+  totalOutflow            Decimal?            @db.Decimal(18, 2)
+  openingBalance          Decimal?            @db.Decimal(18, 2)
+  closingBalance          Decimal?            @db.Decimal(18, 2)
+  transactionCount        Int?
+
+  // Provider-specific payload (FX bureau exchange volumes, telco airtime, etc.)
+  payload                 Json?
+
+  // Underdeclaration scan results
+  flaggedAsUnderdeclared  Boolean             @default(false)
+  declaredIncome          Decimal?            @db.Decimal(18, 2)
+  discrepancyAmount       Decimal?            @db.Decimal(18, 2)
+  discrepancyPct          Decimal?            @db.Decimal(8, 4)
+  flaggedAt               DateTime?
+
+  // Review workflow
+  reviewStatus            ReportReviewStatus? @default(PENDING_REVIEW)
+  reviewedById            String?
+  reviewedAt              DateTime?
+  reviewNotes             String?
+
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+
+  submission DataSubmission @relation(fields: [submissionId], references: [id])
+  provider   DataProvider   @relation(fields: [providerId], references: [id])
+  taxpayer   Taxpayer?      @relation(fields: [taxpayerId], references: [id])
+  reviewedBy User?          @relation("ReviewedReports", fields: [reviewedById], references: [id])
+
+  @@index([taxpayerId, periodYear])
+  @@index([providerId, periodLabel])
+  @@index([flaggedAsUnderdeclared, reviewStatus])
+  @@map("data_records")
+}
+
+// ─── UNDERDECLARATION SCAN ───────────────────────────────────────────────────
+
+model UnderdeclarationScan {
+  id              String     @id @default(uuid())
+  year            Int
+  threshold       Decimal    @db.Decimal(5, 4) // e.g. 0.20 = 20%
+  providerTypes   Json?      // array of ProviderType to include, null = all
+  totalScanned    Int        @default(0)
+  totalFlagged    Int        @default(0)
+  totalRecovered  Decimal?   @db.Decimal(18, 2)
+  status          ScanStatus @default(RUNNING)
+  errorMessage    String?
+  startedById     String
+  startedAt       DateTime   @default(now())
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+
+  startedBy User @relation("ScanRunBy", fields: [startedById], references: [id])
+
+  @@map("underdeclaration_scans")
+}
+
+// ─── AUDIT LOG ───────────────────────────────────────────────────────────────
+
+model AuditLog {
+  id              String   @id @default(uuid())
+  actorType       String   // 'STAFF' | 'PROVIDER_USER' | 'SYSTEM'
+  actorId         String?
+  staffId         String?  // populated when actorType=STAFF
+  action          String   // e.g. 'CREATE_RECORD', 'REVIEW_REPORT', 'LOGIN', 'UPDATE_TAXPAYER'
+  entity          String   // e.g. 'DataRecord', 'Taxpayer', 'DataProvider'
+  entityId        String?
+  beforeJson      Json?
+  afterJson       Json?
+  ip              String?
+  userAgent       String?
+  hashChainPrev   String?  // prev record's hash (tamper evidence)
+  hashChainCurr   String?  // sha256(prev + this record)
+  createdAt       DateTime @default(now())
+
+  staff User? @relation("AuditUser", fields: [staffId], references: [id])
+
+  @@index([entity, entityId])
+  @@index([actorType, actorId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ─── PROVIDER SCHEMA TEMPLATES (defines expected CSV columns per provider type) ──
+
+model ProviderSchema {
+  id              String       @id @default(uuid())
+  providerType    ProviderType @unique
+  name            String
+  description     String?
+  columns         Json         // array of { name, type, required, validation }
+  isActive        Boolean      @default(true)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("provider_schemas")
+}

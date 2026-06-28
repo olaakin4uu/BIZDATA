@@ -1,0 +1,58 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: bizdata_db
+      POSTGRES_USER: bizdata
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-bizdata_dev_password}
+    volumes:
+      - bizdata_pgdata:/var/lib/postgresql/data
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bizdata -d bizdata_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://bizdata:${POSTGRES_PASSWORD:-bizdata_dev_password}@postgres:5432/bizdata_db?schema=public
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      PORT: 4200
+      FRONTEND_URL: http://localhost:4201
+      NODE_ENV: production
+      TENANT_NAME: ${TENANT_NAME:-BizData Tenant}
+    ports:
+      - "4200:4200"
+    command: >
+      sh -c "npx prisma db push --skip-generate &&
+             npx tsx prisma/seed.ts || true &&
+             node dist/main.js"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:4200/api
+    restart: unless-stopped
+    depends_on:
+      - backend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:4200/api
+    ports:
+      - "4201:4201"
+
+volumes:
+  bizdata_pgdata:
