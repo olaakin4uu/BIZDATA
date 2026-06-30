@@ -3,6 +3,7 @@ import { useEffect, useState, use as usePromise } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import SensitiveValue from '@/components/SensitiveValue';
 import { taxpayersApi, type Taxpayer } from '@/lib/api/taxpayers';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import {
@@ -69,7 +70,8 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
             <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(tp.status)}`}>{tp.status}</span>
           } />
           <Info label="Risk" value={`${tp.riskLevel} (${tp.riskScore})`} />
-          <Info label="NIN" value={tp.nin ?? '—'} />
+          <Info label="NIN" value={<SensitiveValue value={tp.nin} />} />
+          <Info label="BVN" value={<SensitiveValue value={(tp as { bvn?: string | null }).bvn} />} />
           <Info label="CAC RC" value={tp.cacRcNumber ?? '—'} />
           <Info label="TIN" value={tp.tin ?? '—'} />
           <Info label="Phone" value={tp.phone ?? '—'} />

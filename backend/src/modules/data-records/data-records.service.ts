@@ -2,10 +2,37 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { CryptoService } from '../../common/services/crypto.service';
+import { PiiAccessService } from '../../common/services/pii-access.service';
 
 @Injectable()
 export class DataRecordsService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private crypto: CryptoService,
+    private pii: PiiAccessService,
+  ) {}
+
+  /** Decrypt PII on a record (and its taxpayer include), masking unless allowed. */
+  private decryptRecord(r: any, allowClear: boolean) {
+    if (!r) return r;
+    return {
+      ...r,
+      accountNumber: this.pii.reveal(this.crypto.decrypt(r.accountNumber), 'account', allowClear),
+      bvn: this.pii.reveal(this.crypto.decrypt(r.bvn), 'bvn', allowClear),
+      nin: this.pii.reveal(this.crypto.decrypt(r.nin), 'nin', allowClear),
+      phoneNumber: this.crypto.decrypt(r.phoneNumber),
+      taxpayer: r.taxpayer
+        ? {
+            ...r.taxpayer,
+            nin: this.pii.reveal(this.crypto.decrypt(r.taxpayer.ninEnc), 'nin', allowClear),
+            tin: this.crypto.decrypt(r.taxpayer.tinEnc),
+            bvn: this.pii.reveal(this.crypto.decrypt(r.taxpayer.bvnEnc), 'bvn', allowClear),
+          }
+        : r.taxpayer,
+    };
+  }
 
   async findAll(query: any) {
     const page = Math.max(1, parseInt(query.page || '1', 10));
@@ -24,7 +51,7 @@ export class DataRecordsService {
         where,
         include: {
           provider: { select: { id: true, name: true, providerType: true } },
-          taxpayer: { select: { id: true, nin: true, cacRcNumber: true, businessName: true, firstName: true, lastName: true } },
+          taxpayer: { select: { id: true, ninEnc: true, tinEnc: true, cacRcNumber: true, businessName: true, firstName: true, lastName: true } },
           reviewedBy: { select: { id: true, firstName: true, lastName: true } },
         },
         orderBy: [{ flaggedAsUnderdeclared: 'desc' }, { createdAt: 'desc' }],
@@ -33,7 +60,8 @@ export class DataRecordsService {
       }),
       this.prisma.dataRecord.count({ where }),
     ]);
-    return { records, total, page, limit };
+    const clear = await this.pii.canRevealPii();
+    return { records: records.map((r) => this.decryptRecord(r, clear)), total, page, limit };
   }
 
   async findOne(id: string) {
@@ -47,7 +75,7 @@ export class DataRecordsService {
       },
     });
     if (!record) throw new NotFoundException('Record not found');
-    return record;
+    return this.decryptRecord(record, await this.pii.canRevealPii());
   }
 
   async review(id: string, dto: { reviewStatus: 'CLEARED' | 'CONFIRMED'; reviewNotes?: string }, staffId: string) {

@@ -5,5 +5,6 @@ import { ScanController } from './scan.controller';
 @Module({
   controllers: [ScanController],
   providers: [ScanService],
+  exports: [ScanService],
 })
 export class ScanModule {}

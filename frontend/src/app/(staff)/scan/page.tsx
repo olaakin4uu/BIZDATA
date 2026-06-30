@@ -7,10 +7,10 @@ import { scanApi, type Scan } from '@/lib/api/scan';
 import { PROVIDER_TYPES, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
-const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - 1 - i);
+const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
 
 export default function ScanPage() {
-  const [year, setYear] = useState(CURRENT_YEAR - 1);
+  const [year, setYear] = useState(CURRENT_YEAR);
   const [threshold, setThreshold] = useState('20');
   const [selectedTypes, setSelectedTypes] = useState<string[]>([]);
   const [scans, setScans] = useState<Scan[]>([]);
@@ -25,7 +25,7 @@ export default function ScanPage() {
     setLoading(true);
     scanApi.list({ page, limit })
       .then((r) => { setScans(r.scans); setTotal(r.total); })
-      .catch(() => { setScans([]); setTotal(0); })
+      .catch((e) => { if ((e as any)?.status !== 401) { setScans([]); setTotal(0); } })
       .finally(() => setLoading(false));
   };
 

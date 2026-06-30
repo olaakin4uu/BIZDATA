@@ -18,6 +18,11 @@ export class AuditController {
     return this.service.findAll(q);
   }
 
+  @Get('verify')
+  verify() {
+    return this.service.verify();
+  }
+
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.service.findOne(id);

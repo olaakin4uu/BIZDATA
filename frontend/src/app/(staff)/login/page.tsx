@@ -2,7 +2,9 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Image from 'next/image';
 import { authApi } from '@/lib/api/auth';
+import { tenantApi, type TenantBranding } from '@/lib/api/tenant';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
 
@@ -13,10 +15,15 @@ export default function StaffLoginPage() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [branding, setBranding] = useState<TenantBranding | null>(null);
 
   useEffect(() => {
     if (token && user) router.replace('/dashboard');
   }, [token, user, router]);
+
+  useEffect(() => {
+    tenantApi.branding().then(setBranding).catch(() => setBranding(null));
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -33,7 +40,27 @@ export default function StaffLoginPage() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900">
+    <div className="min-h-screen flex flex-col lg:flex-row bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900">
+      {/* Left: tenant / subscriber branding */}
+      <div className="lg:flex-1 flex items-center justify-center px-6 py-12 lg:py-0">
+        {branding?.logoUrl ? (
+          <div className="flex flex-col items-center gap-5 text-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={branding.logoUrl} alt={branding.name} className="max-w-[260px] max-h-[260px] object-contain drop-shadow-xl" />
+            <span className="text-lg font-semibold text-white/90">{branding.name}</span>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center justify-center gap-4 w-full max-w-sm aspect-square rounded-3xl border-2 border-dashed border-white/20 text-white/40">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.2} stroke="currentColor" className="w-16 h-16">
+              <path strokeLinecap="round" strokeLinejoin="round" d="m2.25 15.75 5.159-5.159a2.25 2.25 0 0 1 3.182 0l5.159 5.159m-1.5-1.5 1.409-1.409a2.25 2.25 0 0 1 3.182 0l2.909 2.909M3 3.75h18a.75.75 0 0 1 .75.75v15a.75.75 0 0 1-.75.75H3a.75.75 0 0 1-.75-.75V4.5A.75.75 0 0 1 3 3.75Z" />
+            </svg>
+            <span className="text-sm uppercase tracking-widest">Your organisation logo</span>
+          </div>
+        )}
+      </div>
+
+      {/* Right: sign-in */}
+      <div className="lg:flex-1 flex items-center justify-center px-4 pb-12 lg:py-0">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
           <p className="text-[10px] uppercase tracking-widest text-teal-300">
@@ -92,6 +119,21 @@ export default function StaffLoginPage() {
             </Link>
           </p>
         </div>
+
+        <div className="mt-8 flex flex-col items-center justify-center gap-3">
+          <span className="text-xs uppercase tracking-widest text-slate-300">
+            Powered by
+          </span>
+          <Image
+            src="/bizsphere-logo.jpeg"
+            alt="Bizsphere"
+            width={120}
+            height={120}
+            className="rounded-xl bg-white p-2 shadow-lg"
+            priority
+          />
+        </div>
+      </div>
       </div>
     </div>
   );

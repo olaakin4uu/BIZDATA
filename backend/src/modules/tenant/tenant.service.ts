@@ -21,6 +21,20 @@ export class TenantService {
     return tenant;
   }
 
+  /** Public branding (safe subset) for the unauthenticated login screen. */
+  async branding() {
+    const t = await this.get();
+    return { name: t.name, shortName: t.shortName, logoUrl: t.logoUrl, themeColor: t.themeColor };
+  }
+
+  /** Store an uploaded logo as a self-contained data URI in logoUrl. */
+  async setLogo(buffer: Buffer, mime: string) {
+    const t = await this.get();
+    const logoUrl = `data:${mime};base64,${buffer.toString('base64')}`;
+    const updated = await this.prisma.tenant.update({ where: { id: t.id }, data: { logoUrl } });
+    return { logoUrl: updated.logoUrl };
+  }
+
   async update(dto: any) {
     const t = await this.get();
     return this.prisma.tenant.update({

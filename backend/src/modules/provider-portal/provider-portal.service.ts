@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { CryptoService } from '../../common/services/crypto.service';
 
 @Injectable()
 export class ProviderPortalService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private crypto: CryptoService) {}
 
   async me(id: string) {
     const user = await this.prisma.dataProviderUser.findUnique({
@@ -66,6 +67,13 @@ export class ProviderPortalService {
       },
     });
     if (!submission) throw new NotFoundException('Submission not found');
-    return submission;
+    return {
+      ...submission,
+      records: submission.records.map((r) => ({
+        ...r,
+        accountNumber: this.crypto.decrypt(r.accountNumber),
+        bvn: this.crypto.decrypt(r.bvn),
+      })),
+    };
   }
 }

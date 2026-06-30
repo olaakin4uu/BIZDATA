@@ -97,6 +97,7 @@ model Tenant {
   logoUrl     String?
   themeColor  String?  @default("#0f766e")
   scanThreshold Decimal @default(0.20) @db.Decimal(5, 4)
+  retentionYears Int    @default(6) // NDPA §28 storage limitation (Nigeria tax 6-yr standard)
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -124,6 +125,9 @@ model User {
   reviewedReports DataRecord[]           @relation("ReviewedReports")
   scansRun        UnderdeclarationScan[] @relation("ScanRunBy")
   auditEvents     AuditLog[]             @relation("AuditUser")
+  assignedCases   UnderdeclarationCase[] @relation("CaseAssignee")
+  elevations      AccessElevation[]      @relation("ElevationStaff")
+  elevationsDecided AccessElevation[]    @relation("ElevationDecider")
 
   @@map("users")
 }
@@ -146,6 +150,7 @@ model DataProvider {
   users        DataProviderUser[]
   submissions  DataSubmission[]
   records      DataRecord[]
+  mou          BankMou?
 
   @@map("data_providers")
 }
@@ -174,9 +179,15 @@ model DataProviderUser {
 
 model Taxpayer {
   id             String         @id @default(uuid())
-  nin            String?        @unique
+  // PII identifiers are encrypted at rest (AES-256-GCM). A keyed HMAC "blind
+  // index" backs uniqueness + equality lookup without storing the plaintext.
+  ninEnc         String?
+  ninIndex       String?        @unique
+  bvnEnc         String?
+  bvnIndex       String?        @unique
+  tinEnc         String?
+  tinIndex       String?        @unique
   cacRcNumber    String?        @unique
-  tin            String?        @unique
   type           TaxpayerType
   status         TaxpayerStatus @default(ACTIVE)
   firstName      String?
@@ -187,6 +198,8 @@ model Taxpayer {
   email          String?
   address        String?
   stateOfResidence String?
+  dateOfBirth    DateTime?      // used by TIN-BVN probabilistic matching (Agent 2)
+  sector         String?        // assigned by Sector Classification (Agent 3)
   riskScore      Int            @default(100)
   riskLevel      RiskLevel      @default(LOW)
   riskComputedAt DateTime?
@@ -196,6 +209,9 @@ model Taxpayer {
 
   records         DataRecord[]
   declaredIncomes DeclaredIncome[]
+  cases           UnderdeclarationCase[]
+  riskSignals     RiskSignal[]
+  crossStateReferrals CrossStateReferral[]
 
   @@map("taxpayers")
 }
@@ -234,6 +250,8 @@ model DataSubmission {
   rejectedCount   Int              @default(0)
   validationErrors Json?
   status          SubmissionStatus @default(RECEIVED)
+  receiptHash     String?          // §6.5 acknowledgment receipt issued on receipt
+  resubmitDueAt   DateTime?        // §6.5 deadline to resubmit a rejected/partial file (5 business days)
   receivedAt      DateTime         @default(now())
   processedAt     DateTime?
   createdAt       DateTime         @default(now())
@@ -266,6 +284,11 @@ model DataRecord {
   accountName             String?
   periodLabel             String
   periodYear              Int
+
+  // Entity resolution quality (how this row was linked to a taxpayer)
+  matchMethod             String?             // 'NIN' | 'TIN' | 'BVN' | 'NAME' | 'UNMATCHED'
+  matchConfidence         Decimal?            @db.Decimal(3, 2) // 0..1
+  accountIndex            String?             // HMAC blind index of accountNumber (duplicate detection)
 
   // Common monetary fields
   totalInflow             Decimal?            @db.Decimal(18, 2)
@@ -300,6 +323,7 @@ model DataRecord {
 
   @@index([taxpayerId, periodYear])
   @@index([providerId, periodLabel])
+  @@index([providerId, periodLabel, accountIndex])
   @@index([flaggedAsUnderdeclared, reviewStatus])
   @@map("data_records")
 }
@@ -314,6 +338,8 @@ model UnderdeclarationScan {
   totalScanned    Int        @default(0)
   totalFlagged    Int        @default(0)
   totalRecovered  Decimal?   @db.Decimal(18, 2)
+  totalEstimatedTax Decimal? @db.Decimal(18, 2) // sum of recoverable tax across flagged cases
+  engineVersion   String?                       // detection methodology version used
   status          ScanStatus @default(RUNNING)
   errorMessage    String?
   startedById     String
@@ -322,8 +348,204 @@ model UnderdeclarationScan {
   createdAt       DateTime   @default(now())
 
   startedBy User @relation("ScanRunBy", fields: [startedById], references: [id])
+  cases     UnderdeclarationCase[]
 
   @@map("underdeclaration_scans")
+}
+
+// ─── UNDERDECLARATION CASE (one per taxpayer-year — the unit of work) ────────
+// Produced by the detection engine, surfaced on the dashboard, and progressed
+// through the §29 enforcement lifecycle (notice → objection → recovery).
+
+enum CaseStatus {
+  OPEN           // freshly detected, awaiting triage
+  UNDER_REVIEW   // officer reviewing
+  NOTICE_ISSUED  // assessment / information notice served
+  OBJECTION      // taxpayer objected — within statutory window
+  CONFIRMED      // assessment upheld
+  SETTLED        // payment plan / agreed
+  RECOVERED      // revenue collected
+  DISMISSED      // false positive / cleared
+  CLOSED         // archived
+}
+
+model UnderdeclarationCase {
+  id                String     @id @default(uuid())
+  taxpayerId        String
+  year              Int
+  scanId            String?
+  observedIncome    Decimal    @db.Decimal(18, 2) // normalized income proxy
+  declaredIncome    Decimal    @db.Decimal(18, 2)
+  discrepancyAmount Decimal    @db.Decimal(18, 2)
+  discrepancyPct    Decimal    @db.Decimal(8, 4)
+  estimatedTaxDue   Decimal    @db.Decimal(18, 2) // recoverable tax estimate on the gap
+  confidence        Decimal    @db.Decimal(3, 2)  // 0..1 detection-engine confidence
+  agentScore        Decimal?   @db.Decimal(3, 2)  // 0..1 aggregate AI-agent corroboration
+  reasons           Json?      // reason codes explaining the flag
+  providerCount     Int        @default(0)        // corroborating distinct providers
+  engineVersion     String?
+  status            CaseStatus @default(OPEN)
+  riskLevel         RiskLevel  @default(MEDIUM)
+  assignedToId      String?
+  recoveredAmount   Decimal?   @db.Decimal(18, 2)
+
+  // §35 Best-of-Judgement assessment (computed when a notice is issued)
+  assessedTax       Decimal?   @db.Decimal(18, 2) // additional tax on the discrepancy
+  penaltyAmount     Decimal?   @db.Decimal(18, 2) // 10% late-payment penalty
+  assessedTotal     Decimal?   @db.Decimal(18, 2) // tax + penalty (the demand)
+  assessmentBasis   Json?      // breakdown / methodology snapshot for defensibility
+  demandNoticeRef   String?    // e.g. DN-2025-AB12CD
+
+  noticeIssuedAt    DateTime?
+  objectionDueAt    DateTime?  // §41: 30 days for the taxpayer to object
+  authorityResponseDueAt DateTime? // §41(6): 90 days for the authority to respond, else deemed upheld
+  resolvedAt        DateTime?
+  notes             String?
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  taxpayer   Taxpayer              @relation(fields: [taxpayerId], references: [id])
+  scan       UnderdeclarationScan? @relation(fields: [scanId], references: [id])
+  assignedTo User?                 @relation("CaseAssignee", fields: [assignedToId], references: [id])
+
+  @@unique([taxpayerId, year])
+  @@index([status])
+  @@index([riskLevel])
+  @@map("underdeclaration_cases")
+}
+
+// ─── CROSS-STATE DATA SHARING (Joint Revenue Board Act 2025 §15) ──────────────
+// Captures mobile/migratory taxpayers: FCT-IRS refers non-FCT-resident taxpayers
+// to their home State IRS (and receives inbound referrals), sharing a minimised
+// summary (TIN + amounts) — NOT raw BVN/account (NDPA purpose limitation).
+
+enum ReferralDirection {
+  OUTBOUND
+  INBOUND
+}
+
+enum ReferralStatus {
+  DRAFT
+  SENT
+  ACKNOWLEDGED
+  RECEIVED
+  CLOSED
+}
+
+model CrossStateReferral {
+  id            String            @id @default(uuid())
+  taxpayerId    String?
+  direction     ReferralDirection
+  fromAuthority String            // e.g. 'FCT-IRS'
+  toAuthority   String            // e.g. 'Lagos State IRS'
+  state         String            // taxpayer's residential / transacting state
+  basis         String            @default("JRBA 2025 s.15")
+  year          Int?
+  payload       Json?             // minimised summary shared with the other authority
+  status        ReferralStatus    @default(DRAFT)
+  createdById   String?
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+
+  taxpayer Taxpayer? @relation(fields: [taxpayerId], references: [id])
+
+  @@index([direction, status])
+  @@map("cross_state_referrals")
+}
+
+// ─── NOTIFICATIONS / ALERTS ───────────────────────────────────────────────────
+
+model Notification {
+  id         String   @id @default(uuid())
+  type       String   // 'HIGH_VALUE_FLAG' | 'MISSED_SUBMISSION' | 'OBJECTION_DEADLINE' | 'OVERDUE_RESPONSE'
+  severity   String   @default("INFO") // 'INFO' | 'WARNING' | 'CRITICAL'
+  title      String
+  message    String
+  entity     String?
+  entityId   String?
+  targetRole String?  // null = all staff
+  read       Boolean  @default(false)
+  createdAt  DateTime @default(now())
+
+  @@index([read, createdAt])
+  @@map("notifications")
+}
+
+// ─── BANK MoU / ONBOARDING (§7) ───────────────────────────────────────────────
+
+enum MouStatus {
+  DRAFT
+  SENT
+  EXECUTED
+  TERMINATED
+}
+
+model BankMou {
+  id           String    @id @default(uuid())
+  providerId   String    @unique
+  status       MouStatus @default(DRAFT)
+  channel      String?   // 'SFTP' | 'REST' | 'BACKUP'
+  contactName  String?
+  contactEmail String?
+  signedAt     DateTime?
+  notes        String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  provider DataProvider @relation(fields: [providerId], references: [id])
+
+  @@map("bank_mous")
+}
+
+// ─── AI ANALYTICS AGENT SIGNALS ───────────────────────────────────────────────
+// Each of the six analytics agents writes a per-taxpayer-per-year RiskSignal.
+// These feed the officer review queue and the taxpayer risk score.
+
+model RiskSignal {
+  id          String   @id @default(uuid())
+  taxpayerId  String
+  year        Int
+  agentKey    String   // 'pattern' | 'matching' | 'sector' | 'behavioural' | 'predictive' | 'document'
+  score       Decimal  @db.Decimal(3, 2) // 0..1
+  severity    String   // 'LOW' | 'MEDIUM' | 'HIGH'
+  summary     String
+  details     Json?
+  createdAt   DateTime @default(now())
+
+  taxpayer Taxpayer @relation(fields: [taxpayerId], references: [id])
+
+  @@unique([taxpayerId, year, agentKey])
+  @@index([agentKey, year])
+  @@map("risk_signals")
+}
+
+// ─── JUST-IN-TIME ACCESS ELEVATION ───────────────────────────────────────────
+// A time-boxed, supervisor-approved grant to view sensitive PII (BVN / full
+// account number). Realises the §5.3 "JIT elevation" control.
+
+enum ElevationStatus {
+  PENDING   // awaiting supervisor approval
+  ACTIVE    // approved and within its 30-minute window
+  DENIED    // supervisor refused
+  EXPIRED   // window elapsed / revoked
+}
+
+model AccessElevation {
+  id          String          @id @default(uuid())
+  staffId     String
+  scope       String          @default("PII") // what the grant unlocks
+  reason      String          // business justification (audited)
+  status      ElevationStatus @default(PENDING)
+  requestedAt DateTime        @default(now())
+  decidedById String?
+  decidedAt   DateTime?
+  expiresAt   DateTime?       // set on approval (requestedAt/approval + 30 min)
+
+  staff     User  @relation("ElevationStaff", fields: [staffId], references: [id])
+  decidedBy User? @relation("ElevationDecider", fields: [decidedById], references: [id])
+
+  @@index([staffId, status])
+  @@map("access_elevations")
 }
 
 // ─── AUDIT LOG ───────────────────────────────────────────────────────────────

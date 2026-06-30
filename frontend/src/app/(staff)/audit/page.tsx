@@ -52,10 +52,13 @@ export default function AuditPage() {
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
-      <PageHeader
-        title="Audit log"
-        subtitle="Tamper-evident hash-chained record of every privileged action."
-      />
+      <div className="flex items-start justify-between flex-wrap gap-3">
+        <PageHeader
+          title="Audit log"
+          subtitle="Tamper-evident hash-chained record of every privileged action."
+        />
+        <IntegrityCheck />
+      </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-end gap-3">
         <div>
@@ -126,6 +129,38 @@ export default function AuditPage() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function IntegrityCheck() {
+  const [state, setState] = useState<'idle' | 'checking' | 'ok' | 'broken'>('idle');
+  const [detail, setDetail] = useState<string>('');
+
+  const run = async () => {
+    setState('checking'); setDetail('');
+    try {
+      const r = await auditApi.verify();
+      if (r.verified) { setState('ok'); setDetail(`${r.count} entries · head ${(r.headHash ?? '').slice(0, 12)}…`); }
+      else { setState('broken'); setDetail(`Broken at #${r.brokenAt} (${r.action}): ${r.reason}`); }
+    } catch { setState('broken'); setDetail('Verification failed'); }
+  };
+
+  const tone = state === 'ok' ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+    : state === 'broken' ? 'bg-red-50 border-red-200 text-red-800'
+    : 'bg-white border-slate-200 text-slate-700';
+
+  return (
+    <div className={`rounded-xl border shadow-sm px-4 py-3 text-sm ${tone}`}>
+      <div className="flex items-center gap-3">
+        <button onClick={run} disabled={state === 'checking'}
+          className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50">
+          {state === 'checking' ? 'Verifying…' : 'Verify chain integrity'}
+        </button>
+        {state === 'ok' && <span className="font-medium">✓ Intact</span>}
+        {state === 'broken' && <span className="font-medium">✗ Tampered</span>}
+      </div>
+      {detail && <p className="text-xs mt-1.5">{detail}</p>}
     </div>
   );
 }

@@ -2,10 +2,44 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { CryptoService } from '../../common/services/crypto.service';
+import { PiiAccessService } from '../../common/services/pii-access.service';
 
 @Injectable()
 export class TaxpayersService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private crypto: CryptoService,
+    private pii: PiiAccessService,
+  ) {}
+
+  /** Build the encrypted-storage + blind-index columns from plaintext identifiers. */
+  private encodeIdentifiers(src: { nin?: string | null; bvn?: string | null; tin?: string | null }) {
+    return {
+      ninEnc: this.crypto.encrypt(src.nin),
+      ninIndex: this.crypto.blindIndex(src.nin),
+      bvnEnc: this.crypto.encrypt(src.bvn),
+      bvnIndex: this.crypto.blindIndex(src.bvn),
+      tinEnc: this.crypto.encrypt(src.tin),
+      tinIndex: this.crypto.blindIndex(src.tin),
+    };
+  }
+
+  /**
+   * Decrypt identifier ciphertext back into nin/bvn/tin. BVN and NIN are masked
+   * unless the viewer is allowed to see PII in the clear (role + JIT elevation);
+   * TIN is the working tax id and is always shown.
+   */
+  decryptOut<T extends { ninEnc?: string | null; bvnEnc?: string | null; tinEnc?: string | null }>(tp: T, allowClear: boolean) {
+    if (!tp) return tp;
+    return {
+      ...tp,
+      nin: this.pii.reveal(this.crypto.decrypt(tp.ninEnc), 'nin', allowClear),
+      bvn: this.pii.reveal(this.crypto.decrypt(tp.bvnEnc), 'bvn', allowClear),
+      tin: this.crypto.decrypt(tp.tinEnc),
+    };
+  }
 
   async create(dto: any, actorId?: string) {
     if (!dto.type) throw new BadRequestException('type required');
@@ -14,9 +48,8 @@ export class TaxpayersService {
     }
     const tp = await this.prisma.taxpayer.create({
       data: {
-        nin: dto.nin || null,
+        ...this.encodeIdentifiers(dto),
         cacRcNumber: dto.cacRcNumber || null,
-        tin: dto.tin || null,
         type: dto.type,
         status: dto.status || 'ACTIVE',
         firstName: dto.firstName,
@@ -39,22 +72,24 @@ export class TaxpayersService {
       entityId: tp.id,
     });
 
-    return tp;
+    return this.decryptOut(tp, await this.pii.canRevealPii());
   }
 
   async findAll(query: any) {
     const page = Math.max(1, parseInt(query.page || '1', 10));
     const limit = Math.min(200, Math.max(1, parseInt(query.limit || '50', 10)));
     const search = (query.search || '').trim();
+    // NIN/TIN are encrypted, so they can only be matched EXACTLY via blind index
+    // (no partial/contains). Names and CAC number remain free-text searchable.
+    const idIndex = this.crypto.blindIndex(search);
     const where: Prisma.TaxpayerWhereInput = {
       ...(query.type ? { type: query.type } : {}),
       ...(query.status ? { status: query.status } : {}),
       ...(search
         ? {
             OR: [
-              { nin: { contains: search } },
+              ...(idIndex ? [{ ninIndex: idIndex }, { tinIndex: idIndex }, { bvnIndex: idIndex }] : []),
               { cacRcNumber: { contains: search } },
-              { tin: { contains: search } },
               { firstName: { contains: search, mode: 'insensitive' as any } },
               { lastName: { contains: search, mode: 'insensitive' as any } },
               { businessName: { contains: search, mode: 'insensitive' as any } },
@@ -73,7 +108,8 @@ export class TaxpayersService {
       this.prisma.taxpayer.count({ where }),
     ]);
 
-    return { taxpayers, total, page, limit };
+    const clear = await this.pii.canRevealPii();
+    return { taxpayers: taxpayers.map((t) => this.decryptOut(t, clear)), total, page, limit };
   }
 
   async findOne(id: string) {
@@ -84,7 +120,7 @@ export class TaxpayersService {
       },
     });
     if (!tp) throw new NotFoundException('Taxpayer not found');
-    return tp;
+    return this.decryptOut(tp, await this.pii.canRevealPii());
   }
 
   async update(id: string, dto: any, actorId?: string) {
@@ -101,7 +137,7 @@ export class TaxpayersService {
         email: dto.email ?? undefined,
         address: dto.address ?? undefined,
         stateOfResidence: dto.stateOfResidence ?? undefined,
-        tin: dto.tin ?? undefined,
+        ...(dto.tin !== undefined ? { tinEnc: this.crypto.encrypt(dto.tin), tinIndex: this.crypto.blindIndex(dto.tin) } : {}),
         status: dto.status ?? undefined,
       },
     });
@@ -115,7 +151,7 @@ export class TaxpayersService {
       entityId: id,
     });
 
-    return tp;
+    return this.decryptOut(tp, await this.pii.canRevealPii());
   }
 
   async importCsv(csvText: string, actorId?: string) {
@@ -143,9 +179,8 @@ export class TaxpayersService {
         }
 
         const data = {
-          nin: row.nin || null,
+          ...this.encodeIdentifiers({ nin: row.nin, tin: row.tin }),
           cacRcNumber: row.cacrcnumber || null,
-          tin: row.tin || null,
           type: type as any,
           firstName: row.firstname || null,
           lastName: row.lastname || null,
@@ -155,10 +190,11 @@ export class TaxpayersService {
           stateOfResidence: row.stateofresidence || null,
         };
 
+        const ninIndex = this.crypto.blindIndex(row.nin);
         const existing = await this.prisma.taxpayer.findFirst({
           where: {
             OR: [
-              ...(row.nin ? [{ nin: row.nin }] : []),
+              ...(ninIndex ? [{ ninIndex }] : []),
               ...(row.cacrcnumber ? [{ cacRcNumber: row.cacrcnumber }] : []),
             ],
           },

@@ -33,6 +33,15 @@ export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = {
       { name: 'openingBalance', required: true, type: 'decimal' },
       { name: 'closingBalance', required: true, type: 'decimal' },
       { name: 'transactionCount', required: false, type: 'integer' },
+      // §6.2 extended columns (optional aliases / extras; periodQuarter aliases periodLabel,
+      // totalCreditTransactions aliases transactionCount — normalised in processRows).
+      { name: 'periodQuarter', required: false, type: 'string' },
+      { name: 'accountType', required: false, type: 'string' },
+      { name: 'totalCreditTransactions', required: false, type: 'integer' },
+      { name: 'totalDebitTransactions', required: false, type: 'integer' },
+      { name: 'residentialState', required: false, type: 'string' },
+      { name: 'accountOpenedDate', required: false, type: 'string' },
+      { name: 'reportingBranch', required: false, type: 'string' },
     ],
   },
   FINTECH: {

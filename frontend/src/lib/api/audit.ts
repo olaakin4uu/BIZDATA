@@ -40,4 +40,5 @@ export const auditApi = {
     );
   },
   get: (id: string) => apiFetch<AuditLog>(`/audit/${id}`),
+  verify: () => apiFetch<{ verified: boolean; count: number; headHash?: string | null; brokenAt?: number; entryId?: string; reason?: string; action?: string }>(`/audit/verify`),
 };

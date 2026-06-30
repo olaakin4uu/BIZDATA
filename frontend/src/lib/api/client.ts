@@ -45,7 +45,16 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     } catch {
       // ignore
     }
-    throw new Error(message || `Request failed (${res.status})`);
+    // Expired / invalid session on an authenticated request → clear and bounce to login.
+    if (res.status === 401 && token && typeof window !== 'undefined') {
+      localStorage.removeItem('bizdata_staff_token');
+      if (!window.location.pathname.startsWith('/login')) {
+        window.location.href = '/login';
+      }
+    }
+    const err = new Error(message || `Request failed (${res.status})`) as Error & { status?: number };
+    err.status = res.status;
+    throw err;
   }
 
   if (res.status === 204) return undefined as T;

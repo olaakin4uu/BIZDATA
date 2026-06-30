@@ -4,6 +4,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { tenantApi, type Tenant } from '@/lib/api/tenant';
 import { authApi } from '@/lib/api/auth';
+import { applyBrandColor } from '@/lib/brand';
 import { extractErrorMessage } from '@/lib/utils';
 
 export default function SettingsPage() {
@@ -61,6 +62,7 @@ export default function SettingsPage() {
         scanThreshold: form.scanThreshold,
       });
       setTenant(updated);
+      applyBrandColor(updated.themeColor);
       setSaveMsg('Settings saved.');
     } catch (err) {
       setSaveErr(extractErrorMessage(err));
@@ -96,7 +98,10 @@ export default function SettingsPage() {
       ) : (
         <>
           <section className="mb-6">
-            <h2 className="text-sm font-semibold text-slate-800 mb-3">Tenant</h2>
+            <h2 className="text-sm font-semibold text-slate-800 mb-3">Organisation logo</h2>
+            <LogoUpload tenant={tenant} onChange={(logoUrl) => setTenant(tenant ? { ...tenant, logoUrl } : tenant)} />
+
+            <h2 className="text-sm font-semibold text-slate-800 mb-3 mt-6">Tenant</h2>
             <form onSubmit={saveTenant} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
               {saveErr && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{saveErr}</div>}
               {saveMsg && <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">{saveMsg}</div>}
@@ -106,8 +111,15 @@ export default function SettingsPage() {
                 <Field label="Contact email"><input type="email" value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></Field>
                 <Field label="Contact phone"><input value={form.contactPhone} onChange={(e) => setForm({ ...form, contactPhone: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></Field>
                 <Field label="Address" className="md:col-span-2"><input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></Field>
-                <Field label="Theme colour" hint="Hex code, e.g. #0f766e">
-                  <input value={form.themeColor} onChange={(e) => setForm({ ...form, themeColor: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" />
+                <Field label="Theme colour" hint="Hex code, e.g. #0f766e — re-skins the app live">
+                  <div className="flex items-center gap-2">
+                    <input type="color" value={/^#[0-9a-fA-F]{6}$/.test(form.themeColor) ? form.themeColor : '#0f766e'}
+                      onChange={(e) => { setForm({ ...form, themeColor: e.target.value }); applyBrandColor(e.target.value); }}
+                      className="h-9 w-12 rounded border border-slate-300 bg-white p-0.5 cursor-pointer" />
+                    <input value={form.themeColor}
+                      onChange={(e) => { setForm({ ...form, themeColor: e.target.value }); applyBrandColor(e.target.value); }}
+                      className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono" />
+                  </div>
                 </Field>
                 <Field label="Default scan threshold" hint="0–1 (e.g. 0.20 = 20%)">
                   <input value={form.scanThreshold} onChange={(e) => setForm({ ...form, scanThreshold: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
@@ -138,6 +150,47 @@ export default function SettingsPage() {
       {tenant && (
         <p className="text-xs text-slate-400 mt-6">Tenant ID: <span className="font-mono">{tenant.id}</span></p>
       )}
+    </div>
+  );
+}
+
+function LogoUpload({ tenant, onChange }: { tenant: Tenant | null; onChange: (logoUrl: string) => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setBusy(true); setErr(null);
+    try {
+      const r = await tenantApi.uploadLogo(file);
+      onChange(r.logoUrl);
+    } catch (e2) {
+      setErr(extractErrorMessage(e2));
+    } finally {
+      setBusy(false);
+      e.target.value = '';
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 flex items-center gap-5">
+      <div className="w-24 h-24 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-center overflow-hidden shrink-0">
+        {tenant?.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={tenant.logoUrl} alt="Organisation logo" className="max-w-full max-h-full object-contain" />
+        ) : (
+          <span className="text-[10px] uppercase tracking-widest text-slate-400 text-center px-2">No logo</span>
+        )}
+      </div>
+      <div>
+        <label className="inline-block px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg cursor-pointer">
+          {busy ? 'Uploading…' : tenant?.logoUrl ? 'Replace logo' : 'Upload logo'}
+          <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden" disabled={busy} onChange={onFile} />
+        </label>
+        <p className="text-xs text-slate-400 mt-2">PNG, JPEG, SVG or WebP · max 1&nbsp;MB. Appears on the sign-in screen.</p>
+        {err && <p className="text-xs text-red-600 mt-1">{err}</p>}
+      </div>
     </div>
   );
 }

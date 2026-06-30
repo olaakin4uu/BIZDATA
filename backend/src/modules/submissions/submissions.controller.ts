@@ -48,6 +48,26 @@ export class SubmissionsController {
       periodQuarter: body.periodQuarter ? parseInt(body.periodQuarter, 10) : undefined,
       periodMonth: body.periodMonth ? parseInt(body.periodMonth, 10) : undefined,
       submittedByStaffId: u.id,
+      checksum: body.checksum || undefined,
+    });
+  }
+
+  @Get(':id/report')
+  report(@Param('id') id: string) {
+    return this.service.report(id);
+  }
+
+  @Post('ingest-json')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'ANALYST', 'SUPERVISOR')
+  async ingestJson(@Body() body: any, @CurrentStaff() u: any) {
+    if (!body.providerId) throw new BadRequestException('providerId is required');
+    if (!body.periodQuarter && !body.periodLabel) throw new BadRequestException('periodQuarter is required');
+    return this.service.ingestJson({
+      providerId: body.providerId,
+      periodQuarter: body.periodQuarter || body.periodLabel,
+      records: body.records,
+      checksum: body.checksum || undefined,
+      submittedByStaffId: u.id,
     });
   }
 

@@ -1,6 +1,7 @@
 import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ProvidersService } from './providers.service';
+import { ProviderComplianceService } from './provider-compliance.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -11,7 +12,10 @@ import { CurrentStaff } from '../../common/decorators/current-staff.decorator';
 @UseGuards(StaffAuthGuard, RolesGuard)
 @Controller('providers')
 export class ProvidersController {
-  constructor(private service: ProvidersService) {}
+  constructor(
+    private service: ProvidersService,
+    private compliance: ProviderComplianceService,
+  ) {}
 
   @Post()
   @Roles('SUPER_ADMIN', 'ADMIN')
@@ -22,6 +26,17 @@ export class ProvidersController {
   @Get('stats')
   stats() {
     return this.service.stats();
+  }
+
+  // §29 / §6.6 obligation tracking. Declared before ':id' so the literal wins.
+  @Get('compliance/summary')
+  complianceSummary(@Query('year') year?: string) {
+    return this.compliance.summary(parseInt(year ?? `${new Date().getFullYear()}`, 10));
+  }
+
+  @Get('compliance')
+  complianceList(@Query('year') year?: string, @Query('providerId') providerId?: string) {
+    return this.compliance.forYear(parseInt(year ?? `${new Date().getFullYear()}`, 10), providerId);
   }
 
   @Get()

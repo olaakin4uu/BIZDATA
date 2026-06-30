@@ -1,12 +1,34 @@
 import 'dotenv/config';
+import { readFileSync } from 'fs';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
 
+/**
+ * TLS 1.3 / mutual-TLS hook. When TLS_CERT_PATH/TLS_KEY_PATH are set the server
+ * runs over HTTPS; add TLS_CA_PATH + TLS_REQUEST_CLIENT_CERT=true to require
+ * client certificates (mTLS for bank ingestion channels). Without these env
+ * vars it serves plain HTTP (dev) and TLS is expected to terminate at the
+ * gateway/load-balancer. See .env.example.
+ */
+function tlsOptions() {
+  const cert = process.env.TLS_CERT_PATH;
+  const key = process.env.TLS_KEY_PATH;
+  if (!cert || !key) return undefined;
+  return {
+    cert: readFileSync(cert),
+    key: readFileSync(key),
+    minVersion: 'TLSv1.3' as const,
+    ...(process.env.TLS_CA_PATH ? { ca: readFileSync(process.env.TLS_CA_PATH) } : {}),
+    ...(process.env.TLS_REQUEST_CLIENT_CERT === 'true' ? { requestCert: true, rejectUnauthorized: true } : {}),
+  };
+}
+
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const httpsOptions = tlsOptions();
+  const app = await NestFactory.create(AppModule, httpsOptions ? { httpsOptions } : {});
 
   app.setGlobalPrefix('api');
 

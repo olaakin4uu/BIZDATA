@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
+import { ScheduleModule } from '@nestjs/schedule';
 
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
@@ -15,6 +16,16 @@ import { DeclaredIncomeModule } from './modules/declared-income/declared-income.
 import { SubmissionsModule } from './modules/submissions/submissions.module';
 import { DataRecordsModule } from './modules/data-records/data-records.module';
 import { ScanModule } from './modules/scan/scan.module';
+import { CasesModule } from './modules/cases/cases.module';
+import { AccessModule } from './modules/access/access.module';
+import { AgentsModule } from './modules/agents/agents.module';
+import { SchedulerModule } from './modules/scheduler/scheduler.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
+import { MetricsModule } from './modules/metrics/metrics.module';
+import { GovernanceModule } from './modules/governance/governance.module';
+import { Taxpayer360Module } from './modules/taxpayer360/taxpayer360.module';
+import { NdpaModule } from './modules/ndpa/ndpa.module';
+import { CrossStateModule } from './modules/cross-state/cross-state.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { SchemasModule } from './modules/schemas/schemas.module';
 import { ProviderPortalModule } from './modules/provider-portal/provider-portal.module';
@@ -22,6 +33,7 @@ import { ProviderPortalModule } from './modules/provider-portal/provider-portal.
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 100 }] }),
     PrismaModule,
     CommonModule,
@@ -35,6 +47,16 @@ import { ProviderPortalModule } from './modules/provider-portal/provider-portal.
     SubmissionsModule,
     DataRecordsModule,
     ScanModule,
+    CasesModule,
+    AccessModule,
+    AgentsModule,
+    SchedulerModule,
+    NotificationsModule,
+    MetricsModule,
+    GovernanceModule,
+    Taxpayer360Module,
+    NdpaModule,
+    CrossStateModule,
     AuditModule,
     SchemasModule,
     ProviderPortalModule,

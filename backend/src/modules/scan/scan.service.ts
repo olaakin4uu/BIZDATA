@@ -2,6 +2,13 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import {
+  ENGINE_VERSION,
+  normalizeInflow,
+  estimateAdditionalTax,
+  scoreCase,
+  confidenceToRisk,
+} from './detection-engine';
 
 @Injectable()
 export class ScanService {
@@ -41,7 +48,7 @@ export class ScanService {
   }
 
   async runScan(scanId: string, year: number, threshold: number, providerTypes?: string[]) {
-    this.logger.log(`Starting scan ${scanId} for year ${year} threshold ${threshold}`);
+    this.logger.log(`Starting scan ${scanId} (engine ${ENGINE_VERSION}) for year ${year} threshold ${threshold}`);
     try {
       const whereRecord: Prisma.DataRecordWhereInput = {
         periodYear: year,
@@ -49,31 +56,67 @@ export class ScanService {
         ...(providerTypes?.length ? { providerType: { in: providerTypes as any[] } } : {}),
       };
 
-      // Aggregate per taxpayer
-      const aggregated = await this.prisma.dataRecord.groupBy({
-        by: ['taxpayerId'],
+      // Pull the matching records once and aggregate per taxpayer in-memory.
+      // NOTE: for very large datasets this should be streamed/batched; demo-scale
+      // volumes make a single read acceptable and keep the scoring logic readable.
+      const records = await this.prisma.dataRecord.findMany({
         where: whereRecord,
-        _sum: { totalInflow: true },
+        select: {
+          taxpayerId: true,
+          providerId: true,
+          totalInflow: true,
+          totalOutflow: true,
+          matchConfidence: true,
+        },
       });
 
+      type Agg = {
+        inflow: number;
+        outflow: number;
+        providers: Set<string>;
+        matchConfs: number[];
+      };
+      const byTaxpayer = new Map<string, Agg>();
+      for (const r of records) {
+        if (!r.taxpayerId) continue;
+        const a =
+          byTaxpayer.get(r.taxpayerId) ??
+          { inflow: 0, outflow: 0, providers: new Set<string>(), matchConfs: [] };
+        a.inflow += Number(r.totalInflow ?? 0);
+        a.outflow += Number(r.totalOutflow ?? 0);
+        a.providers.add(r.providerId);
+        if (r.matchConfidence != null) a.matchConfs.push(Number(r.matchConfidence));
+        byTaxpayer.set(r.taxpayerId, a);
+      }
+
       let totalFlagged = 0;
-      const flaggedTaxpayers: string[] = [];
+      let totalEstimatedTax = 0;
 
-      for (const row of aggregated) {
-        if (!row.taxpayerId) continue;
-        const totalInflow = Number(row._sum.totalInflow ?? 0);
+      for (const [taxpayerId, agg] of byTaxpayer) {
+        const taxpayer = await this.prisma.taxpayer.findUnique({
+          where: { id: taxpayerId },
+          select: { type: true },
+        });
+        if (!taxpayer) continue;
 
-        const declared = await this.prisma.declaredIncome.findUnique({
-          where: { taxpayerId_year: { taxpayerId: row.taxpayerId, year } },
+        const declaredRow = await this.prisma.declaredIncome.findUnique({
+          where: { taxpayerId_year: { taxpayerId, year } },
           select: { assessableIncome: true },
         });
-        const declaredAmount = declared ? Number(declared.assessableIncome ?? 0) : 0;
-        const discrepancy = totalInflow - declaredAmount;
-        const discrepancyPct = declaredAmount > 0 ? discrepancy / declaredAmount : (totalInflow > 0 ? 1 : 0);
+        const declaredAmount = declaredRow ? Number(declaredRow.assessableIncome ?? 0) : 0;
+        const hasDeclaration = declaredRow != null;
+
+        // 1. Normalize gross inflow → income proxy (conservative)
+        const { observedIncome, passThroughDiscount } = normalizeInflow(agg.inflow, agg.outflow);
+
+        const discrepancy = observedIncome - declaredAmount;
+        const discrepancyPct =
+          declaredAmount > 0 ? discrepancy / declaredAmount : observedIncome > 0 ? 1 : 0;
         const shouldFlag = discrepancy > 0 && discrepancyPct > threshold;
 
+        // 2. Stamp per-record flag fields (drives the records / flagged views)
         await this.prisma.dataRecord.updateMany({
-          where: { taxpayerId: row.taxpayerId, ...whereRecord },
+          where: { taxpayerId, ...whereRecord },
           data: {
             flaggedAsUnderdeclared: shouldFlag,
             declaredIncome: new Prisma.Decimal(declaredAmount),
@@ -84,42 +127,82 @@ export class ScanService {
           },
         });
 
-        if (shouldFlag) {
-          totalFlagged++;
-          flaggedTaxpayers.push(row.taxpayerId);
-        }
-      }
+        if (!shouldFlag) continue;
 
-      // Bump risk on flagged taxpayers
-      for (const tpId of flaggedTaxpayers) {
-        const tp = await this.prisma.taxpayer.findUnique({ where: { id: tpId }, select: { riskScore: true } });
-        if (!tp) continue;
-        const flagCount = await this.prisma.dataRecord.count({
-          where: { taxpayerId: tpId, flaggedAsUnderdeclared: true },
+        // 3. Score + explain + estimate recoverable tax
+        const avgMatchConfidence =
+          agg.matchConfs.length > 0
+            ? agg.matchConfs.reduce((s, v) => s + v, 0) / agg.matchConfs.length
+            : 0.5;
+        const { confidence, reasons } = scoreCase({
+          discrepancyPct,
+          providerCount: agg.providers.size,
+          avgMatchConfidence,
+          passThroughDiscount,
+          hasDeclaration,
         });
-        const drop = Math.min(60, flagCount * 10);
-        const newScore = Math.max(0, 100 - drop);
-        const riskLevel =
-          newScore >= 70 ? 'LOW' :
-          newScore >= 40 ? 'MEDIUM' :
-          newScore >= 20 ? 'HIGH' : 'CRITICAL';
+        const estimatedTaxDue = estimateAdditionalTax({
+          taxpayerType: taxpayer.type as any,
+          declaredIncome: declaredAmount,
+          observedIncome,
+        });
+
+        totalFlagged++;
+        totalEstimatedTax += estimatedTaxDue;
+
+        // 4. Upsert the case (preserve a human-progressed lifecycle status)
+        const existing = await this.prisma.underdeclarationCase.findUnique({
+          where: { taxpayerId_year: { taxpayerId, year } },
+          select: { status: true },
+        });
+        const caseData = {
+          scanId,
+          observedIncome: new Prisma.Decimal(observedIncome.toFixed(2)),
+          declaredIncome: new Prisma.Decimal(declaredAmount.toFixed(2)),
+          discrepancyAmount: new Prisma.Decimal(Math.max(0, discrepancy).toFixed(2)),
+          discrepancyPct: new Prisma.Decimal(Math.max(0, discrepancyPct).toFixed(4)),
+          estimatedTaxDue: new Prisma.Decimal(estimatedTaxDue.toFixed(2)),
+          confidence: new Prisma.Decimal(confidence.toFixed(2)),
+          reasons: reasons as any,
+          providerCount: agg.providers.size,
+          engineVersion: ENGINE_VERSION,
+          riskLevel: confidenceToRisk(confidence) as any,
+        };
+        await this.prisma.underdeclarationCase.upsert({
+          where: { taxpayerId_year: { taxpayerId, year } },
+          // Keep the existing status if an officer has already moved it past OPEN
+          update: caseData,
+          create: { taxpayerId, year, status: 'OPEN', ...caseData },
+        });
+
+        // 5. Update taxpayer risk from the case confidence
+        const newScore = Math.max(0, Math.round(100 - confidence * 80));
         await this.prisma.taxpayer.update({
-          where: { id: tpId },
-          data: { riskScore: newScore, riskLevel: riskLevel as any, riskComputedAt: new Date() },
+          where: { id: taxpayerId },
+          data: {
+            riskScore: newScore,
+            riskLevel: confidenceToRisk(confidence) as any,
+            riskComputedAt: new Date(),
+          },
         });
+        void existing; // status preservation handled at the case-update layer (track 3)
       }
 
       await this.prisma.underdeclarationScan.update({
         where: { id: scanId },
         data: {
-          totalScanned: aggregated.length,
+          totalScanned: byTaxpayer.size,
           totalFlagged,
+          totalEstimatedTax: new Prisma.Decimal(totalEstimatedTax.toFixed(2)),
+          engineVersion: ENGINE_VERSION,
           status: 'COMPLETED',
           completedAt: new Date(),
         },
       });
 
-      this.logger.log(`Scan ${scanId} complete — scanned: ${aggregated.length}, flagged: ${totalFlagged}`);
+      this.logger.log(
+        `Scan ${scanId} complete — scanned: ${byTaxpayer.size}, flagged: ${totalFlagged}, est. tax: ₦${totalEstimatedTax.toFixed(0)}`,
+      );
     } catch (err: any) {
       await this.prisma.underdeclarationScan.update({
         where: { id: scanId },

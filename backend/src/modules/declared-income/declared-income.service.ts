@@ -2,10 +2,17 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { CryptoService } from '../../common/services/crypto.service';
+import { PiiAccessService } from '../../common/services/pii-access.service';
 
 @Injectable()
 export class DeclaredIncomeService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private crypto: CryptoService,
+    private pii: PiiAccessService,
+  ) {}
 
   async create(dto: any, actorId?: string) {
     if (!dto.taxpayerId || !dto.year || dto.assessableIncome == null) {
@@ -52,14 +59,19 @@ export class DeclaredIncomeService {
     const [records, total] = await Promise.all([
       this.prisma.declaredIncome.findMany({
         where,
-        include: { taxpayer: { select: { id: true, nin: true, cacRcNumber: true, firstName: true, lastName: true, businessName: true, type: true } } },
+        include: { taxpayer: { select: { id: true, ninEnc: true, cacRcNumber: true, firstName: true, lastName: true, businessName: true, type: true } } },
         orderBy: [{ year: 'desc' }, { createdAt: 'desc' }],
         skip: (page - 1) * limit,
         take: limit,
       }),
       this.prisma.declaredIncome.count({ where }),
     ]);
-    return { records, total, page, limit };
+    const clear = await this.pii.canRevealPii();
+    const decrypted = records.map((r) => ({
+      ...r,
+      taxpayer: r.taxpayer ? { ...r.taxpayer, nin: this.pii.reveal(this.crypto.decrypt(r.taxpayer.ninEnc), 'nin', clear) } : r.taxpayer,
+    }));
+    return { records: decrypted, total, page, limit };
   }
 
   async importCsv(csvText: string, actorId?: string) {
@@ -90,7 +102,7 @@ export class DeclaredIncomeService {
         const tp = await this.prisma.taxpayer.findFirst({
           where: {
             OR: [
-              ...(row.taxpayernin ? [{ nin: row.taxpayernin }] : []),
+              ...(row.taxpayernin ? [{ ninIndex: this.crypto.blindIndex(row.taxpayernin)! }] : []),
               ...(row.taxpayercacrcnumber ? [{ cacRcNumber: row.taxpayercacrcnumber }] : []),
             ],
           },
