@@ -76,7 +76,7 @@ export const casesApi = {
   ) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));
+      if (v !== undefined && v !== null && String(v) !== '') qs.set(k, String(v));
     });
     const q = qs.toString();
     return apiFetch<{ cases: UnderdeclarationCase[]; total: number; page: number; limit: number }>(
