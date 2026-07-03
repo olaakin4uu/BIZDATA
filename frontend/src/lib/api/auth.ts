@@ -45,10 +45,10 @@ export interface ProviderLoginResponse {
 }
 
 export const authApi = {
-  staffLogin: (email: string, password: string) =>
+  staffLogin: (email: string, password: string, totp?: string) =>
     apiFetch<StaffLoginResponse>('/auth/staff/login', {
       method: 'POST',
-      body: { email, password },
+      body: { email, password, ...(totp ? { totp } : {}) },
     }),
 
   staffMe: () => apiFetch<StaffUser>('/auth/staff/me'),

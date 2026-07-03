@@ -51,8 +51,8 @@ const FUNNEL_COLORS = [
   'bg-orange-500',
 ];
 
-const CURRENT_YEAR = 2026;
-const YEARS = [CURRENT_YEAR, 2025, 2024, 2023];
+const CURRENT_YEAR = new Date().getFullYear();
+const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
 
 /* ─── MAIN PAGE ──────────────────────────────────────────────────────────── */
 export default function StaffDashboardPage() {

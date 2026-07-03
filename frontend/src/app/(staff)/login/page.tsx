@@ -13,6 +13,8 @@ export default function StaffLoginPage() {
   const { setAuth, token, user } = useStaffAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [totp, setTotp] = useState('');
+  const [needsTotp, setNeedsTotp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [branding, setBranding] = useState<TenantBranding | null>(null);
@@ -29,11 +31,17 @@ export default function StaffLoginPage() {
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const res = await authApi.staffLogin(email.trim().toLowerCase(), password);
+      const res = await authApi.staffLogin(email.trim().toLowerCase(), password, needsTotp ? totp.trim() : undefined);
       setAuth(res.user, res.accessToken);
       router.replace('/dashboard');
     } catch (err) {
-      setError(extractErrorMessage(err));
+      const msg = extractErrorMessage(err);
+      if (msg === 'MFA code required' && !needsTotp) {
+        setNeedsTotp(true);
+        setError('Enter the 6-digit code from your authenticator app.');
+      } else {
+        setError(msg);
+      }
     } finally {
       setBusy(false);
     }
@@ -103,6 +111,23 @@ export default function StaffLoginPage() {
                 className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
               />
             </div>
+            {needsTotp && (
+              <div>
+                <label className="block text-xs font-medium text-slate-700 mb-1">Authenticator code</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  required
+                  autoFocus
+                  value={totp}
+                  onChange={(e) => setTotp(e.target.value.replace(/\D/g, ''))}
+                  placeholder="000000"
+                  className="w-full px-3 py-2 border border-teal-400 rounded-lg text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-teal-500"
+                />
+              </div>
+            )}
             <button
               type="submit"
               disabled={busy}

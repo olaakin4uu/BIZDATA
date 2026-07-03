@@ -154,7 +154,7 @@ export class AuthService {
     if (!user) throw new BadRequestException('User not found');
     const secret = generateSecret();
     await this.prisma.user.update({ where: { id }, data: { mfaSecret: secret, mfaEnabled: false } });
-    const otpauth = keyuri(user.email, 'BRIS / FCT-IRS', secret);
+    const otpauth = keyuri(user.email, 'BizData BRIS', secret);
     return { secret, otpauth };
   }
 

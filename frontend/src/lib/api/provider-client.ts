@@ -37,6 +37,11 @@ export async function providerApiFetch<T>(path: string, options: ProviderApiFetc
   });
 
   if (!res.ok) {
+    if (res.status === 401 && typeof window !== 'undefined') {
+      localStorage.removeItem('bizdata_provider_token');
+      window.location.href = '/provider/login';
+      return undefined as T;
+    }
     let message = res.statusText;
     try {
       const data = await res.json();
