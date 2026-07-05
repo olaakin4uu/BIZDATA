@@ -49,7 +49,7 @@ async function bootstrap() {
     origin: (process.env.FRONTEND_URL || 'http://localhost:4201').split(','),
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'x-step-up'],
   });
 
   const swaggerConfig = new DocumentBuilder()

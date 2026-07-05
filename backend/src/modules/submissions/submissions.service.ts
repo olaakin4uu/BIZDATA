@@ -298,6 +298,24 @@ export class SubmissionsService {
         if (row[k] != null && row[k] !== '') payload[k] = row[k];
       }
 
+      // Provider-supplied sector / business type. When present, persist to the
+      // matched taxpayer (provider-supplied is authoritative over later inference).
+      const providedSector = (row.sector || '').trim().toUpperCase().replace(/\s+/g, '_') || null;
+      const providedBusinessType = (row.businessType || '').trim() || null;
+      if (payload && (providedSector || providedBusinessType)) {
+        if (providedSector) payload.sector = providedSector;
+        if (providedBusinessType) payload.businessType = providedBusinessType;
+      }
+      if (taxpayerId && (providedSector || providedBusinessType)) {
+        await this.prisma.taxpayer.update({
+          where: { id: taxpayerId },
+          data: {
+            ...(providedSector ? { sector: providedSector } : {}),
+            ...(providedBusinessType ? { businessType: providedBusinessType } : {}),
+          },
+        }).catch(() => { /* non-fatal — taxpayer may have been removed mid-batch */ });
+      }
+
       recordCreates.push({
         submissionId,
         providerId,

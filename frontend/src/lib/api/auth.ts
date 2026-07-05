@@ -7,6 +7,7 @@ export interface StaffUser {
   firstName: string;
   lastName: string;
   phone?: string | null;
+  avatarUrl?: string | null;
   role: string;
   isActive: boolean;
   mfaEnabled?: boolean;
@@ -27,6 +28,7 @@ export interface ProviderUser {
   role: string;
   providerId: string;
   providerName?: string;
+  avatarUrl?: string | null;
   isActive?: boolean;
   lastLoginAt?: string | null;
   provider?: {
@@ -58,6 +60,12 @@ export const authApi = {
       method: 'PATCH',
       body: { currentPassword, newPassword },
     }),
+
+  uploadStaffAvatar: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return apiFetch<StaffUser>('/auth/staff/avatar', { method: 'POST', body: fd });
+  },
 };
 
 export const providerAuthApi = {
@@ -74,4 +82,10 @@ export const providerAuthApi = {
       method: 'PATCH',
       body: { currentPassword, newPassword },
     }),
+
+  uploadProviderAvatar: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return providerApiFetch<ProviderUser>('/auth/provider/avatar', { method: 'POST', body: fd });
+  },
 };

@@ -64,6 +64,7 @@ export const PROVIDER_TYPES = [
   'FX_BUREAU',
   'POS_AGGREGATOR',
   'ECOMMERCE',
+  'INSURANCE',
   'OTHER',
 ] as const;
 export type ProviderType = typeof PROVIDER_TYPES[number];

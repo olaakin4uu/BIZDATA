@@ -30,6 +30,7 @@ enum ProviderType {
   FX_BUREAU
   POS_AGGREGATOR
   ECOMMERCE
+  INSURANCE
   OTHER
 }
 
@@ -114,6 +115,7 @@ model User {
   firstName      String
   lastName       String
   phone          String?
+  avatarUrl      String?   // passport photo, stored as a base64 data URL
   role           UserRole  @default(READONLY)
   isActive       Boolean   @default(true)
   mfaEnabled     Boolean   @default(false)
@@ -128,8 +130,38 @@ model User {
   assignedCases   UnderdeclarationCase[] @relation("CaseAssignee")
   elevations      AccessElevation[]      @relation("ElevationStaff")
   elevationsDecided AccessElevation[]    @relation("ElevationDecider")
+  portfolios      AnalystPortfolio[]     @relation("PortfolioOwner")
 
   @@map("users")
+}
+
+// ─── ANALYST PORTFOLIOS ───────────────────────────────────────────────────────
+// A staff member owns a "book of work" — a set of providers, provider types, or
+// sectors. New cases auto-route to the owner of the most specific match
+// (individual provider > provider type > sector). One row per assignment.
+
+enum PortfolioScope {
+  PROVIDER       // owns one specific provider
+  PROVIDER_TYPE  // owns all providers of a type (e.g. all INSURANCE)
+  SECTOR         // owns an economic sector (e.g. TRADING)
+}
+
+model AnalystPortfolio {
+  id         String         @id @default(uuid())
+  staffId    String
+  scope      PortfolioScope
+  // The target of the ownership, keyed by scope:
+  //   PROVIDER      → providerId
+  //   PROVIDER_TYPE → the ProviderType value (e.g. "INSURANCE")
+  //   SECTOR        → the sector string (e.g. "TRADING")
+  targetValue String
+  createdAt  DateTime       @default(now())
+
+  staff User @relation("PortfolioOwner", fields: [staffId], references: [id], onDelete: Cascade)
+
+  @@unique([scope, targetValue]) // one owner per provider/type/sector
+  @@index([staffId])
+  @@map("analyst_portfolios")
 }
 
 // ─── DATA PROVIDERS (banks, fintechs, telcos, etc.) ───────────────────────────
@@ -163,6 +195,7 @@ model DataProviderUser {
   firstName    String
   lastName     String
   phone        String?
+  avatarUrl    String?          // passport photo, stored as a base64 data URL
   role         ProviderUserRole @default(COMPLIANCE_OFFICER)
   isActive     Boolean          @default(true)
   lastLoginAt  DateTime?
@@ -199,7 +232,10 @@ model Taxpayer {
   address        String?
   stateOfResidence String?
   dateOfBirth    DateTime?      // used by TIN-BVN probabilistic matching (Agent 2)
-  sector         String?        // assigned by Sector Classification (Agent 3)
+  sector         String?        // economic sector — provider-supplied or Sector Classification (Agent 3)
+  businessType   String?        // nature of business (e.g. "Retail", "Restaurant", "Consultancy") — provider-supplied
+  identityVerifiedAt DateTime?  // set when NIN was confirmed via an external source (NIBSS/NIMC)
+  identitySource String?        // 'NIBSS' | 'NIMC' | 'MOCK' — how the NIN was verified
   riskScore      Int            @default(100)
   riskLevel      RiskLevel      @default(LOW)
   riskComputedAt DateTime?
@@ -464,10 +500,12 @@ model Notification {
   entity     String?
   entityId   String?
   targetRole String?  // null = all staff
+  targetUserId String? // when set, this notification is for one specific staff member
   read       Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   @@index([read, createdAt])
+  @@index([targetUserId, read])
   @@map("notifications")
 }
 

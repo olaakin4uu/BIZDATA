@@ -42,3 +42,19 @@ logs/
 
 # Uploads (runtime file storage)
 uploads/
+
+# Standalone erev restore artifacts (separate app + MySQL data dir — not part of BIZDATA)
+erev_app/
+erev_instance/
+erev_backup_*.sql
+
+# Local Claude Code agent config / scratch
+.claude/
+
+# Superseded standalone guide docs (regenerable; superseded by the All-In-One manual)
+BIZDATA-Complete-Module-Guide.*
+BIZDATA-Dashboard-Guide.*
+BIZDATA-Decision-Support-Phases.*
+BIZDATA-Master-Manual.*
+BIZDATA-Provider-Dashboard-Guide.*
+Screenshot-Recipe-Guide.*

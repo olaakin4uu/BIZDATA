@@ -2,6 +2,8 @@
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
+import UserMenu from '@/components/UserMenu';
+import { providerAuthApi } from '@/lib/api/auth';
 
 const NAV = [
   { href: '/provider/dashboard', label: 'Dashboard' },
@@ -12,12 +14,22 @@ const NAV = [
 export default function ProviderNav() {
   const pathname = usePathname() ?? '';
   const router = useRouter();
-  const { user, clearAuth } = useProviderAuthStore();
+  const { user, clearAuth, setUser } = useProviderAuthStore();
 
   const handleLogout = () => {
     clearAuth();
     router.replace('/provider/login');
   };
+
+  const handleUploadAvatar = async (file: File) => {
+    const updated = await providerAuthApi.uploadProviderAvatar(file);
+    setUser(updated);
+  };
+
+  // Show the provider organisation name under the user's name in the menu.
+  const menuUser = user
+    ? { ...user, role: user.providerName ?? user.provider?.name ?? user.role }
+    : null;
 
   return (
     <header className="bg-teal-800 text-white border-b border-teal-900">
@@ -48,23 +60,13 @@ export default function ProviderNav() {
             })}
           </nav>
         </div>
-        {user && (
-          <div className="flex items-center gap-4 text-sm">
-            <div className="text-right">
-              <p className="font-medium leading-tight">
-                {user.firstName} {user.lastName}
-              </p>
-              <p className="text-xs text-teal-200 leading-tight">
-                {user.providerName ?? user.provider?.name ?? '—'}
-              </p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className="px-3 py-1.5 text-xs font-medium bg-teal-900 hover:bg-teal-950 rounded-md transition-colors"
-            >
-              Sign out
-            </button>
-          </div>
+        {menuUser && (
+          <UserMenu
+            user={menuUser}
+            onSignOut={handleLogout}
+            onUploadAvatar={handleUploadAvatar}
+            variant="dark"
+          />
         )}
       </div>
     </header>

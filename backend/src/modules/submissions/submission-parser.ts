@@ -17,7 +17,18 @@ export interface SchemaTemplate {
   columns: FieldDef[];
 }
 
-export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = {
+/**
+ * Columns common to every provider type. `sector` and `businessType` let a
+ * provider supply the taxpayer's economic sector and nature of business at
+ * source — far more reliable than inferring it from an account name. Both are
+ * optional so providers who cannot supply them are still valid.
+ */
+const COMMON_COLUMNS: FieldDef[] = [
+  { name: 'sector', required: false, type: 'string' },       // e.g. TRADING, HOSPITALITY, TECH
+  { name: 'businessType', required: false, type: 'string' }, // e.g. "Retail shop", "Restaurant", "Consultancy"
+];
+
+const BASE_SCHEMAS: Record<string, SchemaTemplate> = {
   BANK: {
     providerType: 'BANK',
     columns: [
@@ -109,6 +120,22 @@ export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = {
       { name: 'totalInflow', required: true, type: 'decimal' },
     ],
   },
+  INSURANCE: {
+    providerType: 'INSURANCE',
+    columns: [
+      { name: 'policyNumber', required: true, type: 'string' },
+      { name: 'accountName', required: true, type: 'string' }, // policyholder name
+      { name: 'bvn', required: false, type: 'string', validation: { length: 11 } },
+      { name: 'nin', required: false, type: 'string' },
+      { name: 'rcNumber', required: false, type: 'string' }, // for corporate policyholders
+      { name: 'periodLabel', required: true, type: 'string' },
+      { name: 'totalInflow', required: true, type: 'decimal', validation: { min: 0 } }, // premiums paid
+      { name: 'sumAssured', required: false, type: 'decimal', validation: { min: 0 } },
+      { name: 'policyType', required: false, type: 'string' }, // life, general, takaful, etc.
+      { name: 'transactionCount', required: false, type: 'integer' }, // number of premium payments
+      { name: 'phoneNumber', required: false, type: 'string' },
+    ],
+  },
   OTHER: {
     providerType: 'OTHER',
     columns: [
@@ -118,6 +145,14 @@ export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = {
     ],
   },
 };
+
+// Every provider schema also accepts the common sector / businessType columns.
+export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = Object.fromEntries(
+  Object.entries(BASE_SCHEMAS).map(([type, schema]) => [
+    type,
+    { ...schema, columns: [...schema.columns, ...COMMON_COLUMNS] },
+  ]),
+);
 
 export function parseCsvText(csvText: string): { headers: string[]; rows: Record<string, string>[] } {
   const lines = csvText.replace(/^﻿/, '').split(/\r?\n/).map(l => l.trim()).filter(Boolean);

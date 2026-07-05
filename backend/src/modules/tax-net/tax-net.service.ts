@@ -1,0 +1,221 @@
+import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../../common/services/audit.service';
+import { CryptoService } from '../../common/services/crypto.service';
+
+/**
+ * Tax-net comparative & registration.
+ *
+ * Classifies every taxpayer we observe receiving money into one of three states,
+ * each backed by a truth-of-record identifier:
+ *   CAPTURED   — corporate with an RC number, or individual with a TIN (or matched NIN).
+ *   UNVERIFIED — in the registry but the anchoring ID is missing/unconfirmed.
+ *   INVISIBLE  — observed inflow but no registration at all.
+ *
+ * Registration assigns a TIN and moves a taxpayer to CAPTURED — either one at a
+ * time (manual) or in bulk (auto). Every action is audited.
+ */
+export type NetStatus = 'CAPTURED' | 'UNVERIFIED' | 'INVISIBLE';
+
+@Injectable()
+export class TaxNetService {
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private crypto: CryptoService,
+  ) {}
+
+  /** Truth-of-record classification for one taxpayer row. */
+  private classify(tp: {
+    type: string; cacRcNumber: string | null; tinIndex: string | null; ninIndex: string | null;
+  }): NetStatus {
+    if (tp.type === 'CORPORATE') {
+      return tp.cacRcNumber ? 'CAPTURED' : 'UNVERIFIED';
+    }
+    // Individual: TIN is the tax-net anchor; a matched NIN counts as verifiable.
+    if (tp.tinIndex) return 'CAPTURED';
+    if (tp.ninIndex) return 'UNVERIFIED'; // has identity but no TIN yet — registerable
+    return 'INVISIBLE';
+  }
+
+  /**
+   * The comparative report. Aggregates observed inflow per taxpayer from data
+   * records, classifies each, and returns segment summaries plus a ranked list.
+   */
+  async report(opts: { status?: NetStatus; type?: string; page?: number; limit?: number; year?: number } = {}) {
+    const page = Math.max(1, opts.page ?? 1);
+    const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+
+    // Observed inflow per taxpayer (all records, or a given year).
+    const inflowRows = await this.prisma.dataRecord.groupBy({
+      by: ['taxpayerId'],
+      where: { taxpayerId: { not: null }, ...(opts.year ? { periodYear: opts.year } : {}) },
+      _sum: { totalInflow: true },
+      _count: { _all: true },
+    });
+    const inflowByTp = new Map<string, { inflow: number; records: number }>();
+    for (const r of inflowRows) {
+      if (r.taxpayerId) inflowByTp.set(r.taxpayerId, {
+        inflow: Number(r._sum.totalInflow ?? 0), records: r._count._all,
+      });
+    }
+
+    // Which provider(s) each taxpayer's data was pulled from.
+    const provLinks = await this.prisma.dataRecord.findMany({
+      where: { taxpayerId: { not: null }, ...(opts.year ? { periodYear: opts.year } : {}) },
+      select: { taxpayerId: true, provider: { select: { name: true } } },
+      distinct: ['taxpayerId', 'providerId'],
+    });
+    const providersByTp = new Map<string, Set<string>>();
+    for (const l of provLinks) {
+      if (!l.taxpayerId) continue;
+      const set = providersByTp.get(l.taxpayerId) ?? new Set<string>();
+      if (l.provider?.name) set.add(l.provider.name);
+      providersByTp.set(l.taxpayerId, set);
+    }
+
+    // All taxpayers (identity fields only — no PII decryption needed to classify).
+    const taxpayers = await this.prisma.taxpayer.findMany({
+      select: {
+        id: true, type: true, status: true, firstName: true, lastName: true,
+        businessName: true, cacRcNumber: true, tinIndex: true, ninIndex: true,
+        bvnIndex: true, stateOfResidence: true, sector: true,
+      },
+    });
+
+    // Segment summary across ALL taxpayers.
+    const summary: Record<NetStatus, { count: number; observedInflow: number }> = {
+      CAPTURED: { count: 0, observedInflow: 0 },
+      UNVERIFIED: { count: 0, observedInflow: 0 },
+      INVISIBLE: { count: 0, observedInflow: 0 },
+    };
+    const enriched = taxpayers.map((tp) => {
+      const net = this.classify(tp);
+      const obs = inflowByTp.get(tp.id) ?? { inflow: 0, records: 0 };
+      summary[net].count += 1;
+      summary[net].observedInflow += obs.inflow;
+      const provs = [...(providersByTp.get(tp.id) ?? [])];
+      return {
+        id: tp.id, type: tp.type, status: tp.status,
+        name: tp.type === 'CORPORATE' ? (tp.businessName ?? '—') : [tp.firstName, tp.lastName].filter(Boolean).join(' ') || '—',
+        rcNumber: tp.cacRcNumber,
+        hasTin: !!tp.tinIndex, hasNin: !!tp.ninIndex, hasBvn: !!tp.bvnIndex,
+        stateOfResidence: tp.stateOfResidence, sector: tp.sector,
+        netStatus: net, observedInflow: obs.inflow, recordCount: obs.records,
+        providers: provs,                              // all source providers
+        sourceProvider: provs[0] ?? null,              // primary (first) source
+        providerCount: provs.length,
+      };
+    });
+
+    // Filter + rank by observed inflow (biggest first — the enforcement priority).
+    let list = enriched;
+    if (opts.status) list = list.filter((x) => x.netStatus === opts.status);
+    if (opts.type) list = list.filter((x) => x.type === opts.type);
+    list.sort((a, b) => b.observedInflow - a.observedInflow);
+
+    const total = list.length;
+    const rows = list.slice((page - 1) * limit, (page - 1) * limit + limit);
+
+    return {
+      summary: {
+        captured: summary.CAPTURED,
+        unverified: summary.UNVERIFIED,
+        invisible: summary.INVISIBLE,
+        totalTaxpayers: taxpayers.length,
+        // coverage = share of taxpayers legitimately in the net
+        coveragePct: taxpayers.length ? Math.round((summary.CAPTURED.count / taxpayers.length) * 100) : 0,
+      },
+      rows, total, page, limit,
+    };
+  }
+
+  /**
+   * Generate a deterministic-looking TIN for a taxpayer. Nigerian TINs are
+   * commonly a numeric root with a branch suffix. We derive a stable root from a
+   * sequence and format as NNNNNNNNNN-0001. NOT an official FIRS-issued number —
+   * flagged as provisional until confirmed against the FIRS registry.
+   */
+  private async generateTin(): Promise<string> {
+    // Use a monotonic counter based on how many provisional TINs already exist.
+    const existing = await this.prisma.taxpayer.count({ where: { tinIndex: { not: null } } });
+    const root = String(200000000 + existing + 1).padStart(9, '0'); // 9-digit root
+    return `${root}-0001`;
+  }
+
+  /** Register ONE taxpayer into the net: assign a TIN, mark CAPTURED. */
+  async register(taxpayerId: string, staffId: string, opts: { tin?: string } = {}) {
+    const tp = await this.prisma.taxpayer.findUnique({ where: { id: taxpayerId } });
+    if (!tp) throw new NotFoundException('Taxpayer not found');
+    if (tp.tinIndex) throw new BadRequestException('Taxpayer already has a TIN — already in the net.');
+
+    const tin = (opts.tin && opts.tin.trim()) || (await this.generateTin());
+    // Uniqueness guard on the blind index.
+    const tinIndex = this.crypto.blindIndex(tin);
+    const clash = await this.prisma.taxpayer.findFirst({ where: { tinIndex } });
+    if (clash) throw new BadRequestException('That TIN is already assigned to another taxpayer.');
+
+    const updated = await this.prisma.taxpayer.update({
+      where: { id: taxpayerId },
+      data: { tinEnc: this.crypto.encrypt(tin), tinIndex, status: 'ACTIVE' },
+    });
+
+    await this.audit.log({
+      actorType: 'STAFF', actorId: staffId, staffId,
+      action: 'REGISTER_TAXPAYER_TAXNET',
+      entity: 'Taxpayer', entityId: taxpayerId,
+      afterJson: { tin, mode: opts.tin ? 'manual-tin' : 'auto-tin', provisional: !opts.tin },
+    });
+
+    return { id: updated.id, tin, netStatus: 'CAPTURED' as NetStatus };
+  }
+
+  /**
+   * Auto/bulk register. Assigns a provisional TIN to every currently-registerable
+   * taxpayer (INVISIBLE or UNVERIFIED individuals with no TIN). Optionally scoped
+   * to a list of ids, a minimum observed inflow, or a cap on how many to process.
+   */
+  async autoRegister(staffId: string, opts: { ids?: string[]; minInflow?: number; limit?: number } = {}) {
+    // Candidates: individuals without a TIN (corporates are captured via RC).
+    let candidates = await this.prisma.taxpayer.findMany({
+      where: {
+        type: 'INDIVIDUAL',
+        tinIndex: null,
+        ...(opts.ids?.length ? { id: { in: opts.ids } } : {}),
+      },
+      select: { id: true },
+    });
+
+    // Optional min-inflow gate — only register those actually receiving money above a floor.
+    if (opts.minInflow && opts.minInflow > 0) {
+      const inflow = await this.prisma.dataRecord.groupBy({
+        by: ['taxpayerId'],
+        where: { taxpayerId: { in: candidates.map((c) => c.id) } },
+        _sum: { totalInflow: true },
+      });
+      const ok = new Set(inflow.filter((r) => Number(r._sum.totalInflow ?? 0) >= opts.minInflow!).map((r) => r.taxpayerId!));
+      candidates = candidates.filter((c) => ok.has(c.id));
+    }
+
+    if (opts.limit && opts.limit > 0) candidates = candidates.slice(0, opts.limit);
+
+    let registered = 0;
+    const assigned: { id: string; tin: string }[] = [];
+    for (const c of candidates) {
+      try {
+        const r = await this.register(c.id, staffId, {}); // audits each individually
+        assigned.push({ id: r.id, tin: r.tin });
+        registered += 1;
+      } catch { /* skip clashes/races */ }
+    }
+
+    await this.audit.log({
+      actorType: 'STAFF', actorId: staffId, staffId,
+      action: 'AUTO_REGISTER_TAXNET',
+      entity: 'Taxpayer', entityId: 'BATCH',
+      afterJson: { registered, minInflow: opts.minInflow ?? null, scopedIds: opts.ids?.length ?? null },
+    });
+
+    return { registered, candidates: candidates.length, assigned };
+  }
+}

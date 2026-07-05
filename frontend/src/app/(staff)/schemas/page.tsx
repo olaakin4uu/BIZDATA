@@ -78,7 +78,7 @@ export default function SchemasPage() {
             </thead>
             <tbody className="divide-y divide-slate-100">
               {rows.map((s) => (
-                <tr key={s.id} className="hover:bg-slate-50">
+                <tr key={s.id ?? s.providerType} className="hover:bg-slate-50">
                   <td className="px-4 py-3 font-mono text-xs">{s.providerType}</td>
                   <td className="px-4 py-3 text-sm font-medium">{s.name}</td>
                   <td className="px-4 py-3 text-xs text-slate-600">{Array.isArray(s.columns) ? s.columns.length : 0} columns</td>

@@ -29,6 +29,10 @@ import { CrossStateModule } from './modules/cross-state/cross-state.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { SchemasModule } from './modules/schemas/schemas.module';
 import { ProviderPortalModule } from './modules/provider-portal/provider-portal.module';
+import { TaxNetModule } from './modules/tax-net/tax-net.module';
+import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { PortfoliosModule } from './modules/portfolios/portfolios.module';
+import { IdentityModule } from './modules/identity/identity.module';
 
 @Module({
   imports: [
@@ -60,6 +64,10 @@ import { ProviderPortalModule } from './modules/provider-portal/provider-portal.
     AuditModule,
     SchemasModule,
     ProviderPortalModule,
+    TaxNetModule,
+    AnalyticsModule,
+    PortfoliosModule,
+    IdentityModule,
   ],
 })
 export class AppModule {}

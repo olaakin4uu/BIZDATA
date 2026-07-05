@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { PortfoliosService } from '../portfolios/portfolios.service';
 import {
   ENGINE_VERSION,
   normalizeInflow,
@@ -14,7 +15,11 @@ import {
 export class ScanService {
   private readonly logger = new Logger(ScanService.name);
 
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private portfolios: PortfoliosService,
+  ) {}
 
   async create(dto: { year: number; threshold?: number; providerTypes?: string[] }, staffId: string) {
     if (!dto.year) throw new Error('year required');
@@ -114,9 +119,12 @@ export class ScanService {
           declaredAmount > 0 ? discrepancy / declaredAmount : observedIncome > 0 ? 1 : 0;
         const shouldFlag = discrepancy > 0 && discrepancyPct > threshold;
 
-        // 2. Stamp per-record flag fields (drives the records / flagged views)
+        // 2. Stamp per-record flag fields (drives the records / flagged views).
+        //    Spread whereRecord FIRST so the specific taxpayerId below wins — otherwise
+        //    whereRecord's `taxpayerId: { not: null }` clobbers it and the update hits
+        //    every taxpayer's records, stamping one aggregate onto all of them.
         await this.prisma.dataRecord.updateMany({
-          where: { taxpayerId, ...whereRecord },
+          where: { ...whereRecord, taxpayerId },
           data: {
             flaggedAsUnderdeclared: shouldFlag,
             declaredIncome: new Prisma.Decimal(declaredAmount),
@@ -168,12 +176,46 @@ export class ScanService {
           engineVersion: ENGINE_VERSION,
           riskLevel: confidenceToRisk(confidence) as any,
         };
-        await this.prisma.underdeclarationCase.upsert({
+        const existingCase = await this.prisma.underdeclarationCase.findUnique({
+          where: { taxpayerId_year: { taxpayerId, year } },
+          select: { id: true, assignedToId: true },
+        });
+
+        // Auto-route to the owning analyst (provider > type > sector). Only assign
+        // if the case is new or currently unassigned — never override a manual one.
+        let assignedToId = existingCase?.assignedToId ?? null;
+        let newlyAssignedTo: string | null = null;
+        if (!assignedToId) {
+          const owner = await this.portfolios.resolveOwner(taxpayerId);
+          if (owner) { assignedToId = owner; newlyAssignedTo = owner; }
+        }
+
+        const savedCase = await this.prisma.underdeclarationCase.upsert({
           where: { taxpayerId_year: { taxpayerId, year } },
           // Keep the existing status if an officer has already moved it past OPEN
-          update: caseData,
-          create: { taxpayerId, year, status: 'OPEN', ...caseData },
+          update: { ...caseData, ...(assignedToId ? { assignedToId } : {}) },
+          create: { taxpayerId, year, status: 'OPEN', assignedToId, ...caseData },
         });
+
+        // Notify the analyst a case landed in their portfolio.
+        if (newlyAssignedTo) {
+          const tp = await this.prisma.taxpayer.findUnique({
+            where: { id: taxpayerId },
+            select: { businessName: true, firstName: true, lastName: true },
+          });
+          const name = tp?.businessName || [tp?.firstName, tp?.lastName].filter(Boolean).join(' ') || 'A taxpayer';
+          await this.prisma.notification.create({
+            data: {
+              type: 'CASE_ASSIGNED',
+              severity: confidence >= 0.7 ? 'CRITICAL' : 'WARNING',
+              title: `New case assigned: ${name}`,
+              message: `${name} was flagged (est. tax ₦${Math.round(estimatedTaxDue).toLocaleString()}) and routed to your portfolio.`,
+              entity: 'UnderdeclarationCase',
+              entityId: savedCase.id,
+              targetUserId: newlyAssignedTo,
+            },
+          }).catch(() => { /* non-fatal */ });
+        }
 
         // 5. Update taxpayer risk from the case confidence
         const newScore = Math.max(0, Math.round(100 - confidence * 80));

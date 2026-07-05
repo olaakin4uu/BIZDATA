@@ -23,4 +23,9 @@ export class AgentsController {
   signals(@Query() q: any) {
     return this.service.signals(q);
   }
+
+  @Get('signals/summary')
+  signalSummary(@Query('year') year?: string) {
+    return this.service.signalSummary(year ? parseInt(year, 10) : undefined);
+  }
 }

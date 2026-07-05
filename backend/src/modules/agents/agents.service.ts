@@ -6,6 +6,7 @@ import { BenchmarkingService } from './benchmarking.service';
 import { AGENTS } from './registry';
 import { TaxpayerProfile, AgentContext, severityFor, clamp01 } from './agent.types';
 import { aggregateAgentScore, compositeConfidence, confidenceToRisk } from '../scan/detection-engine';
+import { inferSector } from './implementations/sector-classification.agent';
 
 @Injectable()
 export class AgentsService {
@@ -87,6 +88,31 @@ export class AgentsService {
     const profiles = await this.buildProfiles(year);
     const ctx: AgentContext = { benchmarks: this.benchmarking.build(profiles) };
 
+    // Persist the inferred sector back to each taxpayer so sector-by-sector
+    // analytics has data to work with. Runs for ALL profiles (not just those the
+    // sector agent flags), guaranteeing full coverage. A provider-supplied sector
+    // is authoritative, so we only fill in where the taxpayer has none yet.
+    let sectorsWritten = 0;
+    const needSector = await this.prisma.taxpayer.findMany({
+      where: { sector: null, id: { in: profiles.map((p) => p.taxpayerId) } },
+      select: { id: true },
+    });
+    const needSet = new Set(needSector.map((t) => t.id));
+    for (const profile of profiles) {
+      if (!needSet.has(profile.taxpayerId)) continue; // keep provider-supplied sector
+      try {
+        const { sector } = inferSector(profile);
+        if (sector) {
+          await this.prisma.taxpayer.update({
+            where: { id: profile.taxpayerId },
+            data: { sector },
+          });
+          sectorsWritten++;
+        }
+      } catch { /* skip taxpayers that fail inference */ }
+    }
+    this.logger.log(`Sectors persisted (inferred, only where empty): ${sectorsWritten}`);
+
     let written = 0;
     const perAgent: Record<string, number> = {};
     const signalsByTaxpayer = new Map<string, { score: number }[]>();
@@ -153,12 +179,57 @@ export class AgentsService {
     return { year, profiles: profiles.length, signals: written, perAgent, agents: AGENTS.map((a) => ({ key: a.key, name: a.name })) };
   }
 
-  async signals(query: { year?: string; taxpayerId?: string; agentKey?: string }) {
+  async signals(query: { year?: string; taxpayerId?: string; agentKey?: string; severity?: string; page?: string; limit?: string }) {
     const where: Prisma.RiskSignalWhereInput = {
       ...(query.year ? { year: parseInt(query.year, 10) } : {}),
       ...(query.taxpayerId ? { taxpayerId: query.taxpayerId } : {}),
       ...(query.agentKey ? { agentKey: query.agentKey } : {}),
+      ...(query.severity ? { severity: query.severity } : {}),
     };
-    return this.prisma.riskSignal.findMany({ where, orderBy: [{ score: 'desc' }], take: 200 });
+    // Back-compat: callers that don't request pagination (dashboard, case/360
+    // views) get the plain array. Only the Agent Signals page passes page/limit
+    // and receives the rich { signals, total, page, limit } shape.
+    if (!query.page && !query.limit) {
+      return this.prisma.riskSignal.findMany({ where, orderBy: [{ score: 'desc' }], take: 200 });
+    }
+
+    const page = Math.max(1, parseInt(query.page ?? '1', 10));
+    const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? '50', 10)));
+    const [rows, total] = await this.prisma.$transaction([
+      this.prisma.riskSignal.findMany({
+        where,
+        orderBy: [{ score: 'desc' }],
+        skip: (page - 1) * limit,
+        take: limit,
+        include: {
+          taxpayer: { select: { id: true, businessName: true, firstName: true, lastName: true, type: true, sector: true } },
+        },
+      }),
+      this.prisma.riskSignal.count({ where }),
+    ]);
+    const signals = rows.map((r) => ({
+      id: r.id, taxpayerId: r.taxpayerId, year: r.year, agentKey: r.agentKey,
+      score: r.score, severity: r.severity, summary: r.summary, createdAt: r.createdAt,
+      taxpayerName: r.taxpayer.type === 'CORPORATE'
+        ? (r.taxpayer.businessName ?? '—')
+        : [r.taxpayer.firstName, r.taxpayer.lastName].filter(Boolean).join(' ') || '—',
+      taxpayerType: r.taxpayer.type,
+      sector: r.taxpayer.sector,
+    }));
+    return { signals, total, page, limit };
+  }
+
+  /** Signal counts by agent + severity, for the summary strip. */
+  async signalSummary(year?: number) {
+    const where = year ? { year } : {};
+    const [byAgent, bySeverity] = await Promise.all([
+      this.prisma.riskSignal.groupBy({ by: ['agentKey'], where, _count: { _all: true } }),
+      this.prisma.riskSignal.groupBy({ by: ['severity'], where, _count: { _all: true } }),
+    ]);
+    return {
+      total: byAgent.reduce((s, a) => s + a._count._all, 0),
+      byAgent: byAgent.map((a) => ({ agentKey: a.agentKey, count: a._count._all })),
+      bySeverity: bySeverity.map((s) => ({ severity: s.severity, count: s._count._all })),
+    };
   }
 }

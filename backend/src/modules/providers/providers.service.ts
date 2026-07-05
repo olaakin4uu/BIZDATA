@@ -2,10 +2,15 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { CryptoService } from '../../common/services/crypto.service';
 
 @Injectable()
 export class ProvidersService {
-  constructor(private prisma: PrismaService, private audit: AuditService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+    private crypto: CryptoService,
+  ) {}
 
   async create(dto: any, actorId?: string) {
     if (!dto.providerCode || !dto.name || !dto.providerType) {
@@ -141,5 +146,154 @@ export class ProvidersService {
     });
 
     return provider;
+  }
+
+  /**
+   * Upload envelopes (submissions) for a provider — metadata only, no PII.
+   * Always visible to authorised staff; the sensitive rows sit behind step-up.
+   */
+  async listUploads(providerId: string) {
+    const provider = await this.prisma.dataProvider.findUnique({
+      where: { id: providerId },
+      select: { id: true, name: true, providerType: true, providerCode: true },
+    });
+    if (!provider) throw new NotFoundException('Provider not found');
+
+    const submissions = await this.prisma.dataSubmission.findMany({
+      where: { providerId },
+      orderBy: [{ periodYear: 'desc' }, { receivedAt: 'desc' }],
+      select: {
+        id: true, periodLabel: true, periodYear: true, periodQuarter: true,
+        fileName: true, fileSizeBytes: true, recordCount: true,
+        acceptedCount: true, rejectedCount: true, status: true,
+        receiptHash: true, receivedAt: true, processedAt: true,
+      },
+    });
+    return { provider, submissions };
+  }
+
+  /**
+   * The actual uploaded records for one submission — this is the sensitive PII
+   * payload. Requires a valid step-up authorisation (verified in the controller),
+   * whose staffId is passed in so the reveal is audited to a real person.
+   */
+  async getUploadRecords(
+    submissionId: string,
+    staffId: string,
+    opts: { page?: number; limit?: number } = {},
+  ) {
+    const submission = await this.prisma.dataSubmission.findUnique({
+      where: { id: submissionId },
+      include: { provider: { select: { id: true, name: true, providerType: true } } },
+    });
+    if (!submission) throw new NotFoundException('Submission not found');
+
+    const page = Math.max(1, opts.page ?? 1);
+    const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+
+    const [records, total] = await this.prisma.$transaction([
+      this.prisma.dataRecord.findMany({
+        where: { submissionId },
+        orderBy: { createdAt: 'asc' },
+        skip: (page - 1) * limit,
+        take: limit,
+        select: {
+          id: true, accountName: true, accountNumber: true,
+          bvn: true, nin: true, phoneNumber: true, periodLabel: true,
+          totalInflow: true, totalOutflow: true, transactionCount: true,
+          matchMethod: true, flaggedAsUnderdeclared: true,
+          taxpayer: { select: { id: true, ninEnc: true, bvnEnc: true, tinEnc: true } },
+        },
+      }),
+      this.prisma.dataRecord.count({ where: { submissionId } }),
+    ]);
+
+    // Step-up already authorised the reveal — decrypt the linked taxpayer identifiers.
+    const rows = records.map((r) => ({
+      id: r.id,
+      accountName: r.accountName,
+      accountNumber: r.accountNumber,
+      bvn: r.bvn ?? this.crypto.decrypt(r.taxpayer?.bvnEnc),
+      nin: r.nin ?? this.crypto.decrypt(r.taxpayer?.ninEnc),
+      tin: this.crypto.decrypt(r.taxpayer?.tinEnc),
+      phoneNumber: r.phoneNumber,
+      periodLabel: r.periodLabel,
+      totalInflow: r.totalInflow,
+      totalOutflow: r.totalOutflow,
+      transactionCount: r.transactionCount,
+      matchMethod: r.matchMethod,
+      flagged: r.flaggedAsUnderdeclared,
+      taxpayerId: r.taxpayer?.id ?? null,
+    }));
+
+    await this.audit.log({
+      actorType: 'STAFF',
+      actorId: staffId,
+      staffId,
+      action: 'VIEW_PROVIDER_UPLOAD_RECORDS',
+      entity: 'DataSubmission',
+      entityId: submissionId,
+      afterJson: { providerId: submission.providerId, page, returned: rows.length },
+    });
+
+    return {
+      submission: {
+        id: submission.id, periodLabel: submission.periodLabel,
+        fileName: submission.fileName, provider: submission.provider,
+        recordCount: submission.recordCount,
+      },
+      records: rows,
+      total, page, limit,
+    };
+  }
+
+  /** CSV export of ALL records in a submission (step-up authorised; audited). */
+  async exportUploadCsv(submissionId: string, staffId: string): Promise<{ filename: string; csv: string }> {
+    const submission = await this.prisma.dataSubmission.findUnique({
+      where: { id: submissionId },
+      include: { provider: { select: { name: true } } },
+    });
+    if (!submission) throw new NotFoundException('Submission not found');
+
+    const records = await this.prisma.dataRecord.findMany({
+      where: { submissionId },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        accountName: true, accountNumber: true, bvn: true, nin: true, phoneNumber: true,
+        periodLabel: true, totalInflow: true, totalOutflow: true, transactionCount: true,
+        matchMethod: true, flaggedAsUnderdeclared: true,
+        taxpayer: { select: { ninEnc: true, bvnEnc: true, tinEnc: true } },
+      },
+    });
+
+    const esc = (v: any) => {
+      const s = v == null ? '' : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ['Account Name', 'Account Number', 'BVN', 'NIN', 'TIN', 'Phone', 'Period', 'Inflow', 'Outflow', 'Txn Count', 'Match', 'Flagged'];
+    const lines = [header.join(',')];
+    for (const r of records) {
+      lines.push([
+        r.accountName, r.accountNumber,
+        r.bvn ?? this.crypto.decrypt(r.taxpayer?.bvnEnc),
+        r.nin ?? this.crypto.decrypt(r.taxpayer?.ninEnc),
+        this.crypto.decrypt(r.taxpayer?.tinEnc),
+        r.phoneNumber, r.periodLabel, r.totalInflow, r.totalOutflow,
+        r.transactionCount, r.matchMethod, r.flaggedAsUnderdeclared ? 'YES' : '',
+      ].map(esc).join(','));
+    }
+
+    await this.audit.log({
+      actorType: 'STAFF',
+      actorId: staffId,
+      staffId,
+      action: 'EXPORT_PROVIDER_UPLOAD_CSV',
+      entity: 'DataSubmission',
+      entityId: submissionId,
+      afterJson: { providerId: submission.providerId, rows: records.length },
+    });
+
+    const safeName = (submission.provider?.name ?? 'provider').replace(/[^a-z0-9]+/gi, '_');
+    return { filename: `${safeName}_${submission.periodLabel}.csv`, csv: lines.join('\n') };
   }
 }

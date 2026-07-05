@@ -1,6 +1,10 @@
-import { Body, Controller, Get, Patch, Post, Req, UseGuards } from '@nestjs/common';
+import {
+  Body, Controller, Get, Patch, Post, Req, UseGuards,
+  UseInterceptors, UploadedFile,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { ProviderAuthGuard } from '../../common/guards/provider-auth.guard';
@@ -16,6 +20,13 @@ class LoginDto {
 class ChangePasswordDto {
   @IsString() @MinLength(1) currentPassword: string;
   @IsString() @MinLength(8) newPassword: string;
+}
+
+class StepUpDto {
+  @IsString() @MinLength(1) password: string;
+  @IsOptional() @IsString() scope?: string;
+  @IsOptional() @IsString() providerId?: string;
+  @IsOptional() @IsString() totp?: string;
 }
 
 class MfaCodeDto {
@@ -81,10 +92,46 @@ export class AuthController {
     return this.service.changeStaffPassword(u.id, dto.currentPassword, dto.newPassword);
   }
 
+  @Post('staff/step-up')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Step-up re-auth: unlock a sensitive scope with a short-lived token' })
+  @UseGuards(StaffAuthGuard)
+  stepUp(@CurrentStaff() u: any, @Body() dto: StepUpDto, @Req() req: any) {
+    return this.service.stepUp(
+      u.id,
+      dto.password,
+      dto.scope || 'PROVIDER_UPLOADS',
+      dto.providerId,
+      dto.totp,
+      req.ip,
+      req.headers?.['user-agent'],
+    );
+  }
+
   @Patch('provider/change-password')
   @ApiBearerAuth()
   @UseGuards(ProviderAuthGuard)
   changeProviderPassword(@CurrentProviderUser() u: any, @Body() dto: ChangePasswordDto) {
     return this.service.changeProviderPassword(u.id, dto.currentPassword, dto.newPassword);
+  }
+
+  @Post('staff/avatar')
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload staff profile photo' })
+  @UseGuards(StaffAuthGuard)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadStaffAvatar(@CurrentStaff() u: any, @UploadedFile() file: any) {
+    return this.service.updateStaffAvatar(u.id, file);
+  }
+
+  @Post('provider/avatar')
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload provider user profile photo' })
+  @UseGuards(ProviderAuthGuard)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 2 * 1024 * 1024 } }))
+  uploadProviderAvatar(@CurrentProviderUser() u: any, @UploadedFile() file: any) {
+    return this.service.updateProviderAvatar(u.id, file);
   }
 }

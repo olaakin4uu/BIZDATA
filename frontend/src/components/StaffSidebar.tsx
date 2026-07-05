@@ -1,7 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { providersApi } from '@/lib/api/providers';
 
@@ -13,9 +13,11 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: '🏠' },
-  { href: '/providers', label: 'Providers', icon: '🏦' },
-  { href: '/taxpayers', label: 'Taxpayers', icon: '👥' },
+  { href: '/providers', label: 'Data Providers', icon: '🏦' },
+  { href: '/taxpayers', label: 'Tax Payer Data', icon: '👥' },
   { href: '/taxpayer-360', label: 'Taxpayer 360', icon: '🧭' },
+  { href: '/tax-net', label: 'Tax Net', icon: '🎯' },
+  { href: '/analytics', label: 'Analytics', icon: '📊' },
   { href: '/declared-income', label: 'Declared Income', icon: '📑' },
   { href: '/submissions', label: 'Submissions', icon: '📤' },
   { href: '/compliance', label: 'Compliance', icon: '📅' },
@@ -24,6 +26,7 @@ const NAV: NavItem[] = [
   { href: '/cases', label: 'Cases', icon: '⚖️' },
   { href: '/flagged', label: 'Flagged Review', icon: '🚩' },
   { href: '/scan', label: 'Scans', icon: '🔍' },
+  { href: '/agent-signals', label: 'Agent Signals', icon: '🤖' },
   { href: '/schemas', label: 'Schemas', icon: '🧬' },
   { href: '/audit', label: 'Audit Logs', icon: '📜' },
   { href: '/notifications', label: 'Alerts', icon: '🔔' },
@@ -31,14 +34,13 @@ const NAV: NavItem[] = [
   { href: '/governance', label: 'Governance', icon: '🏛️' },
   { href: '/access', label: 'Sensitive Access', icon: '🔓' },
   { href: '/dpo', label: 'Data Protection', icon: '🛡️' },
+  { href: '/portfolios', label: 'Portfolios', icon: '🗂️' },
   { href: '/users', label: 'Users', icon: '🛡️' },
   { href: '/settings', label: 'Settings', icon: '⚙️' },
 ];
 
 export default function StaffSidebar() {
   const pathname = usePathname() ?? '';
-  const router = useRouter();
-  const { user, clearAuth } = useStaffAuthStore();
   const [providerCount, setProviderCount] = useState<number | null>(null);
 
   useEffect(() => {
@@ -47,11 +49,6 @@ export default function StaffSidebar() {
       .then((s) => setProviderCount(s.total))
       .catch(() => setProviderCount(null));
   }, []);
-
-  const handleLogout = () => {
-    clearAuth();
-    router.replace('/login');
-  };
 
   const isActive = (href: string) => {
     if (href === '/dashboard') return pathname === '/dashboard';
@@ -95,21 +92,6 @@ export default function StaffSidebar() {
           );
         })}
       </nav>
-
-      <div className="px-4 py-4 border-t border-slate-800">
-        <p className="text-xs font-medium text-slate-200 truncate">
-          {user?.firstName} {user?.lastName}
-        </p>
-        <p className="text-xs text-slate-500 truncate">
-          {user?.role?.replace('_', ' ')}
-        </p>
-        <button
-          onClick={handleLogout}
-          className="mt-3 text-xs text-slate-400 hover:text-red-400 transition-colors"
-        >
-          Sign out →
-        </button>
-      </div>
     </aside>
   );
 }

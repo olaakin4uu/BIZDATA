@@ -57,6 +57,7 @@ export class AuthService {
         firstName: user.firstName,
         lastName: user.lastName,
         role: user.role,
+        avatarUrl: user.avatarUrl,
       },
     };
   }
@@ -102,6 +103,7 @@ export class AuthService {
         role: user.role,
         providerId: user.providerId,
         providerName: user.provider?.name,
+        avatarUrl: user.avatarUrl,
       },
     };
   }
@@ -123,6 +125,37 @@ export class AuthService {
     return rest;
   }
 
+  /** Validate an uploaded image and return a base64 data URL (<= ~2MB). */
+  private toAvatarDataUrl(file: { mimetype?: string; size?: number; buffer?: Buffer }): string {
+    if (!file || !file.buffer) throw new BadRequestException('No file uploaded');
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+    if (!file.mimetype || !allowed.includes(file.mimetype)) {
+      throw new BadRequestException('Photo must be a JPEG, PNG, WebP or GIF image');
+    }
+    if ((file.size ?? file.buffer.length) > 2 * 1024 * 1024) {
+      throw new BadRequestException('Photo must be 2MB or smaller');
+    }
+    return `data:${file.mimetype};base64,${file.buffer.toString('base64')}`;
+  }
+
+  async updateStaffAvatar(id: string, file: any) {
+    const avatarUrl = this.toAvatarDataUrl(file);
+    const user = await this.prisma.user.update({ where: { id }, data: { avatarUrl } });
+    const { passwordHash: _ph, mfaSecret: _ms, ...rest } = user;
+    return rest;
+  }
+
+  async updateProviderAvatar(id: string, file: any) {
+    const avatarUrl = this.toAvatarDataUrl(file);
+    const user = await this.prisma.dataProviderUser.update({
+      where: { id },
+      data: { avatarUrl },
+      include: { provider: true },
+    });
+    const { passwordHash: _ph, ...rest } = user;
+    return rest;
+  }
+
   async changeStaffPassword(id: string, currentPassword: string, newPassword: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new UnauthorizedException();
@@ -132,6 +165,70 @@ export class AuthService {
     const hash = await bcrypt.hash(newPassword, 10);
     await this.prisma.user.update({ where: { id }, data: { passwordHash: hash } });
     return { success: true };
+  }
+
+  /**
+   * Step-up re-authentication. To view a provider's raw uploaded records (PII),
+   * the officer must re-confirm their own password (+ TOTP if MFA is on). On
+   * success we issue a short-lived (10 min) scoped token bound to this staff
+   * member, scope and — optionally — a specific provider. The event is audited.
+   */
+  async stepUp(
+    id: string,
+    password: string,
+    scope: string,
+    providerId: string | undefined,
+    totp: string | undefined,
+    ip?: string,
+    userAgent?: string,
+  ) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user || !user.isActive) throw new UnauthorizedException();
+    const ok = await bcrypt.compare(password, user.passwordHash);
+    if (!ok) throw new UnauthorizedException('Password is incorrect');
+    if (user.mfaEnabled) {
+      if (!totp) throw new UnauthorizedException('MFA code required');
+      if (!user.mfaSecret || !verifyTotp(totp, user.mfaSecret)) {
+        throw new UnauthorizedException('Invalid MFA code');
+      }
+    }
+
+    const TTL_SECONDS = 600; // 10 minutes
+    const stepUpToken = await this.jwt.signAsync(
+      { sub: user.id, kind: 'STEP_UP', scope, providerId: providerId ?? null },
+      { expiresIn: TTL_SECONDS },
+    );
+
+    await this.audit.log({
+      actorType: 'STAFF',
+      actorId: user.id,
+      staffId: user.id,
+      action: 'STEP_UP_GRANT',
+      entity: providerId ? 'DataProvider' : 'AccessScope',
+      entityId: providerId ?? scope,
+      ip,
+      userAgent,
+      afterJson: { scope, providerId: providerId ?? null, ttlSeconds: TTL_SECONDS },
+    });
+
+    return { stepUpToken, scope, providerId: providerId ?? null, expiresInSeconds: TTL_SECONDS };
+  }
+
+  /** Verify a step-up token for a given scope/provider. Throws if invalid/expired/mismatched. */
+  async verifyStepUp(token: string, scope: string, providerId?: string): Promise<{ staffId: string }> {
+    let payload: any;
+    try {
+      payload = await this.jwt.verifyAsync(token);
+    } catch {
+      throw new UnauthorizedException('Step-up authorisation expired — please re-authenticate.');
+    }
+    if (payload.kind !== 'STEP_UP' || payload.scope !== scope) {
+      throw new UnauthorizedException('Invalid step-up authorisation for this action.');
+    }
+    if (payload.providerId && providerId && payload.providerId !== providerId) {
+      throw new UnauthorizedException('Step-up authorisation is for a different provider.');
+    }
+    return { staffId: payload.sub };
   }
 
   async changeProviderPassword(id: string, currentPassword: string, newPassword: string) {

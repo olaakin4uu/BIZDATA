@@ -11,8 +11,18 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
-  async list(_role?: string) {
-    return this.prisma.notification.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
+  /**
+   * A user sees notifications broadcast to everyone (no targetUserId) plus any
+   * addressed specifically to them.
+   */
+  async list(staffId?: string) {
+    return this.prisma.notification.findMany({
+      where: staffId
+        ? { OR: [{ targetUserId: null }, { targetUserId: staffId }] }
+        : { targetUserId: null },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
   }
 
   async markRead(id: string) {
