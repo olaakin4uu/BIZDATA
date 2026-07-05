@@ -94,12 +94,12 @@ async function main() {
     }
   }
 
-  // 3. Providers
+  // 3. Providers — NTAA §29 financial institutions only (see common/section29.ts).
   const providers = [
     { code: 'CBN-057', name: 'Zenith Bank', type: 'BANK' },
     { code: 'CBN-058', name: 'GTBank', type: 'BANK' },
     { code: 'NCC-OPAY', name: 'Opay', type: 'FINTECH' },
-    { code: 'NCC-MTN', name: 'MTN Nigeria', type: 'TELCO' },
+    { code: 'NAICOM-AIICO', name: 'AIICO Insurance', type: 'INSURANCE' },
     { code: 'CBN-PSTK', name: 'Paystack', type: 'PAYMENT_PROCESSOR' },
   ];
 
@@ -170,7 +170,7 @@ async function main() {
     { cacRcNumber: 'RC-1004', tin: '2000000004', type: 'CORPORATE', businessName: 'Northern Foods Co', stateOfResidence: 'Kaduna',
       declared: 15_000_000, flows: [ { code: 'CBN-PSTK', inflow: 28_000_000, outflow: 9_000_000 } ] },
     { cacRcNumber: 'RC-1005', tin: '2000000005', type: 'CORPORATE', businessName: 'Capital Tech Holdings', stateOfResidence: 'Abuja',
-      declared: 60_000_000, flows: [ { code: 'NCC-MTN', inflow: 62_000_000, outflow: 20_000_000 } ] }, // clean
+      declared: 60_000_000, flows: [ { code: 'NAICOM-AIICO', inflow: 62_000_000, outflow: 20_000_000 } ] }, // clean
   ];
 
   // Provider lookup by code

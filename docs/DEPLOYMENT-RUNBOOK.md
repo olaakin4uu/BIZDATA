@@ -7,9 +7,29 @@ How the **procurement/infrastructure** items integrate with the software hooks a
 ## 1. Services & ports
 | Service | Tech | Port | Notes |
 |---|---|---|---|
-| Backend API | NestJS 11 | 4200 | `npm run start:dev` (dev) / `node dist/main` (prod) |
+| Backend API | NestJS 11 | 4200 | `npm run start:dev` (dev) / `npm run build && node dist/main` (prod) |
 | Frontend | Next.js 16 | 4201 | `npm run dev -- -p 4201` / `npm run build && npm start` |
 | Database | PostgreSQL 16 | 5432 | `bizdata_db` |
+
+## 1b. Clean deploy — quickstart (verified end-to-end)
+From a fresh checkout against an empty database:
+```
+# 1. Backend
+cd backend
+npm ci
+cp .env.example .env         # then fill DATABASE_URL, JWT_SECRET, PII_ENC_KEY, PII_INDEX_KEY (see §2/§3)
+npx prisma migrate deploy    # applies prisma/migrations → creates all tables
+npx prisma generate          # generate the client (also runs on npm ci via postinstall if configured)
+npm run db:seed              # tenant + super admin (+ demo staff/providers/taxpayers) — idempotent
+npm run build                # emits dist/ (prebuild clears any stale tsbuildinfo)
+node dist/main               # boots on $PORT (prod mode requires PII_ENC_KEY/PII_INDEX_KEY)
+
+# 2. Frontend
+cd ../frontend
+npm ci
+npm run build && npm start   # or: npm run dev -- -p 4201
+```
+> **Migrations, not `db push`.** Schema changes are versioned in `prisma/migrations/`. In dev, `npx prisma migrate dev --name <change>` creates a new migration; deploy applies them with `migrate deploy`. Do **not** use `prisma db push` in production — it does not record migration history.
 
 ## 2. Environment variables (full)
 ```
@@ -75,7 +95,7 @@ Host backend, DB, and HSM **within the Federal Capital Territory** (or in-countr
 1. Provision HSM/KMS → wire `loadKey()`; generate + escrow `PII_ENC_KEY`/`PII_INDEX_KEY` under dual control.
 2. Obtain TLS certs (server + bank client CA); set `TLS_*`; verify `https://…/api/docs` and an mTLS bank handshake.
 3. Enable Postgres TDE / disk encryption.
-4. `npx prisma migrate deploy` + seed tenant/admin; **rotate the seeded admin password**.
+4. `npx prisma migrate deploy` → `npm run db:seed` (tenant + admin); **rotate the seeded admin password immediately** (`Admin@1234` is a bootstrap default). For a bank-only production tenant, prune the demo staff/providers the seed adds.
 5. Issue YubiKeys; enrol staff MFA; flip `mfaEnabled` default on.
 6. Confirm the placeholder legal constants with counsel (tax bands, 30/90-day windows, 10% penalty, CGT, BVN check-digit) and set `BVN_CHECKDIGIT_ENFORCED` when ready.
 7. Execute bank MoUs (`/governance`); issue §29 data-request letters; onboard the top-6 banks.
