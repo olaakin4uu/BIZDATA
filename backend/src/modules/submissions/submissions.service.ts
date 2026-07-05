@@ -181,6 +181,154 @@ export class SubmissionsService {
     }
   }
 
+  // ─── LARGE-FILE SPLIT UPLOAD (§6.4) ─────────────────────────────────────────
+
+  /** Start a multipart upload session for a large file split into ordered parts. */
+  async initMultipart(opts: {
+    providerId: string;
+    fileName: string;
+    periodLabel: string;
+    totalParts: number;
+    expectedChecksum?: string;
+    submittedByStaffId?: string;
+    submittedByUserId?: string;
+  }) {
+    const provider = await this.prisma.dataProvider.findUnique({ where: { id: opts.providerId } });
+    if (!provider) throw new NotFoundException('Provider not found');
+    const periodInfo = parsePeriod(opts.periodLabel);
+    if (!periodInfo) throw new BadRequestException('Invalid periodLabel — use YYYY, YYYY-Qn, or YYYY-MM');
+    if (!opts.totalParts || opts.totalParts < 1 || opts.totalParts > 10000) {
+      throw new BadRequestException('totalParts must be between 1 and 10000');
+    }
+    const upload = await this.prisma.submissionUpload.create({
+      data: {
+        providerId: opts.providerId,
+        fileName: opts.fileName,
+        periodLabel: opts.periodLabel,
+        periodYear: periodInfo.year,
+        periodQuarter: periodInfo.quarter ?? null,
+        periodMonth: periodInfo.month ?? null,
+        totalParts: opts.totalParts,
+        expectedChecksum: opts.expectedChecksum?.replace(/^sha256[-:]/i, '').toLowerCase() ?? null,
+        submittedByStaffId: opts.submittedByStaffId,
+        submittedByUserId: opts.submittedByUserId,
+        status: 'OPEN',
+      },
+    });
+    await this.audit.log({
+      actorType: opts.submittedByStaffId ? 'STAFF' : 'PROVIDER_USER',
+      actorId: opts.submittedByStaffId || opts.submittedByUserId, staffId: opts.submittedByStaffId,
+      action: 'MULTIPART_INIT', entity: 'SubmissionUpload', entityId: upload.id,
+      afterJson: { fileName: opts.fileName, totalParts: opts.totalParts },
+    });
+    return { uploadId: upload.id, totalParts: upload.totalParts, receivedParts: 0 };
+  }
+
+  /** Receive one part of a multipart upload. Idempotent per (uploadId, partNumber). */
+  async uploadPart(uploadId: string, partNumber: number, buffer: Buffer, checksum?: string) {
+    const upload = await this.prisma.submissionUpload.findUnique({ where: { id: uploadId } });
+    if (!upload) throw new NotFoundException('Upload session not found');
+    if (upload.status !== 'OPEN') throw new BadRequestException(`Upload session is ${upload.status}`);
+    if (!Number.isInteger(partNumber) || partNumber < 1 || partNumber > upload.totalParts) {
+      throw new BadRequestException(`partNumber must be between 1 and ${upload.totalParts}`);
+    }
+    if (!buffer?.length) throw new BadRequestException('Empty part');
+
+    // Verify the per-part checksum if supplied.
+    if (checksum) {
+      const actual = createHash('sha256').update(buffer).digest('hex');
+      const given = checksum.replace(/^sha256[-:]/i, '').toLowerCase();
+      if (actual !== given) throw new BadRequestException(`Part ${partNumber} checksum mismatch`);
+    }
+
+    // Store as a plain Uint8Array (Prisma Bytes) — copy off any SharedArrayBuffer
+    // backing so the type is a standard ArrayBuffer-backed view.
+    const data = Uint8Array.from(buffer);
+    // Upsert so a retried part overwrites rather than duplicates.
+    await this.prisma.submissionUploadPart.upsert({
+      where: { uploadId_partNumber: { uploadId, partNumber } },
+      create: { uploadId, partNumber, sizeBytes: buffer.length, checksum: checksum ?? null, data },
+      update: { sizeBytes: buffer.length, checksum: checksum ?? null, data },
+    });
+
+    const received = await this.prisma.submissionUploadPart.count({ where: { uploadId } });
+    return { uploadId, partNumber, receivedParts: received, totalParts: upload.totalParts };
+  }
+
+  /**
+   * Complete a multipart upload: verify all parts are present, reassemble them in
+   * order, verify the whole-file checksum, then run the reassembled CSV through
+   * the normal ingestion pipeline. Parts are deleted afterwards to reclaim space.
+   */
+  async completeMultipart(uploadId: string) {
+    const upload = await this.prisma.submissionUpload.findUnique({
+      where: { id: uploadId },
+      include: { provider: true },
+    });
+    if (!upload) throw new NotFoundException('Upload session not found');
+    if (upload.status !== 'OPEN') throw new BadRequestException(`Upload session is already ${upload.status}`);
+
+    const parts = await this.prisma.submissionUploadPart.findMany({
+      where: { uploadId }, orderBy: { partNumber: 'asc' }, select: { partNumber: true, data: true, sizeBytes: true },
+    });
+    if (parts.length !== upload.totalParts) {
+      const have = new Set(parts.map((p) => p.partNumber));
+      const missing = Array.from({ length: upload.totalParts }, (_, i) => i + 1).filter((n) => !have.has(n));
+      throw new BadRequestException(`Missing part(s): ${missing.slice(0, 20).join(', ')}${missing.length > 20 ? '…' : ''}`);
+    }
+
+    // Reassemble in order.
+    const full = Buffer.concat(parts.map((p) => Buffer.from(p.data)));
+
+    // §6.4 whole-file integrity check.
+    if (upload.expectedChecksum) {
+      const actual = createHash('sha256').update(full).digest('hex');
+      if (actual !== upload.expectedChecksum) {
+        await this.prisma.submissionUpload.update({ where: { id: uploadId }, data: { status: 'ABORTED' } });
+        throw new BadRequestException(`Reassembled file checksum mismatch — expected ${upload.expectedChecksum}, computed ${actual}`);
+      }
+    }
+
+    // Feed the reassembled buffer through the standard upload path (checksum
+    // already verified above, so pass it through as the file body).
+    const submission = await this.upload({
+      providerId: upload.providerId,
+      fileName: upload.fileName,
+      fileBuffer: full,
+      periodLabel: upload.periodLabel,
+      periodYear: upload.periodYear ?? undefined,
+      periodQuarter: upload.periodQuarter ?? undefined,
+      periodMonth: upload.periodMonth ?? undefined,
+      submittedByStaffId: upload.submittedByStaffId ?? undefined,
+      submittedByUserId: upload.submittedByUserId ?? undefined,
+    });
+
+    // Mark session completed and reclaim part storage.
+    await this.prisma.submissionUpload.update({
+      where: { id: uploadId },
+      data: { status: 'COMPLETED', totalBytes: full.length, submissionId: (submission as any).id },
+    });
+    await this.prisma.submissionUploadPart.deleteMany({ where: { uploadId } });
+
+    await this.audit.log({
+      actorType: upload.submittedByStaffId ? 'STAFF' : 'PROVIDER_USER',
+      actorId: upload.submittedByStaffId || upload.submittedByUserId, staffId: upload.submittedByStaffId,
+      action: 'MULTIPART_COMPLETE', entity: 'SubmissionUpload', entityId: uploadId,
+      afterJson: { totalBytes: full.length, submissionId: (submission as any).id },
+    });
+
+    return submission;
+  }
+
+  /** Abort an in-progress multipart upload and drop its parts. */
+  async abortMultipart(uploadId: string) {
+    const upload = await this.prisma.submissionUpload.findUnique({ where: { id: uploadId } });
+    if (!upload) throw new NotFoundException('Upload session not found');
+    await this.prisma.submissionUploadPart.deleteMany({ where: { uploadId } });
+    await this.prisma.submissionUpload.update({ where: { id: uploadId }, data: { status: 'ABORTED' } });
+    return { uploadId, status: 'ABORTED' };
+  }
+
   private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string) {
     const csvText = buffer.toString('utf8');
     const { rows } = parseCsvText(csvText);
@@ -214,7 +362,16 @@ export class SubmissionsService {
 
     let accepted = 0, rejected = 0;
     const errors: { row: number; messages: string[] }[] = [];
-    const recordCreates: Prisma.DataRecordCreateManyInput[] = [];
+    // Records are flushed to the DB in bounded batches as we go, so memory stays
+    // flat regardless of file size (large-file safe). recordCreates is the
+    // pending batch, not the whole file.
+    const BATCH = 500;
+    let recordCreates: Prisma.DataRecordCreateManyInput[] = [];
+    const flush = async () => {
+      if (recordCreates.length === 0) return;
+      await this.prisma.dataRecord.createMany({ data: recordCreates });
+      recordCreates = [];
+    };
 
     // §6.4 duplicate detection: build the set of (period::account) already on
     // file for this provider, plus track within-file dupes. Account numbers are
@@ -343,15 +500,10 @@ export class SubmissionsService {
         reviewStatus: null,
       });
       accepted++;
+      if (recordCreates.length >= BATCH) await flush();
     }
 
-    if (recordCreates.length > 0) {
-      // Insert in batches of 500
-      const BATCH = 500;
-      for (let i = 0; i < recordCreates.length; i += BATCH) {
-        await this.prisma.dataRecord.createMany({ data: recordCreates.slice(i, i + BATCH) });
-      }
-    }
+    await flush();
 
     const status =
       rejected === 0 && accepted > 0 ? 'ACCEPTED' :

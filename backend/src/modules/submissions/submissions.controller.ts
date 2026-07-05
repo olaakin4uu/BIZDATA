@@ -12,7 +12,7 @@ import {
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SubmissionsService } from './submissions.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -50,6 +50,54 @@ export class SubmissionsController {
       submittedByStaffId: u.id,
       checksum: body.checksum || undefined,
     });
+  }
+
+  // ─── Large-file split upload (§6.4) ─────────────────────────────────────────
+
+  @Post('multipart/init')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'ANALYST', 'SUPERVISOR')
+  @ApiOperation({ summary: 'Start a split upload for a large file (returns uploadId)' })
+  initMultipart(@Body() body: any, @CurrentStaff() u: any) {
+    if (!body.providerId) throw new BadRequestException('providerId is required');
+    if (!body.fileName) throw new BadRequestException('fileName is required');
+    if (!body.periodLabel) throw new BadRequestException('periodLabel is required');
+    if (!body.totalParts) throw new BadRequestException('totalParts is required');
+    return this.service.initMultipart({
+      providerId: body.providerId,
+      fileName: body.fileName,
+      periodLabel: body.periodLabel,
+      totalParts: parseInt(body.totalParts, 10),
+      expectedChecksum: body.checksum || undefined,
+      submittedByStaffId: u.id,
+    });
+  }
+
+  @Post('multipart/:uploadId/part')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'ANALYST', 'SUPERVISOR')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Upload one part of a split file' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  uploadPart(
+    @Param('uploadId') uploadId: string,
+    @UploadedFile() file: any,
+    @Body() body: any,
+  ) {
+    if (!file) throw new BadRequestException('file (part) is required');
+    if (body.partNumber == null) throw new BadRequestException('partNumber is required');
+    return this.service.uploadPart(uploadId, parseInt(body.partNumber, 10), file.buffer, body.checksum || undefined);
+  }
+
+  @Post('multipart/:uploadId/complete')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'ANALYST', 'SUPERVISOR')
+  @ApiOperation({ summary: 'Reassemble + verify + ingest a completed split upload' })
+  completeMultipart(@Param('uploadId') uploadId: string) {
+    return this.service.completeMultipart(uploadId);
+  }
+
+  @Post('multipart/:uploadId/abort')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'ANALYST', 'SUPERVISOR')
+  abortMultipart(@Param('uploadId') uploadId: string) {
+    return this.service.abortMultipart(uploadId);
   }
 
   @Get(':id/report')

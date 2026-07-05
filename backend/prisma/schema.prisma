@@ -184,6 +184,7 @@ model DataProvider {
   submissions  DataSubmission[]
   records      DataRecord[]
   mou          BankMou?
+  uploads      SubmissionUpload[]
 
   @@map("data_providers")
 }
@@ -299,6 +300,53 @@ model DataSubmission {
   records          DataRecord[]
 
   @@map("data_submissions")
+}
+
+// ─── LARGE-FILE SPLIT UPLOAD (§6.4 500 MB split/batching protocol) ────────────
+// A provider splits a large export into ordered parts. Each part is uploaded
+// against a shared session; on completion the parts are reassembled (in order),
+// the full-file SHA-256 is verified, and the reassembled CSV is streamed through
+// the normal ingestion pipeline. Parts are deleted after a successful complete.
+
+model SubmissionUpload {
+  id                String   @id @default(uuid())
+  providerId        String
+  periodLabel       String
+  periodYear        Int?
+  periodQuarter     Int?
+  periodMonth       Int?
+  fileName          String
+  totalParts        Int
+  expectedChecksum  String?  // SHA-256 of the whole reassembled file (§6.4)
+  totalBytes        Int      @default(0)
+  status            String   @default("OPEN") // OPEN | COMPLETED | ABORTED
+  submissionId      String?  // the DataSubmission produced on completion
+  submittedByStaffId String?
+  submittedByUserId  String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  provider DataProvider           @relation(fields: [providerId], references: [id])
+  parts    SubmissionUploadPart[]
+
+  @@index([providerId])
+  @@map("submission_uploads")
+}
+
+model SubmissionUploadPart {
+  id         String   @id @default(uuid())
+  uploadId   String
+  partNumber Int      // 1-based
+  sizeBytes  Int
+  checksum   String?  // optional SHA-256 of this part
+  data       Bytes    // raw part payload
+  createdAt  DateTime @default(now())
+
+  upload SubmissionUpload @relation(fields: [uploadId], references: [id], onDelete: Cascade)
+
+  @@unique([uploadId, partNumber])
+  @@index([uploadId])
+  @@map("submission_upload_parts")
 }
 
 // ─── DATA RECORDS (generic — bank reports, fintech tx, telco usage, etc.) ────
