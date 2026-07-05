@@ -34,6 +34,7 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { PortfoliosModule } from './modules/portfolios/portfolios.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { StatutoryModule } from './modules/statutory/statutory.module';
+import { IntegrationModule } from './modules/integration/integration.module';
 
 @Module({
   imports: [
@@ -70,6 +71,7 @@ import { StatutoryModule } from './modules/statutory/statutory.module';
     PortfoliosModule,
     IdentityModule,
     StatutoryModule,
+    IntegrationModule,
   ],
 })
 export class AppModule {}

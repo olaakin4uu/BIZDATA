@@ -5,6 +5,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import PasswordInput from '@/components/PasswordInput';
 import { tenantApi, type Tenant } from '@/lib/api/tenant';
 import { statutoryApi, type StatutoryConfig, type StatutoryHistoryItem } from '@/lib/api/statutory';
+import { integrationApi, type ApiKeyRecord, type NewApiKey } from '@/lib/api/integration';
 import { authApi } from '@/lib/api/auth';
 import { applyBrandColor } from '@/lib/brand';
 import { extractErrorMessage } from '@/lib/utils';
@@ -140,6 +141,15 @@ export default function SettingsPage() {
               Confirm these against the gazetted NTAA text before relying on them.
             </p>
             <StatutoryPanel />
+          </section>
+
+          <section className="mb-6">
+            <h2 className="text-sm font-semibold text-slate-800 mb-1">Integration API keys</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              Keys for partner platforms (e.g. a taxpayer portal) that call the BIZDATA taxpayer-integration API.
+              A key is shown once at creation — copy it then.
+            </p>
+            <ApiKeysPanel />
           </section>
 
           <section>
@@ -321,6 +331,92 @@ function StatutoryPanel() {
             </tbody>
           </table>
         </div>
+      )}
+    </div>
+  );
+}
+
+function ApiKeysPanel() {
+  const [keys, setKeys] = useState<ApiKeyRecord[]>([]);
+  const [name, setName] = useState('');
+  const [newKey, setNewKey] = useState<NewApiKey | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const load = () => { integrationApi.listKeys().then(setKeys).catch(() => setKeys([])); };
+  useEffect(load, []);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setBusy(true); setErr(null); setNewKey(null);
+    try { const k = await integrationApi.createKey(name.trim()); setNewKey(k); setName(''); load(); }
+    catch (e) { setErr(extractErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+  const revoke = async (id: string) => {
+    setErr(null);
+    try { await integrationApi.revokeKey(id); load(); } catch (e) { setErr(extractErrorMessage(e)); }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+      {err && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
+
+      {newKey && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3">
+          <p className="text-xs font-semibold text-amber-800 mb-1">Copy this key now — it won’t be shown again.</p>
+          <div className="flex items-center gap-2">
+            <code className="flex-1 text-xs font-mono bg-white border border-amber-200 rounded px-2 py-1.5 break-all">{newKey.apiKey}</code>
+            <button onClick={() => { navigator.clipboard.writeText(newKey.apiKey); setCopied(true); setTimeout(() => setCopied(false), 1500); }}
+              className="text-xs font-medium px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white rounded-lg whitespace-nowrap">
+              {copied ? 'Copied' : 'Copy'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-end gap-2">
+        <div className="flex-1">
+          <label className="block text-xs font-medium text-slate-700 mb-1">Partner name</label>
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. FCT-IRS Taxpayer Portal"
+            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        </div>
+        <button onClick={create} disabled={busy || !name.trim()}
+          className="px-4 py-2 text-sm font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg disabled:opacity-50">
+          {busy ? 'Creating…' : '+ New key'}
+        </button>
+      </div>
+
+      {keys.length > 0 && (
+        <table className="w-full text-xs">
+          <thead>
+            <tr className="text-left text-slate-400">
+              <th className="py-1.5 font-medium">Partner</th>
+              <th className="py-1.5 font-medium">Key</th>
+              <th className="py-1.5 font-medium">Status</th>
+              <th className="py-1.5 font-medium">Last used</th>
+              <th className="py-1.5 font-medium text-right">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {keys.map((k) => (
+              <tr key={k.id} className="border-t border-slate-50">
+                <td className="py-1.5 font-medium text-slate-700">{k.name}</td>
+                <td className="py-1.5 font-mono text-slate-500">{k.keyPrefix}…</td>
+                <td className="py-1.5">
+                  <span className={`px-2 py-0.5 rounded-full ${k.isActive ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
+                    {k.isActive ? 'Active' : 'Revoked'}
+                  </span>
+                </td>
+                <td className="py-1.5 text-slate-500">{k.lastUsedAt ? new Date(k.lastUsedAt).toLocaleDateString() : 'never'}</td>
+                <td className="py-1.5 text-right">
+                  {k.isActive && <button onClick={() => revoke(k.id)} className="text-rose-600 hover:text-rose-800 font-medium">Revoke</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

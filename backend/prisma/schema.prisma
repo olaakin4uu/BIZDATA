@@ -431,12 +431,15 @@ model UnderdeclarationCase {
   assessedTotal     Decimal?   @db.Decimal(18, 2) // tax + penalty (the demand)
   assessmentBasis   Json?      // breakdown / methodology snapshot for defensibility
   demandNoticeRef   String?    // e.g. DN-2025-AB12CD
+  caseAccessToken   String?    @unique // scoped token for the taxpayer-integration API, issued at notice time
 
   noticeIssuedAt    DateTime?
   objectionDueAt    DateTime?  // §41: 30 days for the taxpayer to object
   authorityResponseDueAt DateTime? // §41(6): 90 days for the authority to respond, else deemed upheld
   resolvedAt        DateTime?
   statutoryVersion  Int?       // StatutoryConfig.version used when the assessment was raised
+  objectionGrounds  String?    @db.Text // taxpayer's written objection, filed via the integration API
+  objectionFiledAt  DateTime?
   notes             String?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
@@ -513,6 +516,29 @@ model StatutoryConfig {
 
   @@index([isActive])
   @@map("statutory_configs")
+}
+
+// ─── TAXPAYER INTEGRATION API ─────────────────────────────────────────────────
+// BIZDATA is the assessment engine; the taxpayer interacts through their own
+// existing platform, which calls this API machine-to-machine. Two credentials:
+//   1. IntegrationApiKey — authenticates the partner platform (hashed at rest).
+//   2. A per-case access token (UnderdeclarationCase.caseAccessToken) issued
+//      when a demand notice is created, scoping each request to one case so the
+//      partner can never enumerate arbitrary taxpayers.
+
+model IntegrationApiKey {
+  id         String    @id @default(uuid())
+  name       String    // partner platform label, e.g. "FCT-IRS Taxpayer Portal"
+  keyHash    String    @unique // SHA-256 of the raw key; raw shown once at creation
+  keyPrefix  String    // first 8 chars, for identification in the UI
+  scopes     String[]  @default(["TAXPAYER_NOTICES"])
+  isActive   Boolean   @default(true)
+  lastUsedAt DateTime?
+  createdById String?
+  createdAt  DateTime  @default(now())
+
+  @@index([isActive])
+  @@map("integration_api_keys")
 }
 
 // ─── CROSS-STATE DATA SHARING (Joint Revenue Board Act 2025 §15) ──────────────

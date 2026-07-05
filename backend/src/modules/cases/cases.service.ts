@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { randomBytes } from 'crypto';
 import { Prisma, CaseStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -268,6 +269,11 @@ export class CasesService {
       data.noticeIssuedAt = now;
       data.objectionDueAt = new Date(now.getTime() + cfg.objectionWindowDays * 86_400_000);
       data.statutoryVersion = cfg.version; // record the law version used for this assessment
+      // Scoped token for the taxpayer-integration API — embedded in the notice so
+      // the taxpayer's platform can act on this case only.
+      if (!current.caseAccessToken) {
+        data.caseAccessToken = `cat_${randomBytes(24).toString('hex')}`;
+      }
       // §35 Best-of-Judgement assessment: tax on the discrepancy + penalty.
       const assessedTax = Number(current.estimatedTaxDue);
       const penalty = assessedTax * cfg.latePaymentPenaltyRate;
@@ -306,9 +312,9 @@ export class CasesService {
     const updated = await this.prisma.underdeclarationCase.update({ where: { id }, data });
 
     await this.audit.log({
-      actorType: 'STAFF',
-      actorId: staffId,
-      staffId,
+      actorType: staffId ? 'STAFF' : 'SYSTEM',
+      actorId: staffId ?? undefined,
+      staffId: staffId ?? undefined,
       action: 'CASE_TRANSITION',
       entity: 'UnderdeclarationCase',
       entityId: id,
