@@ -32,7 +32,7 @@ Per-taxpayer `analyze(profile, ctx)` contract (`agents/agent.types.ts`), orchest
 | 3 Sector Classification | ✅ | keyword/seasonality inference + peer/cohort benchmark |
 | 4 Behavioural Analytics | ✅ | fingerprint; fires with multi-period data |
 | 5 Predictive Compliance | ✅ | settle-vs-default → expected-net-recovery priority |
-| 6 Document Intelligence | 🟡 | OCR/LLM extraction + reconcile helpers built; activates at objection time |
+| 6 Document Intelligence | ✅ | OCR/LLM extraction + reconcile; now assesses CGT (NTA §50) from extracted asset disposals and raises a signal |
 
 Agent signals are **fused into case risk** (`detection-engine.ts → aggregateAgentScore/compositeConfidence`).
 
@@ -41,7 +41,7 @@ Agent signals are **fused into case risk** (`detection-engine.ts → aggregateAg
 |---|---|---|
 | AES-256-GCM field-level (BVN/NIN/TIN/account) | ✅ | `crypto.service.ts` (+ HMAC blind index) |
 | Whole-`BankReport`-table encryption (TDE) | 🏗️ | DB-level; ops |
-| HSM key custody (FIPS 140-2 L3) + 90-day rotation | 🟡 | key-provider seam isolated in `crypto.service.ts → loadKey` (drop-in PKCS#11/KMS); HSM itself is procurement |
+| HSM key custody (FIPS 140-2 L3) + 90-day rotation | 🟡 | versioned KeyProvider seam (`key-provider.ts`) with key-tagged ciphertext (v2.\<keyId\>), rotation status + daily 90-day check + lazy re-encrypt (`/governance/key-*`); env-backed today, HSM/PKCS#11 is a drop-in provider + procurement |
 | TLS 1.3 (+ mTLS) | 🟡 | env-gated `httpsOptions` hook in `main.ts` (`TLS_*` envs, `minVersion TLSv1.3`, optional client-cert); certs/SFTP are ops |
 | Role-based PII masking | ✅ | `pii-access.service.ts` |
 | JIT elevation (30-min, supervisor-approved) | ✅ | `modules/access/*`, `/access` UI |
@@ -60,7 +60,7 @@ Agent signals are **fused into case risk** (`detection-engine.ts → aggregateAg
 | §6.3 JSON REST schema | ✅ | `ingestJson()` |
 | §6.4 completeness / BVN format + mod-11 / NUBAN check-digit / arithmetic | ✅ | `ingestion-validators.ts` |
 | §6.4 duplicate detection + SHA-256 checksum | ✅ | `processRows`, `upload`/`ingestJson` |
-| §6.4 500 MB split/batching protocol | 🟡 | 100 MB limit + 500-row insert batching; large-file split pending |
+| §6.4 500 MB split/batching protocol | ✅ | multipart split upload (`/submissions/multipart/*`): ordered parts, whole-file SHA-256 verify on reassembly, memory-flat batched ingestion |
 | §6.5 acknowledgment (receipt hash + 4-hr report + 5-day resubmit) | ✅ | `issueReceipt()`, `GET /submissions/:id/report` |
 | §6.6 SLA timers + §29 thresholds + quarterly calendar | ✅ | `provider-compliance.service.ts`, `/compliance` UI |
 
@@ -72,7 +72,7 @@ Agent signals are **fused into case risk** (`detection-engine.ts → aggregateAg
 | §35 Best-of-Judgement assessment (auto-trigger) | ✅ | case lifecycle |
 | §41 objection (30-day) + §41(6) 90-day deemed-upheld | ✅ | `processDeadlines()` |
 | 10% late-payment penalty | ✅ | assessment computation |
-| CGT 10% (NTA §50) on disposals | 🟡 | hook present; needs Document-Intelligence disposal extraction |
+| CGT 10% (NTA §50) on disposals | ✅ | Document Intelligence extracts asset-disposal proceeds → assesses CGT at the configured rate (best-of-judgement) and stores it on the case document |
 | PIT/CIT bands (NTA §37 ₦800k threshold) | ✅* | `detection-engine.ts` — *bands are placeholder defaults to confirm |
 | 6-year retention | ✅ | NDPA module |
 
