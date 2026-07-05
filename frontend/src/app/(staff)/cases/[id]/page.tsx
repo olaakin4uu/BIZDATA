@@ -394,6 +394,14 @@ function DocumentPanel({ caseId, docs, onChange }: { caseId: string; docs: CaseD
               <div className="min-w-0">
                 <span className="font-medium text-slate-800">{d.fileName}</span>
                 <p className="text-xs text-slate-500">{d.reconcileNote}</p>
+                {d.cgtAssessed && Number(d.cgtAssessed) > 0 && (
+                  <p className="text-xs mt-1">
+                    <span className="inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 font-medium mr-1">CGT §50</span>
+                    <span className="text-slate-600">
+                      Disposal {formatMoney(d.assetDisposals)} → capital-gains tax {formatMoney(d.cgtAssessed)} assessed.
+                    </span>
+                  </p>
+                )}
               </div>
             </li>
           ))}

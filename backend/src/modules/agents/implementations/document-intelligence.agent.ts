@@ -214,6 +214,38 @@ export function reconcile(
   return { variance, consistent, note };
 }
 
+/** Capital-gains assessment from extracted asset-disposal proceeds. */
+export interface CgtAssessment {
+  /** Disposal proceeds the document reported (the CGT base, best-of-judgement). */
+  proceeds: number;
+  /** CGT rate applied (fraction, e.g. 0.10). */
+  rate: number;
+  /** Assessed capital-gains tax = proceeds × rate. */
+  cgt: number;
+  /** Officer-facing explanation. */
+  note: string;
+}
+
+/**
+ * Assess capital-gains tax (NTA §50) from asset-disposal proceeds extracted from
+ * a document. Where the document gives only proceeds and no acquisition cost, we
+ * assess on the full proceeds on a best-of-judgement basis — the taxpayer may
+ * object with cost-base records to reduce the chargeable gain. Returns null when
+ * there are no disposals to assess. Pure/deterministic.
+ */
+export function computeCgt(extracted: ExtractedFinancials, cgtRate: number): CgtAssessment | null {
+  const proceeds = extracted?.assetDisposals;
+  if (proceeds === undefined || !Number.isFinite(proceeds) || proceeds <= 0) return null;
+  const rate = Number.isFinite(cgtRate) && cgtRate > 0 ? cgtRate : 0.1;
+  const cgt = proceeds * rate;
+  return {
+    proceeds,
+    rate,
+    cgt,
+    note: `Asset disposal of NGN ${proceeds.toLocaleString('en-NG')} detected. CGT assessed at ${(rate * 100).toFixed(0)}% on proceeds (best-of-judgement; no acquisition cost supplied) = NGN ${cgt.toLocaleString('en-NG', { maximumFractionDigits: 2 })}. Taxpayer may object with cost-base records.`,
+  };
+}
+
 /**
  * Map a reconciliation variance to a 0..1 concern score for downstream use
  * (e.g. when the objection workflow wants to raise its own RiskSignal).

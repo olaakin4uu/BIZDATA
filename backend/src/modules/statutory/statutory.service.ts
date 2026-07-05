@@ -15,6 +15,7 @@ export interface StatutoryValues {
   latePaymentPenaltyRate: number;
   citRate: number;
   citSmallCoThreshold: number;
+  cgtRate: number;
   defaultScanThreshold: number;
 }
 
@@ -27,6 +28,7 @@ const DEFAULTS: StatutoryValues = {
   latePaymentPenaltyRate: 0.1,
   citRate: 0.3,
   citSmallCoThreshold: 50_000_000,
+  cgtRate: 0.1,
   defaultScanThreshold: 0.2,
 };
 
@@ -47,6 +49,7 @@ export class StatutoryService {
           latePaymentPenaltyRate: DEFAULTS.latePaymentPenaltyRate,
           citRate: DEFAULTS.citRate,
           citSmallCoThreshold: DEFAULTS.citSmallCoThreshold,
+          cgtRate: DEFAULTS.cgtRate,
           defaultScanThreshold: DEFAULTS.defaultScanThreshold,
         },
       });
@@ -81,6 +84,7 @@ export class StatutoryService {
           latePaymentPenaltyRate: next.latePaymentPenaltyRate,
           citRate: next.citRate,
           citSmallCoThreshold: next.citSmallCoThreshold,
+          cgtRate: next.cgtRate,
           defaultScanThreshold: next.defaultScanThreshold,
         },
       });
@@ -104,6 +108,7 @@ export class StatutoryService {
       latePaymentPenaltyRate: Number(r.latePaymentPenaltyRate),
       citRate: Number(r.citRate),
       citSmallCoThreshold: Number(r.citSmallCoThreshold),
+      cgtRate: Number(r.cgtRate),
       defaultScanThreshold: Number(r.defaultScanThreshold),
     };
   }
@@ -121,6 +126,7 @@ function sanitize(p: Partial<StatutoryValues>): Partial<StatutoryValues> {
   if (p.latePaymentPenaltyRate != null) out.latePaymentPenaltyRate = rate(p.latePaymentPenaltyRate);
   if (p.citRate != null) out.citRate = rate(p.citRate);
   if (p.citSmallCoThreshold != null) out.citSmallCoThreshold = money(p.citSmallCoThreshold);
+  if (p.cgtRate != null) out.cgtRate = rate(p.cgtRate);
   if (p.defaultScanThreshold != null) out.defaultScanThreshold = rate(p.defaultScanThreshold);
   return out;
 }

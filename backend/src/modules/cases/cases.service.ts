@@ -5,7 +5,8 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
-import { extractFinancials, reconcile, scoreReconciliation } from '../agents/implementations/document-intelligence.agent';
+import { extractFinancials, reconcile, scoreReconciliation, computeCgt } from '../agents/implementations/document-intelligence.agent';
+import { severityFor } from '../agents/agent.types';
 import { StatutoryService } from '../statutory/statutory.service';
 
 // Statutory windows / rates. CONFIRM against the gazetted NTAA/NTA text — kept
@@ -410,6 +411,11 @@ export class CasesService {
     const result = reconcile(extracted, observed);
     const { score, severity } = scoreReconciliation(result);
 
+    // Capital-gains (NTA §50): if the document reports an asset disposal, assess
+    // CGT on the proceeds at the configured rate (best-of-judgement).
+    const cfg = await this.statutory.active();
+    const cgt = computeCgt(extracted, cfg.cgtRate);
+
     const doc = await this.prisma.caseDocument.create({
       data: {
         caseId,
@@ -422,24 +428,32 @@ export class CasesService {
         variance: new Prisma.Decimal(result.variance.toFixed(4)),
         consistent: result.consistent,
         reconcileNote: result.note,
+        assetDisposals: cgt ? new Prisma.Decimal(cgt.proceeds.toFixed(2)) : null,
+        cgtAssessed: cgt ? new Prisma.Decimal(cgt.cgt.toFixed(2)) : null,
         uploadedById: opts.staffId ?? null,
       },
     });
 
-    // Raise / update a Document Intelligence signal when it under-declares.
-    if (result.variance < 0 && score > 0.1) {
+    // Raise / update a Document Intelligence signal when the document
+    // under-declares income OR reveals an undeclared asset disposal (CGT).
+    const underDeclared = result.variance < 0 && score > 0.1;
+    const signalRaised = underDeclared || cgt != null;
+    if (signalRaised) {
+      // Combine the reconciliation and CGT notes; a disposal pushes concern up.
+      const summary = [result.note, cgt?.note].filter(Boolean).join(' ');
+      const combinedScore = Math.max(score, cgt ? 0.6 : 0);
       await this.prisma.riskSignal.upsert({
         where: { taxpayerId_year_agentKey: { taxpayerId: kase.taxpayerId, year: kase.year, agentKey: 'document' } },
         create: {
           taxpayerId: kase.taxpayerId, year: kase.year, agentKey: 'document',
-          score: new Prisma.Decimal(score.toFixed(2)), severity,
-          summary: result.note,
-          details: { documentId: doc.id, extracted, observedInflow: observed } as any,
+          score: new Prisma.Decimal(combinedScore.toFixed(2)), severity: severityFor(combinedScore),
+          summary,
+          details: { documentId: doc.id, extracted, observedInflow: observed, cgt: cgt ?? undefined } as any,
         },
         update: {
-          score: new Prisma.Decimal(score.toFixed(2)), severity,
-          summary: result.note,
-          details: { documentId: doc.id, extracted, observedInflow: observed } as any,
+          score: new Prisma.Decimal(combinedScore.toFixed(2)), severity: severityFor(combinedScore),
+          summary,
+          details: { documentId: doc.id, extracted, observedInflow: observed, cgt: cgt ?? undefined } as any,
         },
       });
     }
@@ -447,12 +461,12 @@ export class CasesService {
     await this.audit.log({
       actorType: 'STAFF', actorId: opts.staffId, staffId: opts.staffId,
       action: 'UPLOAD_CASE_DOCUMENT', entity: 'CaseDocument', entityId: doc.id,
-      afterJson: { caseId, consistent: result.consistent, variance: result.variance, declared: extracted.declaredIncome ?? null },
+      afterJson: { caseId, consistent: result.consistent, variance: result.variance, declared: extracted.declaredIncome ?? null, cgtAssessed: cgt?.cgt ?? null },
     });
 
     return {
       id: doc.id, fileName: doc.fileName, extractionSource: source,
-      extracted, reconciliation: result, signalRaised: result.variance < 0 && score > 0.1,
+      extracted, reconciliation: result, cgt: cgt ?? null, signalRaised,
     };
   }
 
@@ -463,7 +477,8 @@ export class CasesService {
       orderBy: { createdAt: 'desc' },
       select: {
         id: true, fileName: true, mimeType: true, fileSizeBytes: true, extractionSource: true,
-        declaredIncome: true, variance: true, consistent: true, reconcileNote: true, createdAt: true,
+        declaredIncome: true, variance: true, consistent: true, reconcileNote: true,
+        assetDisposals: true, cgtAssessed: true, createdAt: true,
       },
     });
   }

@@ -8,6 +8,7 @@ export interface StatutoryConfig {
   latePaymentPenaltyRate: number;
   citRate: number;
   citSmallCoThreshold: number;
+  cgtRate: number;
   defaultScanThreshold: number;
 }
 export interface StatutoryHistoryItem extends StatutoryConfig {

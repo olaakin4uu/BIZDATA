@@ -112,7 +112,15 @@ export interface CaseDocument {
   variance?: string | null;
   consistent?: boolean | null;
   reconcileNote?: string | null;
+  assetDisposals?: string | null;
+  cgtAssessed?: string | null;
   createdAt: string;
+}
+export interface CgtAssessment {
+  proceeds: number;
+  rate: number;
+  cgt: number;
+  note: string;
 }
 export interface AddDocumentResult {
   id: string;
@@ -120,6 +128,7 @@ export interface AddDocumentResult {
   extractionSource: string;
   extracted: { declaredIncome?: number; expenses?: number; assetDisposals?: number };
   reconciliation: { variance: number; consistent: boolean; note: string };
+  cgt: CgtAssessment | null;
   signalRaised: boolean;
 }
 
