@@ -11,7 +11,7 @@ Maps each statutory/regulatory clause to the BRIS control(s) that satisfy it, wi
 | Clause | Requirement | Control | Component | Status |
 |---|---|---|---|---|
 | **§4** | TIN framework (NIN/CAC as TIN); match inflows to taxpayers | Entity resolution NIN→TIN→BVN→normalised-name with match-confidence | `submissions.service.ts → resolveTaxpayer` | ✅ |
-| **§29** | Banks file quarterly returns above thresholds; authority uses data | CSV+JSON ingestion, ₦25m/₦100m threshold scoping, provider-obligation tracking | `submissions/*`, `provider-compliance.service.ts` | ✅ |
+| **§29** | Financial institutions file quarterly returns above thresholds; authority uses data | CSV+JSON ingestion, ₦25m/₦100m threshold scoping, provider-obligation tracking; **onboarding + submission restricted to §29 financial institutions** (BANK, FINTECH, PAYMENT_PROCESSOR, FX_BUREAU, POS_AGGREGATOR, INSURANCE) — out-of-scope types (TELCO, ECOMMERCE, OTHER) rejected, existing data retained + labelled | `submissions/*`, `providers.service.ts`, `common/section29.ts` | ✅ |
 | **§35** | Best-of-Judgement assessment when return absent/understated | Auto-computed assessment (tax + 10% penalty) on notice issuance; human-in-loop | `cases.service.ts → transition` | ✅ * |
 | **§41** | 30-day taxpayer objection window | `objectionDueAt` set on notice; lifecycle `OBJECTION` state | `cases.service.ts` | ✅ * |
 | **§41(6)** | Authority must respond within 90 days, else objection deemed upheld | `authorityResponseDueAt` + scheduled `processDeadlines()` auto-dismissal | `cases.service.ts`, `scheduler.service.ts` | ✅ * |

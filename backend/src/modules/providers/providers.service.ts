@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
+import { assertSection29ProviderType } from '../../common/section29';
 
 @Injectable()
 export class ProvidersService {
@@ -16,6 +17,8 @@ export class ProvidersService {
     if (!dto.providerCode || !dto.name || !dto.providerType) {
       throw new BadRequestException('providerCode, name, providerType required');
     }
+    // NTAA §29: only financial institutions may be onboarded.
+    assertSection29ProviderType(dto.providerType);
     const provider = await this.prisma.dataProvider.create({
       data: {
         providerCode: dto.providerCode,
@@ -101,6 +104,11 @@ export class ProvidersService {
   async update(id: string, dto: any, actorId?: string) {
     const before = await this.prisma.dataProvider.findUnique({ where: { id } });
     if (!before) throw new NotFoundException('Provider not found');
+
+    // §29: reject any attempt to set an out-of-scope provider type.
+    if (dto.providerType != null && dto.providerType !== before.providerType) {
+      assertSection29ProviderType(dto.providerType);
+    }
 
     const provider = await this.prisma.dataProvider.update({
       where: { id },

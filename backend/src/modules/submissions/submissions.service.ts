@@ -15,6 +15,7 @@ import {
   SchemaTemplate,
 } from './submission-parser';
 import { validateIngestionRow, isValidBvnModulo11 } from './ingestion-validators';
+import { assertSection29ProviderType } from '../../common/section29';
 import { createHash } from 'crypto';
 
 @Injectable()
@@ -55,6 +56,8 @@ export class SubmissionsService {
   }) {
     const provider = await this.prisma.dataProvider.findUnique({ where: { id: opts.providerId } });
     if (!provider) throw new NotFoundException('Provider not found');
+    // §29: only financial institutions may submit data.
+    assertSection29ProviderType(provider.providerType);
 
     // §6.4 checksum verification — reject the whole submission on mismatch.
     if (opts.checksum) {
@@ -125,6 +128,8 @@ export class SubmissionsService {
   }) {
     const provider = await this.prisma.dataProvider.findUnique({ where: { id: opts.providerId } });
     if (!provider) throw new NotFoundException('Provider not found');
+    // §29: only financial institutions may submit data.
+    assertSection29ProviderType(provider.providerType);
     if (!Array.isArray(opts.records) || opts.records.length === 0) {
       throw new BadRequestException('records[] is required');
     }
@@ -195,6 +200,8 @@ export class SubmissionsService {
   }) {
     const provider = await this.prisma.dataProvider.findUnique({ where: { id: opts.providerId } });
     if (!provider) throw new NotFoundException('Provider not found');
+    // §29: only financial institutions may submit data.
+    assertSection29ProviderType(provider.providerType);
     const periodInfo = parsePeriod(opts.periodLabel);
     if (!periodInfo) throw new BadRequestException('Invalid periodLabel — use YYYY, YYYY-Qn, or YYYY-MM');
     if (!opts.totalParts || opts.totalParts < 1 || opts.totalParts > 10000) {

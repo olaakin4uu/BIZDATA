@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import { providersApi } from '@/lib/api/providers';
-import { PROVIDER_TYPES, PROVIDER_STATUSES, extractErrorMessage } from '@/lib/utils';
+import { SECTION_29_PROVIDER_TYPES, PROVIDER_STATUSES, extractErrorMessage } from '@/lib/utils';
 
 const FREQUENCIES = ['QUARTERLY', 'MONTHLY', 'ANNUAL'];
 
@@ -72,8 +72,9 @@ export default function NewProviderPage() {
               onChange={(e) => update('providerType', e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
             >
-              {PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+              {SECTION_29_PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
             </select>
+            <p className="text-xs text-slate-400 mt-1">Only NTAA §29 financial institutions can be onboarded.</p>
           </Field>
           <Field label="Display name" required className="md:col-span-2">
             <input

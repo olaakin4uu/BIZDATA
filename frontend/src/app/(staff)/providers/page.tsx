@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { providersApi } from '@/lib/api/providers';
 import { complianceApi, type ProviderCompliance, type ComplianceSummary, type PeriodStatus } from '@/lib/api/compliance';
 import ProviderUploadsModal from '@/components/providers/ProviderUploadsModal';
-import { PROVIDER_TYPES } from '@/lib/utils';
+import { PROVIDER_TYPES, isSection29ProviderType } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
@@ -179,7 +179,17 @@ export default function ProvidersDashboardPage() {
                         {r.provider.name}
                       </Link>
                     </td>
-                    <td className="px-4 py-3 text-xs text-slate-500">{r.provider.providerType.replace('_', ' ')}</td>
+                    <td className="px-4 py-3 text-xs text-slate-500">
+                      {r.provider.providerType.replace('_', ' ')}
+                      {!isSection29ProviderType(r.provider.providerType) && (
+                        <span
+                          title="Outside NTAA §29 scope — retained for history; cannot receive new submissions."
+                          className="ml-1.5 inline-block px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[10px] font-medium align-middle"
+                        >
+                          out of §29 scope
+                        </span>
+                      )}
+                    </td>
                     {quarters.map((q) => {
                       const st = byQuarter[q] ?? 'PENDING';
                       return (

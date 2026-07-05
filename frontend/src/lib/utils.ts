@@ -69,6 +69,20 @@ export const PROVIDER_TYPES = [
 ] as const;
 export type ProviderType = typeof PROVIDER_TYPES[number];
 
+// NTAA §29: only financial institutions may be onboarded / submit data. This
+// mirrors the backend allow-list (common/section29.ts) — keep the two in sync.
+export const SECTION_29_PROVIDER_TYPES = [
+  'BANK',
+  'FINTECH',
+  'PAYMENT_PROCESSOR',
+  'FX_BUREAU',
+  'POS_AGGREGATOR',
+  'INSURANCE',
+] as const;
+export function isSection29ProviderType(type: string | null | undefined): boolean {
+  return type != null && (SECTION_29_PROVIDER_TYPES as readonly string[]).includes(type);
+}
+
 export const PROVIDER_STATUSES = ['ACTIVE', 'SUSPENDED', 'PENDING_ONBOARDING'] as const;
 export type ProviderStatus = typeof PROVIDER_STATUSES[number];
 
