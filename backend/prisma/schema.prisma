@@ -541,6 +541,23 @@ model IntegrationApiKey {
   @@map("integration_api_keys")
 }
 
+// ─── PER-SECTOR THRESHOLD OVERRIDES ───────────────────────────────────────────
+// The analyst feedback loop tunes the flagging threshold per economic sector.
+// An override is only stored after the fairness gate passes (or is force-applied
+// with an explicit override, which is recorded). The scan reads these per sector.
+
+model SectorThreshold {
+  id             String   @id @default(uuid())
+  sector         String   @unique
+  threshold      Decimal  @db.Decimal(5, 4)
+  fairnessPassed Boolean  @default(true)
+  updatedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("sector_thresholds")
+}
+
 // ─── CROSS-STATE DATA SHARING (Joint Revenue Board Act 2025 §15) ──────────────
 // Captures mobile/migratory taxpayers: FCT-IRS refers non-FCT-resident taxpayers
 // to their home State IRS (and receives inbound referrals), sharing a minimised

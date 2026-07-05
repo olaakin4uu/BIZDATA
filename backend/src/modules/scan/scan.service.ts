@@ -101,12 +101,20 @@ export class ScanService {
       let totalFlagged = 0;
       let totalEstimatedTax = 0;
 
+      // Per-sector threshold overrides from the analyst feedback loop (fairness-gated).
+      const sectorOverrides = new Map(
+        (await this.prisma.sectorThreshold.findMany()).map((o) => [o.sector, Number(o.threshold)]),
+      );
+
       for (const [taxpayerId, agg] of byTaxpayer) {
         const taxpayer = await this.prisma.taxpayer.findUnique({
           where: { id: taxpayerId },
-          select: { type: true },
+          select: { type: true, sector: true },
         });
         if (!taxpayer) continue;
+
+        // A per-sector override (if any) wins over the scan's global threshold.
+        const effectiveThreshold = (taxpayer.sector && sectorOverrides.get(taxpayer.sector)) ?? threshold;
 
         const declaredRow = await this.prisma.declaredIncome.findUnique({
           where: { taxpayerId_year: { taxpayerId, year } },
@@ -121,7 +129,7 @@ export class ScanService {
         const discrepancy = observedIncome - declaredAmount;
         const discrepancyPct =
           declaredAmount > 0 ? discrepancy / declaredAmount : observedIncome > 0 ? 1 : 0;
-        const shouldFlag = discrepancy > 0 && discrepancyPct > threshold;
+        const shouldFlag = discrepancy > 0 && discrepancyPct > effectiveThreshold;
 
         // 2. Stamp per-record flag fields (drives the records / flagged views).
         //    Spread whereRecord FIRST so the specific taxpayerId below wins — otherwise

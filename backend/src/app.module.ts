@@ -35,6 +35,7 @@ import { PortfoliosModule } from './modules/portfolios/portfolios.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { StatutoryModule } from './modules/statutory/statutory.module';
 import { IntegrationModule } from './modules/integration/integration.module';
+import { ModelFeedbackModule } from './modules/model-feedback/model-feedback.module';
 
 @Module({
   imports: [
@@ -72,6 +73,7 @@ import { IntegrationModule } from './modules/integration/integration.module';
     IdentityModule,
     StatutoryModule,
     IntegrationModule,
+    ModelFeedbackModule,
   ],
 })
 export class AppModule {}
