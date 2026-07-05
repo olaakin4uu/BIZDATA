@@ -32,12 +32,25 @@ export const declaredIncomeApi = {
   },
   create: (dto: { taxpayerId: string; year: number; assessableIncome: number; source?: string; notes?: string }) =>
     apiFetch<DeclaredIncome>('/declared-income', { method: 'POST', body: dto }),
+  validateCsv: (file: File) => {
+    const fd = new FormData();
+    fd.append('file', file);
+    return apiFetch<ImportResult>('/declared-income/validate', { method: 'POST', body: fd });
+  },
   importCsv: (file: File) => {
     const fd = new FormData();
     fd.append('file', file);
-    return apiFetch<{ created: number; updated: number; skipped: number; errors: string[] }>(
-      '/declared-income/import',
-      { method: 'POST', body: fd },
-    );
+    return apiFetch<ImportResult>('/declared-income/import', { method: 'POST', body: fd });
   },
 };
+
+export interface ImportResult {
+  dryRun: boolean;
+  totalRows: number;
+  created: number;
+  updated: number;
+  skipped: number;
+  warnings: string[];
+  errors: string[];
+  errorCount: number;
+}

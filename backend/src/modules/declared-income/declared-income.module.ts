@@ -5,5 +5,6 @@ import { DeclaredIncomeController } from './declared-income.controller';
 @Module({
   controllers: [DeclaredIncomeController],
   providers: [DeclaredIncomeService],
+  exports: [DeclaredIncomeService],
 })
 export class DeclaredIncomeModule {}

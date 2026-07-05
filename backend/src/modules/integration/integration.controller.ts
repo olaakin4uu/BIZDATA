@@ -1,11 +1,13 @@
 import {
-  Body, Controller, Delete, Get, Headers, Param, Post, Req, UseGuards,
+  BadRequestException,
+  Body, Controller, Delete, Get, Headers, Param, Post, Query, Req, UseGuards,
   UseInterceptors, UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiTags, ApiOperation, ApiConsumes, ApiHeader } from '@nestjs/swagger';
 import { IntegrationService } from './integration.service';
 import { ApiKeyGuard } from './api-key.guard';
+import { DeclaredIncomeService } from '../declared-income/declared-income.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -76,5 +78,47 @@ export class IntegrationTaxpayerController {
   @ApiOperation({ summary: 'Check the current outcome/status of the case' })
   outcome(@Headers('x-case-token') token: string, @Req() req: any) {
     return this.service.getOutcome(token, req.partner?.name);
+  }
+}
+
+// ─── PARTNER: inbound declared-income import (API-key only, not case-scoped) ───
+// A partner tax platform pushes taxpayers' declared income INTO BIZDATA so it
+// can be compared against ingested provider data. Keyed by NIN/RC — no case
+// token, since this spans many taxpayers rather than one open case.
+@ApiTags('Integration (partner)')
+@ApiHeader({ name: 'x-api-key', description: 'Partner platform API key' })
+@UseGuards(ApiKeyGuard)
+@Controller('integration/declared-income')
+export class IntegrationDeclaredIncomeController {
+  constructor(private declaredIncome: DeclaredIncomeService) {}
+
+  @Post()
+  @ApiOperation({ summary: 'Push declared-income records (JSON array). ?dryRun=true validates without writing.' })
+  async importJson(
+    @Body() body: any,
+    @Query('dryRun') dryRun: string | undefined,
+    @Req() req: any,
+  ) {
+    return this.declaredIncome.processJson(body, {
+      dryRun: dryRun === 'true' || dryRun === '1',
+      source: 'PARTNER_API',
+      partnerName: req.partner?.name,
+    });
+  }
+
+  @Post('csv')
+  @ApiConsumes('multipart/form-data')
+  @ApiOperation({ summary: 'Push declared income as a CSV file. ?dryRun=true validates without writing.' })
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 100 * 1024 * 1024 } }))
+  async importCsv(
+    @UploadedFile() file: any,
+    @Query('dryRun') dryRun: string | undefined,
+    @Req() req: any,
+  ) {
+    if (!file) throw new BadRequestException('file is required');
+    return this.declaredIncome.processCsv(file.buffer.toString('utf8'), {
+      dryRun: dryRun === 'true' || dryRun === '1',
+      source: 'PARTNER_API',
+    });
   }
 }
