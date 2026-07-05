@@ -65,6 +65,14 @@ export class AuthController {
     return this.service.mfaDisable(u.id, dto.token);
   }
 
+  @Post('staff/mfa/recovery/regenerate')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Regenerate one-time recovery codes (invalidates the old set)' })
+  @UseGuards(StaffAuthGuard)
+  mfaRegenerateRecovery(@CurrentStaff() u: any, @Body() dto: MfaCodeDto) {
+    return this.service.mfaRegenerateRecovery(u.id, dto.token);
+  }
+
   @Post('provider/login')
   @ApiOperation({ summary: 'Provider user login' })
   providerLogin(@Body() dto: LoginDto, @Req() req: any) {

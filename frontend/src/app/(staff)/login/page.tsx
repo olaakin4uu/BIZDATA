@@ -137,16 +137,17 @@ export default function StaffLoginPage() {
                 <label className="block text-xs font-medium text-slate-700 mb-1">Authenticator code</label>
                 <input
                   type="text"
-                  inputMode="numeric"
+                  inputMode="text"
                   autoComplete="one-time-code"
-                  maxLength={6}
+                  maxLength={12}
                   required
                   autoFocus
                   value={totp}
-                  onChange={(e) => setTotp(e.target.value.replace(/\D/g, ''))}
+                  onChange={(e) => setTotp(e.target.value)}
                   placeholder="000000"
                   className="w-full px-3 py-2 border border-teal-400 rounded-lg text-sm font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
+                <p className="text-[11px] text-slate-400 mt-1 text-center">Lost your device? Enter one of your recovery codes.</p>
               </div>
             )}
             <button

@@ -11,6 +11,7 @@ export interface StaffUser {
   role: string;
   isActive: boolean;
   mfaEnabled?: boolean;
+  recoveryCodesRemaining?: number;
   lastLoginAt?: string | null;
   createdAt?: string;
 }
@@ -66,6 +67,16 @@ export const authApi = {
     fd.append('file', file);
     return apiFetch<StaffUser>('/auth/staff/avatar', { method: 'POST', body: fd });
   },
+
+  // ── Two-factor (TOTP) ──
+  mfaSetup: () =>
+    apiFetch<{ secret: string; otpauth: string }>('/auth/staff/mfa/setup', { method: 'POST' }),
+  mfaEnable: (token: string) =>
+    apiFetch<{ mfaEnabled: boolean; recoveryCodes: string[] }>('/auth/staff/mfa/enable', { method: 'POST', body: { token } }),
+  mfaDisable: (token: string) =>
+    apiFetch<{ mfaEnabled: boolean }>('/auth/staff/mfa/disable', { method: 'POST', body: { token } }),
+  mfaRegenerateRecovery: (token: string) =>
+    apiFetch<{ recoveryCodes: string[] }>('/auth/staff/mfa/recovery/regenerate', { method: 'POST', body: { token } }),
 };
 
 export const providerAuthApi = {

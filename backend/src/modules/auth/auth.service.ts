@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { randomBytes } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { generateSecret, verifyTotp, keyuri } from '../../common/services/totp';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -19,11 +20,15 @@ export class AuthService {
     const ok = await bcrypt.compare(password, user.passwordHash);
     if (!ok) throw new UnauthorizedException('Invalid credentials');
 
-    // Second factor (TOTP) when the account has MFA enabled.
+    // Second factor when the account has MFA enabled: a TOTP code, or — if the
+    // authenticator is lost — one of the one-time recovery codes.
     if (user.mfaEnabled) {
       if (!totp) throw new UnauthorizedException('MFA code required');
-      if (!user.mfaSecret || !verifyTotp(totp, user.mfaSecret)) {
-        throw new UnauthorizedException('Invalid MFA code');
+      const code = totp.trim();
+      const totpOk = user.mfaSecret ? verifyTotp(code, user.mfaSecret) : false;
+      if (!totpOk) {
+        const consumed = await this.consumeRecoveryCode(user.id, user.mfaRecoveryCodes, code);
+        if (!consumed) throw new UnauthorizedException('Invalid MFA code');
       }
     }
 
@@ -111,8 +116,10 @@ export class AuthService {
   async getStaffMe(id: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user) throw new UnauthorizedException();
-    const { passwordHash: _ph, ...rest } = user;
-    return rest;
+    // Never leak secrets over the wire — strip the password hash, the TOTP
+    // secret, and the recovery-code hashes; surface only a safe count.
+    const { passwordHash: _ph, mfaSecret: _ms, mfaRecoveryCodes, ...rest } = user;
+    return { ...rest, recoveryCodesRemaining: mfaRecoveryCodes.length };
   }
 
   async getProviderMe(id: string) {
@@ -251,31 +258,88 @@ export class AuthService {
     if (!user) throw new BadRequestException('User not found');
     const secret = generateSecret();
     await this.prisma.user.update({ where: { id }, data: { mfaSecret: secret, mfaEnabled: false } });
-    const otpauth = keyuri(user.email, 'BizData BRIS', secret);
+    // Compact otpauth URI: authenticator apps assume SHA1/6-digit/30s defaults,
+    // so omitting them keeps the QR payload small (fits a low QR version that
+    // renders crisply and scans reliably).
+    const otpauth = `otpauth://totp/${encodeURIComponent('BizData')}:${encodeURIComponent(user.email)}?secret=${secret}&issuer=BizData`;
     return { secret, otpauth };
   }
 
-  /** Confirm enrolment by verifying a code against the pending secret. */
+  /** Confirm enrolment by verifying a code against the pending secret. Returns
+   *  a fresh set of one-time recovery codes (shown once, stored only as hashes). */
   async mfaEnable(id: string, token: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user?.mfaSecret) throw new BadRequestException('Run MFA setup first');
     if (!verifyTotp(token, user.mfaSecret)) {
       throw new BadRequestException('Invalid MFA code');
     }
-    await this.prisma.user.update({ where: { id }, data: { mfaEnabled: true } });
+    const { plain, hashed } = await this.makeRecoveryCodes();
+    await this.prisma.user.update({
+      where: { id },
+      data: { mfaEnabled: true, mfaRecoveryCodes: hashed },
+    });
     await this.audit.log({ actorType: 'STAFF', actorId: id, staffId: id, action: 'MFA_ENABLE', entity: 'User', entityId: id });
-    return { mfaEnabled: true };
+    return { mfaEnabled: true, recoveryCodes: plain };
   }
 
-  /** Disable MFA (requires a valid current code). */
+  /** Disable MFA (requires a valid current code). Clears secret + recovery codes. */
   async mfaDisable(id: string, token: string) {
     const user = await this.prisma.user.findUnique({ where: { id } });
     if (!user?.mfaEnabled || !user.mfaSecret) throw new BadRequestException('MFA is not enabled');
-    if (!verifyTotp(token, user.mfaSecret)) {
-      throw new BadRequestException('Invalid MFA code');
-    }
-    await this.prisma.user.update({ where: { id }, data: { mfaEnabled: false, mfaSecret: null } });
+    const ok = verifyTotp(token.trim(), user.mfaSecret)
+      || (await this.consumeRecoveryCode(id, user.mfaRecoveryCodes, token.trim()));
+    if (!ok) throw new BadRequestException('Invalid MFA code');
+    await this.prisma.user.update({
+      where: { id },
+      data: { mfaEnabled: false, mfaSecret: null, mfaRecoveryCodes: [] },
+    });
     await this.audit.log({ actorType: 'STAFF', actorId: id, staffId: id, action: 'MFA_DISABLE', entity: 'User', entityId: id });
     return { mfaEnabled: false };
   }
+
+  /** Regenerate recovery codes (invalidates the old set). Requires a valid TOTP. */
+  async mfaRegenerateRecovery(id: string, token: string) {
+    const user = await this.prisma.user.findUnique({ where: { id } });
+    if (!user?.mfaEnabled || !user.mfaSecret) throw new BadRequestException('MFA is not enabled');
+    if (!verifyTotp(token.trim(), user.mfaSecret)) throw new BadRequestException('Invalid MFA code');
+    const { plain, hashed } = await this.makeRecoveryCodes();
+    await this.prisma.user.update({ where: { id }, data: { mfaRecoveryCodes: hashed } });
+    await this.audit.log({ actorType: 'STAFF', actorId: id, staffId: id, action: 'MFA_REGEN_RECOVERY', entity: 'User', entityId: id });
+    return { recoveryCodes: plain };
+  }
+
+  /** Ten human-typable one-time codes (e.g. "a1b2-c3d4"); return plaintext + hashes.
+   *  Hashes are over the canonical form (lowercase, alphanumerics only) so a user
+   *  can type the code with or without the dash. */
+  private async makeRecoveryCodes(): Promise<{ plain: string[]; hashed: string[] }> {
+    const plain = Array.from({ length: 10 }, () => {
+      const raw = randomBytes(4).toString('hex'); // 8 hex chars
+      return `${raw.slice(0, 4)}-${raw.slice(4)}`;
+    });
+    const hashed = await Promise.all(plain.map((c) => bcrypt.hash(canonicalCode(c), 10)));
+    return { plain, hashed };
+  }
+
+  /** If `code` matches an unused recovery code, consume it (remove its hash) and
+   *  return true. Recovery codes are single-use. */
+  private async consumeRecoveryCode(userId: string, hashes: string[], code: string): Promise<boolean> {
+    const normalized = canonicalCode(code);
+    if (normalized.length < 6) return false; // ignore short/empty (e.g. a 6-digit TOTP miss)
+    for (const hash of hashes) {
+      if (await bcrypt.compare(normalized, hash)) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { mfaRecoveryCodes: hashes.filter((h) => h !== hash) },
+        });
+        await this.audit.log({ actorType: 'STAFF', actorId: userId, staffId: userId, action: 'MFA_RECOVERY_USED', entity: 'User', entityId: userId });
+        return true;
+      }
+    }
+    return false;
+  }
+}
+
+/** Canonicalise a recovery code: lowercase, alphanumerics only (drops dashes/spaces). */
+function canonicalCode(code: string): string {
+  return (code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 }
