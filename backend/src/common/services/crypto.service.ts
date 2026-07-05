@@ -7,7 +7,8 @@ import {
   createHash,
   timingSafeEqual,
 } from 'crypto';
-import { EnvKeyProvider, KeyProvider } from './key-provider';
+import { EnvKeyProvider, KmsKeyProvider, KeyProvider } from './key-provider';
+import { resolveKms } from './kms';
 
 /**
  * Field-level encryption for sensitive PII at rest (NTAA §139 / NDPA §§25-28).
@@ -37,15 +38,32 @@ export class CryptoService implements OnModuleInit {
   private static readonly V2 = 'v2';
   private static readonly V1 = 'v1';
 
-  onModuleInit() {
+  async onModuleInit() {
     const isProd = process.env.NODE_ENV === 'production';
-    // The key provider is the HSM/KMS integration seam. Swap EnvKeyProvider for
-    // a KmsKeyProvider/Pkcs11KeyProvider here; nothing else changes.
-    this.keys = new EnvKeyProvider(isProd, new Date());
+    this.keys = await this.selectKeyProvider(isProd);
     this.indexKey = this.loadIndexKey(isProd);
 
     const active = this.keys.activeKey();
-    this.logger.log(`PII encryption ready — active key id "${active.id}", ${this.keys.allKeys().length} key(s) available.`);
+    this.logger.log(`PII encryption ready — provider ${this.keys.constructor.name}, active key id "${active.id}", ${this.keys.allKeys().length} key(s) available.`);
+  }
+
+  /**
+   * Choose the key provider. When PII_KMS_PROVIDER is set, keys are envelope-
+   * encrypted: wrapped DEKs are unwrapped once at boot via the KMS/HSM
+   * (KmsKeyProvider) and never stored in the clear. Otherwise keys load directly
+   * from env (EnvKeyProvider) — fine for dev, acceptable for prod only when the
+   * host itself is the trust boundary. This one method is the HSM/KMS seam.
+   */
+  private async selectKeyProvider(isProd: boolean): Promise<KeyProvider> {
+    const kmsProvider = process.env.PII_KMS_PROVIDER;
+    if (kmsProvider) {
+      const kms = resolveKms(kmsProvider);
+      const deks = KmsKeyProvider.deksFromEnv();
+      if (!deks.length) throw new Error('PII_KMS_PROVIDER is set but no wrapped DEK (PII_WRAPPED_DEK[_N]) is configured.');
+      this.logger.log(`Using KMS key provider "${kmsProvider}" (envelope encryption).`);
+      return KmsKeyProvider.create(kms, deks, process.env.PII_ENC_ACTIVE_KEY_ID);
+    }
+    return new EnvKeyProvider(isProd, new Date());
   }
 
   /** The blind-index key is single and stable (rotating it breaks all indexes). */

@@ -56,13 +56,24 @@ BVN_CHECKDIGIT_ENFORCED=false
 ```
 
 ## 3. Key custody — HSM / KMS (NTAA §139, NDPA, §5.3)
-**Built:** AES-256-GCM field encryption + blind index; keys load via a single seam.
+**Built:** AES-256-GCM field encryption + blind index; **envelope encryption is implemented** — a `KeyProvider` seam with two providers:
+- `EnvKeyProvider` (default): DEKs come straight from env (`PII_ENC_KEY[_N]`). Fine for dev; acceptable for prod only when the host itself is the trust boundary.
+- `KmsKeyProvider`: DEKs are stored **wrapped** and unwrapped once at boot via a KMS/HSM, so raw key bytes never touch disk or config. Selected by `PII_KMS_PROVIDER`.
+
 **Provision:** an HSM (FIPS 140-2 Level 3) or cloud KMS; 90-day rotation under dual control.
-**Integration point:** `backend/src/common/services/crypto.service.ts → loadKey()`. Replace the env read with:
-- **PKCS#11 HSM:** fetch/unwrap the data key via the HSM session (e.g. `graphene-pk11`); never let raw key bytes persist to disk.
-- **Cloud KMS:** envelope encryption — store a wrapped DEK, call KMS `Decrypt` at boot to load it into memory.
-- **Rotation:** version the payload prefix (already `v1.`); on rotation add `v2.` and keep old keys for decrypt-only. Dual control = two-officer approval on the KMS key policy.
-> No app changes elsewhere — `encrypt`/`decrypt`/`blindIndex` are unchanged.
+
+**Turn it on (envelope encryption):**
+```
+PII_KMS_PROVIDER=aws|gcp|azure|pkcs11   # selects the KMS adapter
+PII_WRAPPED_DEK=<base64 wrapped DEK>    # id "1"; add PII_WRAPPED_DEK_2… to rotate
+PII_ENC_ACTIVE_KEY_ID=1                 # which DEK is active for new writes
+PII_INDEX_KEY=<base64 32 bytes>         # blind-index key (not rotated)
+```
+**Integration point:** `backend/src/common/services/kms.ts` — implement the one-method `Kms.unwrap()` for your vendor (each adapter already documents the exact SDK call; a `local` adapter proves the path end-to-end without a cloud account). `resolveKms()` registers it. Nothing else changes — `encrypt`/`decrypt`/`blindIndex` and the whole app are untouched.
+- **PKCS#11 HSM:** `C_Decrypt`/`C_UnwrapKey` on the HSM session (`graphene-pk11`); never let raw key bytes persist to disk.
+- **Cloud KMS:** wrap the DEK with a KMS-resident KEK; the adapter calls KMS `Decrypt`/`unwrapKey` at boot.
+- **Rotation:** ciphertext is key-tagged (`v2.<keyId>.…`); add a new wrapped DEK + point `PII_ENC_ACTIVE_KEY_ID` at it. Old DEKs stay for decrypt-only; run `POST /governance/key-reencrypt` to migrate. Dual control = two-officer approval on the KMS key policy.
+> No app changes elsewhere — the KMS is a one-file adapter, verified by unit tests via a fake KMS.
 
 ## 4. Transport — TLS 1.3 + mTLS + SFTP (§5.3, §6.1)
 **Built:** `main.ts` enables HTTPS (`minVersion TLSv1.3`) when `TLS_CERT_PATH`/`TLS_KEY_PATH` are set; `TLS_REQUEST_CLIENT_CERT=true` + `TLS_CA_PATH` turns on **mutual TLS** (client-cert verification) for bank REST ingestion.

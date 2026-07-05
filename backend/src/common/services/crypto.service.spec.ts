@@ -6,11 +6,12 @@ import { CryptoService } from './crypto.service';
 beforeAll(() => jest.spyOn(Logger.prototype, 'log').mockImplementation(() => undefined));
 afterAll(() => jest.restoreAllMocks());
 
-/** Build a CryptoService with a given env and run its init. */
-function makeService(env: Record<string, string | undefined>): CryptoService {
-  // Reset the PII_* env surface, then apply the requested values.
+/** Build a CryptoService with a given env and run its (async) init. */
+async function makeService(env: Record<string, string | undefined>): Promise<CryptoService> {
+  // Reset the entire PII_* env surface (incl. KMS vars) so the provider choice
+  // is deterministic regardless of test order, then apply the requested values.
   for (const k of Object.keys(process.env)) {
-    if (k.startsWith('PII_ENC') || k === 'PII_INDEX_KEY') delete process.env[k];
+    if (k.startsWith('PII_')) delete process.env[k];
   }
   process.env.NODE_ENV = 'test';
   for (const [k, v] of Object.entries(env)) {
@@ -18,7 +19,7 @@ function makeService(env: Record<string, string | undefined>): CryptoService {
     else process.env[k] = v;
   }
   const svc = new CryptoService();
-  (svc as any).onModuleInit();
+  await (svc as any).onModuleInit();
   return svc;
 }
 
@@ -27,7 +28,8 @@ const key2 = randomBytes(32).toString('base64');
 const indexKey = randomBytes(32).toString('base64');
 
 describe('CryptoService — encryption', () => {
-  const svc = makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
+  let svc: CryptoService;
+  beforeAll(async () => { svc = await makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey }); });
 
   it('round-trips a value', () => {
     const ct = svc.encrypt('12345678901');
@@ -74,13 +76,13 @@ describe('CryptoService — encryption', () => {
 });
 
 describe('CryptoService — key rotation', () => {
-  it('after rotation, new writes use the new key while old data still decrypts', () => {
-    const svc1 = makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
+  it('after rotation, new writes use the new key while old data still decrypts', async () => {
+    const svc1 = await makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
     const ct1 = svc1.encrypt('secret')!;
     expect(ct1).toMatch(/^v2\.1\./);
 
     // Rotate: add key 2 and make it active.
-    const svc2 = makeService({
+    const svc2 = await makeService({
       PII_ENC_KEY: key1,
       PII_ENC_KEY_2: key2,
       PII_ENC_ACTIVE_KEY_ID: '2',
@@ -92,8 +94,8 @@ describe('CryptoService — key rotation', () => {
     expect(svc2.decrypt(ct2)).toBe('secret');
   });
 
-  it('needsReencrypt flags old-key + legacy data, not active-key data', () => {
-    const svc2 = makeService({
+  it('needsReencrypt flags old-key + legacy data, not active-key data', async () => {
+    const svc2 = await makeService({
       PII_ENC_KEY: key1,
       PII_ENC_KEY_2: key2,
       PII_ENC_ACTIVE_KEY_ID: '2',
@@ -107,10 +109,10 @@ describe('CryptoService — key rotation', () => {
     expect(svc2.needsReencrypt(null)).toBe(false);
   });
 
-  it('reencrypt moves an old-key value onto the active key, still decryptable', () => {
-    const svc1 = makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
+  it('reencrypt moves an old-key value onto the active key, still decryptable', async () => {
+    const svc1 = await makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
     const ct1 = svc1.encrypt('rotate-me')!;
-    const svc2 = makeService({
+    const svc2 = await makeService({
       PII_ENC_KEY: key1,
       PII_ENC_KEY_2: key2,
       PII_ENC_ACTIVE_KEY_ID: '2',
@@ -122,8 +124,8 @@ describe('CryptoService — key rotation', () => {
     expect(svc2.needsReencrypt(re)).toBe(false);
   });
 
-  it('rotationStatus flags a key older than 90 days', () => {
-    const svc = makeService({
+  it('rotationStatus flags a key older than 90 days', async () => {
+    const svc = await makeService({
       PII_ENC_KEY: key1,
       PII_ENC_KEY_2: key2,
       PII_ENC_KEY_2_CREATED: '2020-01-01',
@@ -136,8 +138,8 @@ describe('CryptoService — key rotation', () => {
     expect(status.activeKeyAgeDays).toBeGreaterThan(90);
   });
 
-  it('rotationStatus reports not-due for a fresh key', () => {
-    const svc = makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
+  it('rotationStatus reports not-due for a fresh key', async () => {
+    const svc = await makeService({ PII_ENC_KEY: key1, PII_INDEX_KEY: indexKey });
     expect(svc.rotationStatus().rotationDue).toBe(false);
   });
 });

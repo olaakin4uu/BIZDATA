@@ -33,6 +33,27 @@ export interface KeyProvider {
 }
 
 /**
+ * The minimal contract a KMS / HSM must satisfy for envelope encryption.
+ *
+ * BizData's PII data-encryption keys (DEKs) are never stored in the clear. Each
+ * is generated once, then WRAPPED by a key-encryption-key (KEK) that lives
+ * inside the KMS/HSM and never leaves it. Config holds only the wrapped DEK
+ * ciphertext; at boot the app calls `unwrap()` to recover the DEK into memory.
+ *
+ * A concrete implementation is a thin adapter over a vendor client:
+ *   - AWS KMS:      client.decrypt({ CiphertextBlob }) → Plaintext
+ *   - GCP KMS:      client.decrypt({ name, ciphertext }) → plaintext
+ *   - Azure Key Vault: cryptoClient.unwrapKey('A256KW', wrapped) → key
+ *   - PKCS#11 HSM:  C_Decrypt / C_UnwrapKey on the HSM session
+ * The vendor SDK is added when the hosting/KMS decision is made — this seam and
+ * the provider below are vendor-neutral, so it is a config swap, not a rewrite.
+ */
+export interface Kms {
+  /** Unwrap (decrypt) a base64 wrapped-DEK blob into raw 32-byte key material. */
+  unwrap(wrappedB64: string): Promise<Buffer> | Buffer;
+}
+
+/**
  * Env-backed key provider (default). Versioned keys come from env:
  *   PII_ENC_KEY            → key id "1"
  *   PII_ENC_KEY_2          → key id "2"
@@ -92,6 +113,82 @@ export class EnvKeyProvider implements KeyProvider {
   activeKey(): ManagedKey {
     const k = this.keys.get(this.activeId);
     if (!k) throw new Error('No active PII encryption key configured.');
+    return k;
+  }
+
+  keyById(id: string): ManagedKey | null {
+    return this.keys.get(id) ?? null;
+  }
+
+  allKeys(): ManagedKey[] {
+    return [...this.keys.values()];
+  }
+}
+
+/** A wrapped data-encryption key as stored in config: id + KMS-wrapped blob. */
+export interface WrappedDek {
+  id: string;
+  wrappedB64: string;
+  createdAt?: Date;
+}
+
+/**
+ * KMS/HSM-backed key provider (envelope encryption).
+ *
+ * DEKs are stored wrapped and unwrapped ONCE at boot via the injected `Kms`,
+ * then held in memory and served synchronously — so per-operation encrypt/
+ * decrypt stay hot (no KMS round-trip per field). Raw key bytes never touch
+ * disk or config. Construct with the async `create()` factory since unwrapping
+ * is async.
+ *
+ * Config (env, when using this provider):
+ *   PII_KMS_PROVIDER=aws|gcp|azure|pkcs11   → selects the concrete Kms adapter
+ *   PII_WRAPPED_DEK       → wrapped DEK id "1"      (base64)
+ *   PII_WRAPPED_DEK_2     → wrapped DEK id "2" … etc.
+ *   PII_ENC_ACTIVE_KEY_ID → active id (defaults to the highest present)
+ *   PII_WRAPPED_DEK_2_CREATED → optional ISO provisioning date (rotation clock)
+ */
+export class KmsKeyProvider implements KeyProvider {
+  private readonly keys = new Map<string, ManagedKey>();
+  private activeId!: string;
+
+  private constructor() {}
+
+  /** Unwrap every configured DEK via the KMS and build the provider. */
+  static async create(kms: Kms, deks: WrappedDek[], activeId?: string, startedAt = new Date()): Promise<KmsKeyProvider> {
+    if (!deks.length) throw new Error('KmsKeyProvider requires at least one wrapped DEK.');
+    const p = new KmsKeyProvider();
+    for (const d of deks) {
+      const key = await kms.unwrap(d.wrappedB64);
+      if (key.length !== 32) throw new Error(`Unwrapped DEK "${d.id}" must be exactly 32 bytes (AES-256), got ${key.length}.`);
+      p.keys.set(d.id, { id: d.id, key, createdAt: d.createdAt ?? startedAt });
+    }
+    // Active id: explicit, else the highest numeric id present.
+    if (activeId && p.keys.has(activeId)) {
+      p.activeId = activeId;
+    } else {
+      p.activeId = deks.map((d) => d.id).sort((a, b) => Number(b) - Number(a))[0];
+    }
+    return p;
+  }
+
+  /** Discover wrapped DEKs from env (PII_WRAPPED_DEK / PII_WRAPPED_DEK_N). */
+  static deksFromEnv(startedAt = new Date()): WrappedDek[] {
+    const out: WrappedDek[] = [];
+    const push = (id: string, env: string) => {
+      const wrappedB64 = process.env[env];
+      if (!wrappedB64) return;
+      const createdRaw = process.env[`${env}_CREATED`];
+      out.push({ id, wrappedB64, createdAt: createdRaw ? new Date(createdRaw) : startedAt });
+    };
+    push('1', 'PII_WRAPPED_DEK');
+    for (let n = 2; n <= 20; n++) push(String(n), `PII_WRAPPED_DEK_${n}`);
+    return out;
+  }
+
+  activeKey(): ManagedKey {
+    const k = this.keys.get(this.activeId);
+    if (!k) throw new Error('No active PII encryption key (KMS).');
     return k;
   }
 
