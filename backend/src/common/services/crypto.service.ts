@@ -7,6 +7,7 @@ import {
   createHash,
   timingSafeEqual,
 } from 'crypto';
+import { EnvKeyProvider, KeyProvider } from './key-provider';
 
 /**
  * Field-level encryption for sensitive PII at rest (NTAA §139 / NDPA §§25-28).
@@ -18,87 +19,140 @@ import {
  *    constraint and equality lookup without ever storing the plaintext. This is
  *    how we keep BVN/NIN/TIN unique and matchable while encrypting the value.
  *
- * Storage format for encrypt(): "v1.<iv_b64>.<tag_b64>.<ciphertext_b64>".
- * The version prefix allows key rotation / format changes later.
+ * Storage format (versioned, key-tagged):
+ *   v2.<keyId>.<iv_b64>.<tag_b64>.<ciphertext_b64>   ← current, carries key id
+ *   v1.<iv_b64>.<tag_b64>.<ciphertext_b64>           ← legacy, single key (id "1")
+ * Tagging the key id lets a rotation add a new active key WITHOUT re-encrypting
+ * everything at once: old data still decrypts under its original key.
  *
- * Keys come from env (base64). In production they are REQUIRED; in development
- * a deterministic key is derived from JWT_SECRET so the app still runs, with a
- * loud warning — never rely on that for real data.
+ * Keys come from a KeyProvider (see key-provider.ts) — env-backed by default,
+ * swappable for an HSM/KMS. The blind-index key stays single/stable because
+ * rotating it would invalidate every stored index; it is not part of rotation.
  */
 @Injectable()
 export class CryptoService implements OnModuleInit {
   private readonly logger = new Logger(CryptoService.name);
-  private encKey!: Buffer; // 32 bytes for AES-256
+  private keys!: KeyProvider;
   private indexKey!: Buffer;
-  private static readonly VERSION = 'v1';
+  private static readonly V2 = 'v2';
+  private static readonly V1 = 'v1';
 
   onModuleInit() {
     const isProd = process.env.NODE_ENV === 'production';
+    // The key provider is the HSM/KMS integration seam. Swap EnvKeyProvider for
+    // a KmsKeyProvider/Pkcs11KeyProvider here; nothing else changes.
+    this.keys = new EnvKeyProvider(isProd, new Date());
+    this.indexKey = this.loadIndexKey(isProd);
 
-    this.encKey = this.loadKey('PII_ENC_KEY', isProd, 'pii-enc');
-    this.indexKey = this.loadKey('PII_INDEX_KEY', isProd, 'pii-index');
-
-    if (this.encKey.length !== 32) {
-      throw new Error('PII_ENC_KEY must decode to exactly 32 bytes (AES-256).');
-    }
+    const active = this.keys.activeKey();
+    this.logger.log(`PII encryption ready — active key id "${active.id}", ${this.keys.allKeys().length} key(s) available.`);
   }
 
-  /**
-   * Key-provider seam. Today keys load from env (base64). This single method is
-   * the integration point for an HSM/KMS in production: replace the env read
-   * with a PKCS#11 call (FIPS 140-2 L3 HSM) or a cloud-KMS `decrypt`/`getKey`,
-   * keeping the rest of the service unchanged. 90-day rotation + dual control
-   * are then enforced at the HSM/KMS layer.
-   */
-  private loadKey(envName: string, isProd: boolean, devSalt: string): Buffer {
-    const raw = process.env[envName];
+  /** The blind-index key is single and stable (rotating it breaks all indexes). */
+  private loadIndexKey(isProd: boolean): Buffer {
+    const raw = process.env.PII_INDEX_KEY;
     if (raw) {
-      try {
-        return Buffer.from(raw, 'base64');
-      } catch {
-        throw new Error(`${envName} is not valid base64.`);
-      }
+      const b = Buffer.from(raw, 'base64');
+      if (b.length !== 32) throw new Error('PII_INDEX_KEY must decode to exactly 32 bytes.');
+      return b;
     }
-    if (isProd) {
-      throw new Error(`${envName} is required in production — refusing to start without a PII key.`);
-    }
-    // Dev fallback: deterministic 32-byte key derived from JWT_SECRET.
-    this.logger.warn(
-      `${envName} not set — deriving a DEV key from JWT_SECRET. Do NOT use this for production data.`,
-    );
+    if (isProd) throw new Error('PII_INDEX_KEY is required in production.');
+    this.logger.warn('PII_INDEX_KEY not set — deriving a DEV index key from JWT_SECRET.');
     const secret = process.env.JWT_SECRET || 'bizdata-dev-secret';
-    return createHash('sha256').update(`${devSalt}:${secret}`).digest();
+    return createHash('sha256').update(`pii-index:${secret}`).digest();
   }
 
-  /** AES-256-GCM encrypt a string. Returns null for null/empty input. */
+  /** AES-256-GCM encrypt a string with the ACTIVE key. Returns null for empty. */
   encrypt(plaintext: string | null | undefined): string | null {
     if (plaintext == null || plaintext === '') return null;
+    const active = this.keys.activeKey();
     const iv = randomBytes(12); // 96-bit nonce, recommended for GCM
-    const cipher = createCipheriv('aes-256-gcm', this.encKey, iv);
+    const cipher = createCipheriv('aes-256-gcm', active.key, iv);
     const ct = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     const tag = cipher.getAuthTag();
-    return `${CryptoService.VERSION}.${iv.toString('base64')}.${tag.toString('base64')}.${ct.toString('base64')}`;
+    return `${CryptoService.V2}.${active.id}.${iv.toString('base64')}.${tag.toString('base64')}.${ct.toString('base64')}`;
   }
 
-  /** Decrypt a value produced by encrypt(). Returns null for null input. */
+  /** Decrypt a value produced by encrypt() (v2 key-tagged or legacy v1). */
   decrypt(payload: string | null | undefined): string | null {
     if (payload == null || payload === '') return null;
     const parts = payload.split('.');
-    if (parts.length !== 4 || parts[0] !== CryptoService.VERSION) {
-      // Not an encrypted payload (e.g. legacy plaintext) — return as-is so the
-      // app degrades gracefully on un-migrated rows.
-      return payload;
+
+    // v2.<keyId>.<iv>.<tag>.<ct> — select the key by id.
+    if (parts.length === 5 && parts[0] === CryptoService.V2) {
+      const [, keyId, ivB64, tagB64, ctB64] = parts;
+      const mk = this.keys.keyById(keyId);
+      if (!mk) {
+        this.logger.error(`PII decryption failed — unknown key id "${keyId}".`);
+        return null;
+      }
+      return this.gcmDecrypt(mk.key, ivB64, tagB64, ctB64);
     }
-    try {
+
+    // v1.<iv>.<tag>.<ct> — legacy single key (id "1", or the dev key).
+    if (parts.length === 4 && parts[0] === CryptoService.V1) {
       const [, ivB64, tagB64, ctB64] = parts;
-      const decipher = createDecipheriv('aes-256-gcm', this.encKey, Buffer.from(ivB64, 'base64'));
+      const mk = this.keys.keyById('1') ?? this.keys.keyById('dev') ?? this.keys.activeKey();
+      return this.gcmDecrypt(mk.key, ivB64, tagB64, ctB64);
+    }
+
+    // Not an encrypted payload (e.g. legacy plaintext) — return as-is.
+    return payload;
+  }
+
+  private gcmDecrypt(key: Buffer, ivB64: string, tagB64: string, ctB64: string): string | null {
+    try {
+      const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivB64, 'base64'));
       decipher.setAuthTag(Buffer.from(tagB64, 'base64'));
       const pt = Buffer.concat([decipher.update(Buffer.from(ctB64, 'base64')), decipher.final()]);
       return pt.toString('utf8');
-    } catch (err) {
+    } catch {
       this.logger.error('PII decryption failed (key mismatch or tampered ciphertext).');
       return null;
     }
+  }
+
+  /** True if a stored ciphertext was written under a non-active key (or legacy
+   *  format) and should be re-encrypted under the active key. */
+  needsReencrypt(payload: string | null | undefined): boolean {
+    if (!payload) return false;
+    const parts = payload.split('.');
+    if (parts.length === 5 && parts[0] === CryptoService.V2) return parts[1] !== this.keys.activeKey().id;
+    if (parts.length === 4 && parts[0] === CryptoService.V1) return true; // legacy → migrate
+    return false; // plaintext / not ours
+  }
+
+  /** Re-encrypt a ciphertext under the active key (decrypt-then-encrypt). No-op
+   *  when already active. Returns the (possibly unchanged) payload. */
+  reencrypt(payload: string | null | undefined): string | null {
+    if (!payload || !this.needsReencrypt(payload)) return payload ?? null;
+    return this.encrypt(this.decrypt(payload));
+  }
+
+  /**
+   * Key-rotation status for the governance/DPO view. Flags any key older than
+   * `maxAgeDays` (default 90) so an operator knows a rotation is due. In an HSM
+   * deployment the HSM enforces rotation; this surfaces it in the app too.
+   */
+  rotationStatus(maxAgeDays = 90): {
+    activeKeyId: string;
+    keyCount: number;
+    activeKeyAgeDays: number;
+    rotationDue: boolean;
+    keys: { id: string; ageDays: number; active: boolean }[];
+  } {
+    const now = Date.now();
+    const active = this.keys.activeKey();
+    const ageDays = (d: Date) => Math.floor((now - d.getTime()) / 86_400_000);
+    const keys = this.keys.allKeys().map((k) => ({ id: k.id, ageDays: ageDays(k.createdAt), active: k.id === active.id }));
+    const activeAge = ageDays(active.createdAt);
+    return {
+      activeKeyId: active.id,
+      keyCount: keys.length,
+      activeKeyAgeDays: activeAge,
+      rotationDue: activeAge >= maxAgeDays,
+      keys,
+    };
   }
 
   /** Deterministic keyed HMAC for equality lookup / uniqueness. */

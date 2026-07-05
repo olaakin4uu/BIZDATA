@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { ScanService } from '../scan/scan.service';
 import { AgentsService } from '../agents/agents.service';
 import { CasesService } from '../cases/cases.service';
+import { CryptoService } from '../../common/services/crypto.service';
 
 /**
  * Automates the time-critical parts of the pipeline so they don't depend on an
@@ -25,6 +26,7 @@ export class SchedulerService {
     private scan: ScanService,
     private agents: AgentsService,
     private cases: CasesService,
+    private crypto: CryptoService,
   ) {}
 
   private currentTaxYear(): number {
@@ -53,6 +55,17 @@ export class SchedulerService {
     const adminId = await this.systemAdminId();
     const r = await this.agents.run(this.currentTaxYear(), adminId);
     this.logger.log(`Daily agent run: ${r.signals} signals over ${r.profiles} taxpayers`);
+  }
+
+  @Cron(CronExpression.EVERY_DAY_AT_1AM, { name: 'daily-key-rotation-check' })
+  async dailyKeyRotationCheck() {
+    if (!this.enabled) return;
+    const status = this.crypto.rotationStatus();
+    if (status.rotationDue) {
+      this.logger.warn(
+        `PII encryption key "${status.activeKeyId}" is ${status.activeKeyAgeDays} days old (≥90) — rotation is due. Provision a new PII_ENC_KEY_N, point PII_ENC_ACTIVE_KEY_ID at it, and run the re-encryption migration.`,
+      );
+    }
   }
 
   @Cron(CronExpression.EVERY_WEEK, { name: 'weekly-scan' })
