@@ -5,12 +5,15 @@ import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
 import { extractFinancials, reconcile, scoreReconciliation } from '../agents/implementations/document-intelligence.agent';
+import { StatutoryService } from '../statutory/statutory.service';
 
 // Statutory windows / rates. CONFIRM against the gazetted NTAA/NTA text — kept
 // as named constants so they can move to tenant config.
-const OBJECTION_WINDOW_DAYS = 30;          // §41: taxpayer's window to object
-const AUTHORITY_RESPONSE_DAYS = 90;        // §41(6): authority must respond, else deemed upheld
-const LATE_PAYMENT_PENALTY_RATE = 0.1;     // 10% late-payment penalty on assessed tax
+// NOTE: statutory windows and the penalty rate now come from the versioned
+// StatutoryConfig (see StatutoryService), read per-assessment so a change in the
+// law is a settings change, not a code change. The former constants
+// (OBJECTION_WINDOW_DAYS=30, AUTHORITY_RESPONSE_DAYS=90, penalty=10%) were seeded
+// as StatutoryConfig version 1.
 
 // States in which the estimated tax is still considered "at risk" / recoverable.
 const ACTIVE_STATES: CaseStatus[] = [
@@ -42,6 +45,7 @@ export class CasesService {
     private audit: AuditService,
     private crypto: CryptoService,
     private pii: PiiAccessService,
+    private statutory: StatutoryService,
   ) {}
 
   /** Dashboard headline metrics, the detection→recovery funnel, and breakdowns. */
@@ -254,15 +258,19 @@ export class CasesService {
       throw new BadRequestException(`Cannot move a ${current.status} case to ${dto.to}. Allowed: ${allowed.join(', ') || 'none'}`);
     }
 
+    // Read the active statutory parameters — windows, penalty rate — from config.
+    const cfg = await this.statutory.active();
+
     const data: Prisma.UnderdeclarationCaseUpdateInput = { status: dto.to };
     if (dto.notes) data.notes = dto.notes;
     if (dto.to === 'NOTICE_ISSUED') {
       const now = new Date();
       data.noticeIssuedAt = now;
-      data.objectionDueAt = new Date(now.getTime() + OBJECTION_WINDOW_DAYS * 86_400_000);
-      // §35 Best-of-Judgement assessment: tax on the discrepancy + 10% penalty.
+      data.objectionDueAt = new Date(now.getTime() + cfg.objectionWindowDays * 86_400_000);
+      data.statutoryVersion = cfg.version; // record the law version used for this assessment
+      // §35 Best-of-Judgement assessment: tax on the discrepancy + penalty.
       const assessedTax = Number(current.estimatedTaxDue);
-      const penalty = assessedTax * LATE_PAYMENT_PENALTY_RATE;
+      const penalty = assessedTax * cfg.latePaymentPenaltyRate;
       const total = assessedTax + penalty;
       data.assessedTax = new Prisma.Decimal(assessedTax.toFixed(2));
       data.penaltyAmount = new Prisma.Decimal(penalty.toFixed(2));
@@ -270,20 +278,21 @@ export class CasesService {
       data.demandNoticeRef = `DN-${current.year}-${id.slice(0, 6).toUpperCase()}`;
       data.assessmentBasis = {
         statute: 'NTAA 2025 s.35 (Best of Judgement)',
+        statutoryVersion: cfg.version,
         observedIncome: Number(current.observedIncome),
         declaredIncome: Number(current.declaredIncome),
         discrepancy: Number(current.discrepancyAmount),
         assessedTax,
-        penaltyRate: LATE_PAYMENT_PENALTY_RATE,
+        penaltyRate: cfg.latePaymentPenaltyRate,
         penalty,
         total,
-        objectionWindowDays: OBJECTION_WINDOW_DAYS,
+        objectionWindowDays: cfg.objectionWindowDays,
         issuedAt: now.toISOString(),
       } as any;
     }
     if (dto.to === 'OBJECTION') {
-      // §41(6): the authority has 90 days to respond or the objection is deemed upheld.
-      data.authorityResponseDueAt = new Date(Date.now() + AUTHORITY_RESPONSE_DAYS * 86_400_000);
+      // §41(6): the authority has N days to respond or the objection is deemed upheld.
+      data.authorityResponseDueAt = new Date(Date.now() + cfg.authorityResponseDays * 86_400_000);
     }
     if (dto.to === 'RECOVERED') {
       data.recoveredAmount = new Prisma.Decimal((dto.recoveredAmount ?? Number(current.estimatedTaxDue)).toFixed(2));

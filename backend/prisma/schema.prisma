@@ -436,6 +436,7 @@ model UnderdeclarationCase {
   objectionDueAt    DateTime?  // §41: 30 days for the taxpayer to object
   authorityResponseDueAt DateTime? // §41(6): 90 days for the authority to respond, else deemed upheld
   resolvedAt        DateTime?
+  statutoryVersion  Int?       // StatutoryConfig.version used when the assessment was raised
   notes             String?
   createdAt         DateTime   @default(now())
   updatedAt         DateTime   @updatedAt
@@ -477,6 +478,41 @@ model CaseDocument {
 
   @@index([caseId])
   @@map("case_documents")
+}
+
+// ─── STATUTORY CONFIGURATION (versioned) ──────────────────────────────────────
+// The legal parameters that drive assessments — due-date windows, objection and
+// authority-response windows, penalty and tax rates, and the CIT threshold.
+// Editing creates a NEW version (the old one is retained); exactly one row is
+// active at a time. Every assessment stamps the version it used, so a case can
+// always be re-explained against the law as it stood when it was raised.
+
+model StatutoryConfig {
+  id                    String   @id @default(uuid())
+  version               Int      @unique
+  isActive              Boolean  @default(false)
+
+  // §29 / §6.6 — provider reporting obligation
+  reportingDueDays      Int      @default(15)   // days after period end a return is due
+
+  // §41 — objection lifecycle
+  objectionWindowDays   Int      @default(30)   // taxpayer's window to object
+  authorityResponseDays Int      @default(90)   // §41(6) — else deemed upheld
+
+  // Penalty + tax rates
+  latePaymentPenaltyRate Decimal @default(0.10) @db.Decimal(5, 4) // 10%
+  citRate               Decimal  @default(0.30) @db.Decimal(5, 4) // 30% company income tax
+  citSmallCoThreshold   Decimal  @default(50000000) @db.Decimal(18, 2) // small-company exemption ceiling
+
+  // Detection default
+  defaultScanThreshold  Decimal  @default(0.20) @db.Decimal(5, 4) // discrepancy % to flag
+
+  note                  String?  // why this version was created
+  createdById           String?
+  createdAt             DateTime @default(now())
+
+  @@index([isActive])
+  @@map("statutory_configs")
 }
 
 // ─── CROSS-STATE DATA SHARING (Joint Revenue Board Act 2025 §15) ──────────────

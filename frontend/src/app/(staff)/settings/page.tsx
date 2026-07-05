@@ -4,6 +4,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import PasswordInput from '@/components/PasswordInput';
 import { tenantApi, type Tenant } from '@/lib/api/tenant';
+import { statutoryApi, type StatutoryConfig, type StatutoryHistoryItem } from '@/lib/api/statutory';
 import { authApi } from '@/lib/api/auth';
 import { applyBrandColor } from '@/lib/brand';
 import { extractErrorMessage } from '@/lib/utils';
@@ -132,6 +133,15 @@ export default function SettingsPage() {
             </form>
           </section>
 
+          <section className="mb-6">
+            <h2 className="text-sm font-semibold text-slate-800 mb-1">Statutory parameters</h2>
+            <p className="text-xs text-slate-500 mb-3">
+              The legal parameters that drive assessments. Editing creates a new version; every case records the version it used.
+              Confirm these against the gazetted NTAA text before relying on them.
+            </p>
+            <StatutoryPanel />
+          </section>
+
           <section>
             <h2 className="text-sm font-semibold text-slate-800 mb-3">Change your password</h2>
             <form onSubmit={changePassword} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-3 max-w-sm">
@@ -202,6 +212,116 @@ function Field({ label, children, className, hint }: { label: string; children: 
       <label className="block text-xs font-medium text-slate-700 mb-1">{label}</label>
       {children}
       {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+    </div>
+  );
+}
+
+// Statutory parameters — versioned. Editing creates a new active version.
+const STAT_FIELDS: { key: keyof StatutoryConfig; label: string; hint: string; kind: 'days' | 'rate' | 'money' }[] = [
+  { key: 'reportingDueDays',      label: 'Reporting due (days after period end)', hint: '§29/§6.6 — provider filing deadline', kind: 'days' },
+  { key: 'objectionWindowDays',   label: 'Objection window (days)',               hint: '§41 — taxpayer’s window to object', kind: 'days' },
+  { key: 'authorityResponseDays', label: 'Authority response (days)',             hint: '§41(6) — else objection deemed upheld', kind: 'days' },
+  { key: 'latePaymentPenaltyRate',label: 'Late-payment penalty rate',             hint: 'Fraction, e.g. 0.10 = 10%', kind: 'rate' },
+  { key: 'citRate',               label: 'Company income tax rate',               hint: 'Fraction, e.g. 0.30 = 30%', kind: 'rate' },
+  { key: 'citSmallCoThreshold',   label: 'Small-company CIT threshold (₦)',       hint: 'Turnover below which CIT is nil', kind: 'money' },
+  { key: 'defaultScanThreshold',  label: 'Default scan threshold',                hint: 'Discrepancy fraction to flag, e.g. 0.20', kind: 'rate' },
+];
+
+function StatutoryPanel() {
+  const [cfg, setCfg] = useState<StatutoryConfig | null>(null);
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [note, setNote] = useState('');
+  const [history, setHistory] = useState<StatutoryHistoryItem[]>([]);
+  const [showHistory, setShowHistory] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const load = () => {
+    statutoryApi.active().then((c) => {
+      setCfg(c);
+      const f: Record<string, string> = {};
+      STAT_FIELDS.forEach(({ key }) => { f[key] = String(c[key]); });
+      setForm(f);
+    }).catch(() => setCfg(null));
+    statutoryApi.history().then(setHistory).catch(() => setHistory([]));
+  };
+  useEffect(load, []);
+
+  const save = async () => {
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      const patch: any = { note: note || undefined };
+      STAT_FIELDS.forEach(({ key }) => { patch[key] = Number(form[key]); });
+      const c = await statutoryApi.update(patch);
+      setMsg(`Saved as version ${c.version}.`);
+      setNote('');
+      load();
+    } catch (e) { setErr(extractErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  if (!cfg) return <p className="text-xs text-slate-400">Loading…</p>;
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 space-y-4">
+      <div className="flex items-center justify-between">
+        <span className="text-xs font-mono px-2 py-0.5 rounded bg-teal-50 text-teal-700">Active: version {cfg.version}</span>
+        <button onClick={() => setShowHistory((v) => !v)} className="text-xs text-teal-700 hover:underline">
+          {showHistory ? 'Hide history' : `Version history (${history.length})`}
+        </button>
+      </div>
+
+      {err && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
+      {msg && <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">{msg}</div>}
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+        {STAT_FIELDS.map(({ key, label, hint, kind }) => (
+          <Field key={key} label={label} hint={hint}>
+            <input
+              value={form[key] ?? ''}
+              onChange={(e) => setForm({ ...form, [key]: e.target.value.replace(kind === 'money' ? /[^\d.]/g : /[^\d.]/g, '') })}
+              inputMode="decimal"
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+            />
+          </Field>
+        ))}
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-slate-700 mb-1">Change note <span className="text-slate-400">(why — recorded with the version)</span></label>
+        <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g. Penalty rate updated per 2026 Finance Act"
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+      </div>
+
+      <button onClick={save} disabled={busy} className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+        {busy ? 'Saving…' : 'Save as new version'}
+      </button>
+
+      {showHistory && (
+        <div className="pt-3 border-t border-slate-100">
+          <table className="w-full text-xs">
+            <thead>
+              <tr className="text-left text-slate-400">
+                <th className="py-1.5 font-medium">Version</th>
+                <th className="py-1.5 font-medium">Penalty</th>
+                <th className="py-1.5 font-medium">Due days</th>
+                <th className="py-1.5 font-medium">Note</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.map((v) => (
+                <tr key={v.version} className="border-t border-slate-50">
+                  <td className="py-1.5">v{v.version}{v.isActive && <span className="ml-1 text-[10px] text-teal-700 font-semibold">ACTIVE</span>}</td>
+                  <td className="py-1.5">{(v.latePaymentPenaltyRate * 100).toFixed(0)}%</td>
+                  <td className="py-1.5">{v.reportingDueDays}</td>
+                  <td className="py-1.5 text-slate-500">{v.note ?? '—'}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

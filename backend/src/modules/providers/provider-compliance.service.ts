@@ -1,51 +1,58 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { StatutoryService } from '../statutory/statutory.service';
 
 export type PeriodStatus = 'ON_TIME' | 'LATE' | 'MISSING' | 'PENDING';
 
 /**
  * §29 / §6.6 obligation tracking: for each provider, derive the periods it is
  * obliged to report (per its reporting frequency), the statutory due date
- * (15 days after period end), and whether a compliant submission arrived in
- * time — plus per-provider data quality (rejection rate).
+ * (period end + the configured reporting-due days), and whether a compliant
+ * submission arrived in time — plus per-provider data quality (rejection rate).
  */
 @Injectable()
 export class ProviderComplianceService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService, private statutory: StatutoryService) {}
 
-  // 15 days after the period ends (§6.6). Quarters end Mar/Jun/Sep/Dec.
-  private quarterDue(year: number, q: number): Date {
-    const map: Record<number, [number, number]> = {
-      1: [3, 15], // Q1 (Jan–Mar) → 15 Apr
-      2: [6, 15], // Q2 → 15 Jul
-      3: [9, 15], // Q3 → 15 Oct
-      4: [0, 15], // Q4 → 15 Jan next year
+  /** N days after the last day of a quarter (dueDays from active StatutoryConfig). */
+  private quarterDue(year: number, q: number, dueDays: number): Date {
+    // First day of the month AFTER the quarter ends, then subtract to the last
+    // day of the quarter, then add dueDays.
+    const endMonthExclusive: Record<number, [number, number]> = {
+      1: [year, 3],       // quarter ends 31 Mar → month-start Apr
+      2: [year, 6],       // 30 Jun → Jul
+      3: [year, 9],       // 30 Sep → Oct
+      4: [year + 1, 0],   // 31 Dec → Jan next year
     };
-    const [monthIdx, day] = map[q];
-    const y = q === 4 ? year + 1 : year;
-    return new Date(Date.UTC(y, monthIdx, day));
+    const [y, m] = endMonthExclusive[q];
+    const periodEnd = new Date(Date.UTC(y, m, 0)); // day 0 = last day of prior month
+    return this.addDays(periodEnd, dueDays);
   }
-  private monthDue(year: number, m: number): Date {
-    // 15th of the following month
-    return new Date(Date.UTC(m === 12 ? year + 1 : year, m % 12, 15));
+  private monthDue(year: number, m: number, dueDays: number): Date {
+    const periodEnd = new Date(Date.UTC(year, m, 0)); // last day of month m (1-based)
+    return this.addDays(periodEnd, dueDays);
+  }
+  private addDays(d: Date, days: number): Date {
+    return new Date(d.getTime() + days * 86_400_000);
   }
 
-  private expectedPeriods(year: number, frequency: string | null): { label: string; due: Date }[] {
+  private expectedPeriods(year: number, frequency: string | null, dueDays: number): { label: string; due: Date }[] {
     const freq = (frequency || 'QUARTERLY').toUpperCase();
     if (freq === 'MONTHLY') {
       return Array.from({ length: 12 }, (_, i) => ({
         label: `${year}-${String(i + 1).padStart(2, '0')}`,
-        due: this.monthDue(year, i + 1),
+        due: this.monthDue(year, i + 1, dueDays),
       }));
     }
     if (freq === 'ANNUAL') {
-      return [{ label: `${year}`, due: new Date(Date.UTC(year + 1, 0, 15)) }];
+      return [{ label: `${year}`, due: this.addDays(new Date(Date.UTC(year, 11, 31)), dueDays) }];
     }
-    return [1, 2, 3, 4].map((q) => ({ label: `${year}-Q${q}`, due: this.quarterDue(year, q) }));
+    return [1, 2, 3, 4].map((q) => ({ label: `${year}-Q${q}`, due: this.quarterDue(year, q, dueDays) }));
   }
 
   async forYear(year: number, providerId?: string) {
     const now = new Date();
+    const dueDays = (await this.statutory.active()).reportingDueDays;
     const providers = await this.prisma.dataProvider.findMany({
       where: { ...(providerId ? { id: providerId } : { status: 'ACTIVE' }) },
       select: { id: true, name: true, providerType: true, reportingFrequency: true, status: true },
@@ -60,7 +67,7 @@ export class ProviderComplianceService {
 
     return providers.map((p) => {
       const mine = subs.filter((s) => s.providerId === p.id);
-      const expected = this.expectedPeriods(year, p.reportingFrequency);
+      const expected = this.expectedPeriods(year, p.reportingFrequency, dueDays);
       const periods = expected.map((e) => {
         const forPeriod = mine.filter((s) => s.periodLabel === e.label && s.status !== 'REJECTED');
         const first = forPeriod[0];

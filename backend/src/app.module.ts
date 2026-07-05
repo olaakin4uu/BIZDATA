@@ -33,6 +33,7 @@ import { TaxNetModule } from './modules/tax-net/tax-net.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { PortfoliosModule } from './modules/portfolios/portfolios.module';
 import { IdentityModule } from './modules/identity/identity.module';
+import { StatutoryModule } from './modules/statutory/statutory.module';
 
 @Module({
   imports: [
@@ -68,6 +69,7 @@ import { IdentityModule } from './modules/identity/identity.module';
     AnalyticsModule,
     PortfoliosModule,
     IdentityModule,
+    StatutoryModule,
   ],
 })
 export class AppModule {}

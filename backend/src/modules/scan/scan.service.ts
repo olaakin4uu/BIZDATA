@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { PortfoliosService } from '../portfolios/portfolios.service';
+import { StatutoryService } from '../statutory/statutory.service';
 import {
   ENGINE_VERSION,
   normalizeInflow,
@@ -19,11 +20,14 @@ export class ScanService {
     private prisma: PrismaService,
     private audit: AuditService,
     private portfolios: PortfoliosService,
+    private statutory: StatutoryService,
   ) {}
 
   async create(dto: { year: number; threshold?: number; providerTypes?: string[] }, staffId: string) {
     if (!dto.year) throw new Error('year required');
-    const threshold = dto.threshold ?? 0.20;
+    // Default the flagging threshold from the active statutory config when the
+    // caller doesn't specify one.
+    const threshold = dto.threshold ?? (await this.statutory.active()).defaultScanThreshold;
     const scan = await this.prisma.underdeclarationScan.create({
       data: {
         year: dto.year,
