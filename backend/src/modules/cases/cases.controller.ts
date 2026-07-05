@@ -1,5 +1,9 @@
-import { Body, Controller, Get, Header, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import {
+  Body, Controller, Get, Header, Param, Patch, Post, Query, UseGuards,
+  UseInterceptors, UploadedFile,
+} from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CasesService } from './cases.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -50,5 +54,23 @@ export class CasesController {
   @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')
   assign(@Param('id') id: string, @Body() dto: any, @CurrentStaff() u: any) {
     return this.service.assign(id, dto.assignedToId ?? null, u.id);
+  }
+
+  @Get(':id/documents')
+  listDocuments(@Param('id') id: string) {
+    return this.service.listDocuments(id);
+  }
+
+  @Post(':id/documents')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'ANALYST')
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: 25 * 1024 * 1024 } }))
+  addDocument(
+    @Param('id') id: string,
+    @UploadedFile() file: any,
+    @Body() body: { pastedText?: string },
+    @CurrentStaff() u: any,
+  ) {
+    return this.service.addDocument(id, file, { pastedText: body?.pastedText, staffId: u.id });
   }
 }

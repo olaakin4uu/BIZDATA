@@ -88,7 +88,40 @@ export const casesApi = {
     apiFetch<UnderdeclarationCase>(`/cases/${id}/status`, { method: 'PATCH', body: { to, ...opts } }),
   assign: (id: string, assignedToId: string | null) =>
     apiFetch<UnderdeclarationCase>(`/cases/${id}/assign`, { method: 'PATCH', body: { assignedToId } }),
+
+  // Objection documents (Document Intelligence)
+  listDocuments: (id: string) => apiFetch<CaseDocument[]>(`/cases/${id}/documents`),
+  addDocument: (id: string, args: { file?: File; pastedText?: string }) => {
+    if (args.file) {
+      const fd = new FormData();
+      fd.append('file', args.file);
+      if (args.pastedText) fd.append('pastedText', args.pastedText);
+      return apiFetch<AddDocumentResult>(`/cases/${id}/documents`, { method: 'POST', body: fd });
+    }
+    return apiFetch<AddDocumentResult>(`/cases/${id}/documents`, { method: 'POST', body: { pastedText: args.pastedText } });
+  },
 };
+
+export interface CaseDocument {
+  id: string;
+  fileName: string;
+  mimeType?: string | null;
+  fileSizeBytes?: number | null;
+  extractionSource?: string | null;
+  declaredIncome?: string | null;
+  variance?: string | null;
+  consistent?: boolean | null;
+  reconcileNote?: string | null;
+  createdAt: string;
+}
+export interface AddDocumentResult {
+  id: string;
+  fileName: string;
+  extractionSource: string;
+  extracted: { declaredIncome?: number; expenses?: number; assetDisposals?: number };
+  reconciliation: { variance: number; consistent: boolean; note: string };
+  signalRaised: boolean;
+}
 
 /** Format a kobo-precise NGN string/number into a compact ₦ label. */
 export function formatNaira(value: string | number | null | undefined): string {

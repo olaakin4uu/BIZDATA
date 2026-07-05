@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
+import PasswordInput from '@/components/PasswordInput';
 import { usersApi } from '@/lib/api/users';
 import { STAFF_ROLES, extractErrorMessage } from '@/lib/utils';
 
@@ -83,11 +84,19 @@ function Text({
       <label className="block text-xs font-medium text-slate-700 mb-1">
         {label}{required && <span className="text-red-500 ml-1">*</span>}
       </label>
-      <input
-        type={type} required={required} value={value}
-        onChange={(e) => onChange(e.target.value)}
-        className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
-      />
+      {type === 'password' ? (
+        <PasswordInput
+          required={required} value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+        />
+      ) : (
+        <input
+          type={type} required={required} value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
+        />
+      )}
       {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
     </div>
   );

@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
+import { extractFinancials, reconcile, scoreReconciliation } from '../agents/implementations/document-intelligence.agent';
 
 // Statutory windows / rates. CONFIRM against the gazetted NTAA/NTA text — kept
 // as named constants so they can move to tenant config.
@@ -348,5 +349,107 @@ export class CasesService {
       });
     }
     return { deemedUpheld: overdue.length };
+  }
+
+  // ─── OBJECTION DOCUMENTS + DOCUMENT INTELLIGENCE ──────────────────────────
+
+  /**
+   * Turn an uploaded objection document into text. Plain text/CSV is read
+   * directly; for scans/PDFs the caller supplies already-OCR'd text via
+   * `pastedText` (the seam for a real OCR service — e.g. Tesseract/cloud OCR —
+   * which would replace this branch and set extractionSource='OCR').
+   */
+  private extractText(file: any, pastedText?: string): { text: string; source: string } {
+    if (pastedText && pastedText.trim()) return { text: pastedText, source: 'PASTED' };
+    const mime = file?.mimetype || '';
+    if (file?.buffer && (mime.startsWith('text/') || mime === 'application/csv' || mime === 'text/csv')) {
+      return { text: file.buffer.toString('utf8'), source: 'TEXT' };
+    }
+    // No OCR service wired yet: accept the file but require pasted OCR text for
+    // non-text formats so reconciliation has something to work on.
+    return { text: '', source: 'NONE' };
+  }
+
+  /**
+   * Upload an objection document to a case, run Document Intelligence over it
+   * (extract declared figures, reconcile against observed inflow), store the
+   * verdict, and raise a `document` RiskSignal when it under-declares.
+   */
+  async addDocument(caseId: string, file: any, opts: { pastedText?: string; staffId?: string }) {
+    const kase = await this.prisma.underdeclarationCase.findUnique({
+      where: { id: caseId },
+      select: { id: true, taxpayerId: true, year: true, observedIncome: true },
+    });
+    if (!kase) throw new NotFoundException('Case not found');
+    if (!file && !opts.pastedText) throw new BadRequestException('A file or pasted document text is required.');
+
+    const { text, source } = this.extractText(file, opts.pastedText);
+    if (!text) {
+      throw new BadRequestException(
+        'Could not read text from this file. Upload a text/CSV file, or paste the OCR text of a scanned/PDF document.',
+      );
+    }
+
+    const observed = Number(kase.observedIncome ?? 0);
+    const extracted = extractFinancials(text);
+    const result = reconcile(extracted, observed);
+    const { score, severity } = scoreReconciliation(result);
+
+    const doc = await this.prisma.caseDocument.create({
+      data: {
+        caseId,
+        fileName: file?.originalname ?? 'pasted-document.txt',
+        mimeType: file?.mimetype ?? 'text/plain',
+        fileSizeBytes: file?.size ?? Buffer.byteLength(text, 'utf8'),
+        extractedText: text.slice(0, 20000), // cap stored text
+        extractionSource: source,
+        declaredIncome: extracted.declaredIncome != null ? new Prisma.Decimal(extracted.declaredIncome) : null,
+        variance: new Prisma.Decimal(result.variance.toFixed(4)),
+        consistent: result.consistent,
+        reconcileNote: result.note,
+        uploadedById: opts.staffId ?? null,
+      },
+    });
+
+    // Raise / update a Document Intelligence signal when it under-declares.
+    if (result.variance < 0 && score > 0.1) {
+      await this.prisma.riskSignal.upsert({
+        where: { taxpayerId_year_agentKey: { taxpayerId: kase.taxpayerId, year: kase.year, agentKey: 'document' } },
+        create: {
+          taxpayerId: kase.taxpayerId, year: kase.year, agentKey: 'document',
+          score: new Prisma.Decimal(score.toFixed(2)), severity,
+          summary: result.note,
+          details: { documentId: doc.id, extracted, observedInflow: observed } as any,
+        },
+        update: {
+          score: new Prisma.Decimal(score.toFixed(2)), severity,
+          summary: result.note,
+          details: { documentId: doc.id, extracted, observedInflow: observed } as any,
+        },
+      });
+    }
+
+    await this.audit.log({
+      actorType: 'STAFF', actorId: opts.staffId, staffId: opts.staffId,
+      action: 'UPLOAD_CASE_DOCUMENT', entity: 'CaseDocument', entityId: doc.id,
+      afterJson: { caseId, consistent: result.consistent, variance: result.variance, declared: extracted.declaredIncome ?? null },
+    });
+
+    return {
+      id: doc.id, fileName: doc.fileName, extractionSource: source,
+      extracted, reconciliation: result, signalRaised: result.variance < 0 && score > 0.1,
+    };
+  }
+
+  /** List a case's uploaded documents (metadata + reconciliation verdict; no full text). */
+  async listDocuments(caseId: string) {
+    return this.prisma.caseDocument.findMany({
+      where: { caseId },
+      orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, fileName: true, mimeType: true, fileSizeBytes: true, extractionSource: true,
+        declaredIncome: true, variance: true, consistent: true, reconcileNote: true, createdAt: true,
+      },
+    });
   }
 }

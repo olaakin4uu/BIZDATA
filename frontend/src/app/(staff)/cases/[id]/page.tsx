@@ -2,7 +2,7 @@
 import { useEffect, useState, use as usePromise } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
-import { casesApi, caseDisplayName, type UnderdeclarationCase, type CaseStatus } from '@/lib/api/cases';
+import { casesApi, caseDisplayName, type UnderdeclarationCase, type CaseStatus, type CaseDocument } from '@/lib/api/cases';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { agentsApi, AGENT_NAMES, type RiskSignal } from '@/lib/api/agents';
 import { formatMoney, formatDate, formatDateTime, extractErrorMessage } from '@/lib/utils';
@@ -51,6 +51,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [c, setC] = useState<UnderdeclarationCase | null>(null);
   const [records, setRecords] = useState<DataRecord[]>([]);
   const [signals, setSignals] = useState<RiskSignal[]>([]);
+  const [docs, setDocs] = useState<CaseDocument[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<CaseStatus | null>(null);
   const [notes, setNotes] = useState('');
@@ -62,6 +63,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       .then((data) => {
         setC(data);
         agentsApi.signals({ taxpayerId: data.taxpayerId, year: data.year }).then(setSignals).catch(() => setSignals([]));
+        casesApi.listDocuments(id).then(setDocs).catch(() => setDocs([]));
         return dataRecordsApi.list({ taxpayerId: data.taxpayerId, periodYear: data.year, limit: 100 });
       })
       .then((r) => setRecords(r?.records ?? []))
@@ -213,6 +215,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             )}
           </Card>
 
+          {/* Objection documents — Document Intelligence */}
+          <Card title={`Objection documents (${docs.length})`}>
+            <DocumentPanel caseId={id} docs={docs} onChange={load} />
+          </Card>
+
           {/* §35 Best-of-Judgement assessment (once a notice is issued) */}
           {c.demandNoticeRef && (
             <Card title={`Best-of-Judgement assessment · ${c.demandNoticeRef}`}>
@@ -337,6 +344,81 @@ function Row({ k, v }: { k: string; v: React.ReactNode }) {
     <div className="flex items-start justify-between gap-3">
       <dt className="text-slate-400">{k}</dt>
       <dd className="text-slate-700 text-right">{v}</dd>
+    </div>
+  );
+}
+
+function DocumentPanel({ caseId, docs, onChange }: { caseId: string; docs: CaseDocument[]; onChange: () => void }) {
+  const [pastedText, setPastedText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const uploadFile = async (file: File) => {
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      const r = await casesApi.addDocument(caseId, { file });
+      setMsg(r.reconciliation.note);
+      onChange();
+    } catch (e) { setErr(extractErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const submitText = async () => {
+    if (!pastedText.trim()) return;
+    setBusy(true); setErr(null); setMsg(null);
+    try {
+      const r = await casesApi.addDocument(caseId, { pastedText });
+      setMsg(r.reconciliation.note);
+      setPastedText('');
+      onChange();
+    } catch (e) { setErr(extractErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  return (
+    <div className="space-y-3">
+      <p className="text-xs text-slate-500">
+        Upload a taxpayer’s supporting document (text/CSV read directly; for a scan or PDF, paste its OCR text below).
+        Document Intelligence extracts the declared figures and reconciles them against the observed inflow.
+      </p>
+
+      {/* existing docs */}
+      {docs.length > 0 && (
+        <ul className="space-y-2">
+          {docs.map((d) => (
+            <li key={d.id} className="flex items-start gap-3 text-sm border border-slate-100 rounded-lg px-3 py-2">
+              <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${d.consistent ? 'text-emerald-700 bg-emerald-50' : 'text-red-700 bg-red-50'}`}>
+                {d.consistent ? 'Consistent' : 'Variance'}
+              </span>
+              <div className="min-w-0">
+                <span className="font-medium text-slate-800">{d.fileName}</span>
+                <p className="text-xs text-slate-500">{d.reconcileNote}</p>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {/* uploader */}
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="px-3 py-1.5 text-xs font-medium border border-slate-300 rounded-lg hover:bg-slate-50 cursor-pointer">
+          {busy ? 'Processing…' : 'Choose file'}
+          <input type="file" hidden accept=".txt,.csv,text/plain,text/csv" disabled={busy}
+            onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) uploadFile(f); }} />
+        </label>
+        <span className="text-xs text-slate-400">or paste OCR text →</span>
+      </div>
+      <textarea value={pastedText} onChange={(e) => setPastedText(e.target.value)}
+        placeholder="Paste the document text (e.g. 'Assessable Income: N1,700,000,000')…"
+        rows={3} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono" />
+      <button onClick={submitText} disabled={busy || !pastedText.trim()}
+        className="px-4 py-1.5 text-xs font-semibold bg-teal-600 hover:bg-teal-700 text-white rounded-lg disabled:opacity-50">
+        Reconcile pasted text
+      </button>
+
+      {msg && <p className="text-xs text-emerald-700">{msg}</p>}
+      {err && <p className="text-xs text-red-600">{err}</p>}
     </div>
   );
 }

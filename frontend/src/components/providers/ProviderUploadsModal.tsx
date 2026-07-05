@@ -4,6 +4,7 @@ import {
   providersApi, type ProviderUpload, type UploadRecord, type UploadsResponse,
 } from '@/lib/api/providers';
 import { formatBytes, formatDate, formatDateTime, formatMoneyShort, extractErrorMessage } from '@/lib/utils';
+import PasswordInput from '@/components/PasswordInput';
 
 interface Props {
   providerId: string;
@@ -174,8 +175,8 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
                       <label className="block text-[10px] font-medium text-slate-500 mb-1">Your password</label>
-                      <input
-                        type="password" value={password} autoComplete="current-password"
+                      <PasswordInput
+                        value={password} autoComplete="current-password"
                         onChange={(e) => setPassword(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && doStepUp()}
                         className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-teal-500"

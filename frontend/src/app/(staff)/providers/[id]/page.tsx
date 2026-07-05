@@ -3,6 +3,7 @@ import { useEffect, useState, use as usePromise } from 'react';
 import Link from 'next/link';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ProviderUploadsModal from '@/components/providers/ProviderUploadsModal';
+import PasswordInput from '@/components/PasswordInput';
 import { providersApi, type Provider, type ProviderUserRecord } from '@/lib/api/providers';
 import { complianceApi, type ProviderCompliance, type PeriodStatus } from '@/lib/api/compliance';
 import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, formatDate, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
@@ -343,7 +344,7 @@ function NewUserForm({ providerId, onCreated, onCancel }: { providerId: string; 
         <input required placeholder="First name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         <input required placeholder="Last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm col-span-2" />
-        <input required type="password" placeholder="Password (min 8 chars)" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm col-span-2" />
+        <PasswordInput required placeholder="Password (min 8 chars)" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" wrapperClassName="col-span-2" />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
           {PROVIDER_USER_ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}</select>
         <input placeholder="Phone (optional)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />

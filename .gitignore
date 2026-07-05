@@ -58,3 +58,6 @@ BIZDATA-Decision-Support-Phases.*
 BIZDATA-Master-Manual.*
 BIZDATA-Provider-Dashboard-Guide.*
 Screenshot-Recipe-Guide.*
+
+# Office temp lock files
+~$*

@@ -443,11 +443,40 @@ model UnderdeclarationCase {
   taxpayer   Taxpayer              @relation(fields: [taxpayerId], references: [id])
   scan       UnderdeclarationScan? @relation(fields: [scanId], references: [id])
   assignedTo User?                 @relation("CaseAssignee", fields: [assignedToId], references: [id])
+  documents  CaseDocument[]
 
   @@unique([taxpayerId, year])
   @@index([status])
   @@index([riskLevel])
   @@map("underdeclaration_cases")
+}
+
+// ─── OBJECTION DOCUMENTS ──────────────────────────────────────────────────────
+// A taxpayer's supporting documents uploaded at objection time. The file text is
+// extracted (OCR for scans/PDFs, direct read for text/CSV), the Document
+// Intelligence agent reconciles the declared figures against observed inflow,
+// and the verdict is stored here + raised as a RiskSignal.
+
+model CaseDocument {
+  id            String   @id @default(uuid())
+  caseId        String
+  fileName      String
+  mimeType      String?
+  fileSizeBytes Int?
+  extractedText String?  @db.Text // OCR/parsed text the reconciliation ran on
+  extractionSource String? // 'TEXT' | 'OCR' | 'PASTED'
+  // Reconciliation result (Document Intelligence)
+  declaredIncome Decimal? @db.Decimal(18, 2)
+  variance      Decimal? @db.Decimal(8, 4) // (declared - observed) / observed
+  consistent    Boolean?
+  reconcileNote String?  @db.Text
+  uploadedById  String?
+  createdAt     DateTime @default(now())
+
+  case UnderdeclarationCase @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@map("case_documents")
 }
 
 // ─── CROSS-STATE DATA SHARING (Joint Revenue Board Act 2025 §15) ──────────────

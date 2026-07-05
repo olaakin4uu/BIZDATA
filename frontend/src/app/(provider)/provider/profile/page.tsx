@@ -2,6 +2,7 @@
 import { useEffect, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import PasswordInput from '@/components/PasswordInput';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import type { ProviderUser } from '@/lib/api/auth';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
@@ -89,15 +90,15 @@ export default function ProviderProfilePage() {
           {pwErr && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{pwErr}</div>}
           {pwMsg && <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">{pwMsg}</div>}
           <Field label="Current password">
-            <input type="password" required value={pwForm.currentPassword} onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
+            <PasswordInput required value={pwForm.currentPassword} onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
           </Field>
           <Field label="New password" hint="At least 8 characters.">
-            <input type="password" required minLength={8} value={pwForm.newPassword} onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
+            <PasswordInput required minLength={8} value={pwForm.newPassword} onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
           </Field>
           <Field label="Confirm new password">
-            <input type="password" required value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
+            <PasswordInput required value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
           </Field>
           <button type="submit" disabled={pwBusy} className="px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
