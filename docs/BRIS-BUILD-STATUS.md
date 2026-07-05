@@ -85,14 +85,25 @@ Agent signals are **fused into case risk** (`detection-engine.ts → aggregateAg
 | Bank MoU / onboarding tracking | ✅ | `BankMou`, `/governance` UI |
 | Notifications/alerts | ✅ | `notifications.service.ts`, `/notifications` UI |
 
-## Cross-jurisdiction & infrastructure (outstanding)
+## Cross-jurisdiction (built)
 | Item | Status |
 |---|---|
 | JRB Act §15 cross-state data sharing (Phase 4) | ✅ `modules/cross-state/*`, `/cross-state` UI — outbound referrals (minimised: TIN+amounts), inbound channel, TIN-blind-index linking, audited |
-| Data sovereignty (in-FCT hosting, no egress) | 🏗️ deployment/hosting policy |
-| HSM / TDE / mTLS-SFTP / hardware 3FA | 🏗️ infrastructure/procurement |
+
+## Infrastructure items — ranked by relevance to BizData
+These are often lumped together as "procurement." They are not equally relevant to *this* system's security posture. Ranked from load-bearing to policy-only:
+
+| Item | Relevance to BizData | What is actually missing | Where it plugs in |
+|---|---|---|---|
+| **HSM / KMS key custody** | **High — load-bearing.** BizData's entire PII-protection story (encrypted BVN/NIN/TIN/account at rest) rests on AES keys that today sit in base64 env vars — anyone with server/env access can decrypt every taxpayer identity. Getting keys off-disk is the one genuinely material hardening. | The external key store (HSM device or cloud KMS). The **code seam is done** — versioned `KeyProvider` + envelope support; a KMS provider is a config swap, not a rewrite. | `common/services/key-provider.ts`, `crypto.service.ts` |
+| **mTLS / SFTP ingestion channel** | **Medium — the §29 pipeline.** Banks push quarterly returns (BVNs, balances) *into* BizData; the transport must authenticate the bank and protect data in transit. But this is **ops/config, not missing capability** — the code already supports it. | TLS certs from the FCT-IRS CA (server + bank client certs) and an SFTP daemon. | `main.ts` `TLS_*` hooks; `POST /submissions/ingest-json` (mTLS), `POST /submissions/upload` (SFTP watcher) |
+| **TDE / disk encryption** | **Low–medium — defence-in-depth.** Sensitive PII is *already* encrypted at the application layer; TDE additionally protects backups/WAL/dropped tablespaces on the storage medium. A satisfier, not an exposure. | Storage-level encryption (managed-instance TDE, or LUKS/EBS-KMS full-disk). No app change. | Database / volume layer |
+| **FIDO2 / hardware tokens** | **Low — optional extra factor.** This is about *staff* login, not the data pipeline. BizData already has password + TOTP 2FA (enrolment + recovery codes built). Hardware keys are an incremental 3rd factor for PII-viewing officers. | YubiKeys + a WebAuthn ceremony (the only remaining *code* task; needs a browser/authenticator to test). | `auth` module (new `WebAuthnCredential` table + endpoints) |
+| **In-FCT hosting / data sovereignty** | **None (code) — pure policy.** BizData runs identically in Abuja or anywhere; this is a hosting-contract/egress decision, not an application concern. | A hosting decision. | — |
+
+**Bottom line:** the single item that materially changes BizData's security posture is **HSM/KMS key custody**. The rest are defence-in-depth (TDE), ops/config the code already supports (mTLS/SFTP), an optional extra factor (FIDO2), or non-code policy (hosting).
 
 ---
 
 ### Summary
-The **functional platform** described in the proposal — ingestion, validation, encryption, matching, the six AI agents, risk fusion, case lifecycle, §35/§41 enforcement, scheduling, provider SLA, evidence bundles, tamper-evident audit, NDPA retention/DPO, and the supporting UI — is **built and verified end-to-end** in this repo. The remaining gaps are **(a) infrastructure/procurement** (HSM, TDE, mTLS/SFTP, hardware tokens, in-country hosting) and **(b) legal confirmation** of the placeholder tax bands / statutory windows / penalty+CGT rates / BVN check-digit algorithm. All buildable software features in the proposal — including JRB §15 cross-state sharing — are now implemented. See `COMPLIANCE-MAPPING.md` for the clause-by-clause control mapping.
+The **functional platform** described in the proposal — ingestion, validation, encryption, matching, the six AI agents, risk fusion, case lifecycle, §35/§41 enforcement, scheduling, provider SLA, evidence bundles, tamper-evident audit, NDPA retention/DPO, and the supporting UI — is **built and verified end-to-end** in this repo. The remaining gaps are **(a) external infrastructure** — ranked above, of which only HSM/KMS key custody is materially load-bearing — and **(b) legal confirmation** of the placeholder tax bands / statutory windows / penalty+CGT rates / BVN check-digit algorithm. All buildable software features in the proposal — including JRB §15 cross-state sharing — are now implemented. See `COMPLIANCE-MAPPING.md` for the clause-by-clause control mapping.

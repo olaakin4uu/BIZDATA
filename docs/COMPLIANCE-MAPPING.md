@@ -74,6 +74,11 @@ Maps each statutory/regulatory clause to the BRIS control(s) that satisfy it, wi
 ### Posture summary
 - **Strongly covered in software:** NTAA §4, §29, §35, §41/§41(6), §139; NDPA §§25-28; CBN NUBAN; NTA PIT/CIT/§37.
 - **Partial / config-dependent:** CGT §50, BVN modulo-11, 500 MB batching. TOTP MFA (2 factors) **done**; FIDO2 hardware is the remaining 3rd factor. TLS 1.3 hook **done** (needs certs); HSM **key-provider seam done** (needs the device).
-- **Infrastructure/procurement:** HSM (FIPS L3) device, whole-table TDE, SFTP + cert provisioning, FIDO2 tokens, in-FCT hosting/data-sovereignty.
+- **External infrastructure (ranked by relevance to BizData — see BRIS-BUILD-STATUS "Infrastructure items"):**
+  - *Load-bearing:* **HSM/KMS key custody** — the only item that materially changes the security posture (keys are in env vars today; the code seam is ready).
+  - *Ops/config, code already supports:* mTLS/SFTP ingestion transport (certs + SFTP daemon).
+  - *Defence-in-depth:* whole-disk/table TDE (PII is already field-encrypted).
+  - *Optional extra factor:* FIDO2 hardware tokens (password + TOTP already built).
+  - *Policy only, no code:* in-FCT hosting / data sovereignty.
 - **Built (software):** JRB §15 cross-state referrals (NRSA §22 partner-exchange uses the same channel).
-- **Action for FCT-IRS:** confirm the placeholder tax bands, statutory windows, penalty/CGT rates, and the official BVN check-digit algorithm; provision the HSM/transport/hosting infrastructure.
+- **Action for FCT-IRS:** confirm the placeholder tax bands, statutory windows, penalty/CGT rates, and the official BVN check-digit algorithm; **provision an HSM/KMS for key custody** (the one material infra gap); and make the hosting/transport decisions above.
