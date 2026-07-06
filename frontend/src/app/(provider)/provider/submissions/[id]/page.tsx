@@ -31,6 +31,7 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
   );
 
   const errors = sub.validationErrors as Record<string, unknown> | null | undefined;
+  const needsResubmit = sub.status === 'REJECTED' || sub.status === 'PARTIALLY_ACCEPTED';
 
   return (
     <div>
@@ -39,6 +40,32 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
         subtitle={`Period ${sub.periodLabel}`}
         actions={<Link href="/provider/submissions" className="text-sm text-slate-600 hover:text-slate-900">← All submissions</Link>}
       />
+
+      {needsResubmit && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-800">
+                {sub.status === 'REJECTED' ? 'This return was rejected.' : `${sub.rejectedCount.toLocaleString()} record(s) were rejected.`}
+              </p>
+              <p className="mt-0.5 text-xs text-amber-700">
+                Correct the rows below and resubmit
+                {sub.resubmitDueAt ? <> by <strong>{formatDateTime(sub.resubmitDueAt)}</strong> (§6.5, 5 business days)</> : ''}.
+              </p>
+            </div>
+            <Link href="/provider/submissions/new" className="shrink-0 rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700">
+              Resubmit for {sub.periodLabel}
+            </Link>
+          </div>
+        </div>
+      )}
+
+      {sub.receiptHash && (
+        <div className="mb-6 rounded-xl border border-slate-200 bg-white px-5 py-3">
+          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Acknowledgment receipt (§6.5)</p>
+          <p className="mt-0.5 break-all font-mono text-xs text-slate-600">{sub.receiptHash}</p>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Info label="Status" value={
@@ -67,7 +94,10 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
 
       {sub.records && sub.records.length > 0 && (
         <section>
-          <h2 className="text-sm font-semibold text-slate-800 mb-3">Sample of ingested records</h2>
+          <div className="mb-3 flex items-baseline justify-between gap-3">
+            <h2 className="text-sm font-semibold text-slate-800">Sample of ingested records</h2>
+            <span className="text-[11px] text-slate-400">Account &amp; BVN are masked for privacy.</span>
+          </div>
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">

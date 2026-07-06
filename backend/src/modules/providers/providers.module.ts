@@ -9,6 +9,6 @@ import { StatutoryModule } from '../statutory/statutory.module';
   imports: [AuthModule, StatutoryModule],
   controllers: [ProvidersController],
   providers: [ProvidersService, ProviderComplianceService],
-  exports: [ProvidersService],
+  exports: [ProvidersService, ProviderComplianceService],
 })
 export class ProvidersModule {}

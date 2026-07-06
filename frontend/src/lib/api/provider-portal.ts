@@ -12,6 +12,28 @@ export interface ProviderDashboard {
   recentSubmissions: Submission[];
 }
 
+export type PeriodStatus = 'ON_TIME' | 'LATE' | 'MISSING' | 'PENDING';
+
+export interface CompliancePeriod {
+  period: string;      // e.g. "2026-Q1"
+  dueAt: string;       // statutory due date (ISO)
+  status: PeriodStatus;
+  receivedAt: string | null;
+}
+
+export interface ProviderCompliance {
+  provider: { id: string; name: string; providerType: string; status: string; reportingFrequency: string };
+  expected: number; // reportingFrequency lives under `provider`, not at top level
+  onTime: number;
+  late: number;
+  missing: number;
+  pending: number;
+  complianceRate: number;
+  submissions: number;
+  rejectionRate: number;
+  periods: CompliancePeriod[];
+}
+
 export interface ProviderUploadArgs {
   periodLabel: string;
   periodYear?: number;
@@ -23,6 +45,7 @@ export interface ProviderUploadArgs {
 export const providerPortalApi = {
   me: () => providerApiFetch<ProviderUser>('/provider-portal/me'),
   dashboard: () => providerApiFetch<ProviderDashboard>('/provider-portal/dashboard'),
+  compliance: (year: number) => providerApiFetch<ProviderCompliance | null>(`/provider-portal/compliance?year=${year}`),
   listSubmissions: (params: { status?: string; page?: number; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
@@ -51,4 +74,22 @@ export const providerPortalApi = {
       method: 'PATCH',
       body: { currentPassword, newPassword },
     }),
+
+  /** Download the CSV upload template for this provider's type (auth'd blob). */
+  downloadTemplate: async () => {
+    const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
+    const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_provider_token') : null;
+    const res = await fetch(`${base}/provider-portal/template`, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    });
+    if (!res.ok) throw new Error('Could not download the template.');
+    const blob = await res.blob();
+    const cd = res.headers.get('Content-Disposition') || '';
+    const name = /filename="?([^"]+)"?/.exec(cd)?.[1] || 'bizdata-template.csv';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = name;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+  },
 };

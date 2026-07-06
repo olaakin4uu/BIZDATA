@@ -3,16 +3,19 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   Param,
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ProviderPortalService } from './provider-portal.service';
 import { SubmissionsService } from '../submissions/submissions.service';
 import { AuthService } from '../auth/auth.service';
@@ -38,6 +41,20 @@ export class ProviderPortalController {
   @Get('dashboard')
   dashboard(@CurrentProviderUser() u: any) {
     return this.service.dashboard(u.providerId);
+  }
+
+  @Get('compliance')
+  compliance(@CurrentProviderUser() u: any, @Query('year') year?: string) {
+    return this.service.complianceForYear(u.providerId, parseInt(year ?? `${new Date().getFullYear()}`, 10));
+  }
+
+  @Get('template')
+  @ApiOperation({ summary: 'Download the CSV upload template for this provider’s type' })
+  @Header('Content-Type', 'text/csv; charset=utf-8')
+  async template(@CurrentProviderUser() u: any, @Res() res: Response) {
+    const t = await this.service.uploadTemplate(u.providerId);
+    res.setHeader('Content-Disposition', `attachment; filename="${t.fileName}"`);
+    res.send(t.csv);
   }
 
   @Get('submissions')
