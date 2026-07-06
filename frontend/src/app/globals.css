@@ -1,12 +1,69 @@
 @import "tailwindcss";
 
+/* ─── BizData design tokens ──────────────────────────────────────────────────
+   Institutional revenue-platform system. Neutrals are chosen (cool, slate-
+   biased — not default grey); the brand accent stays on Tailwind's teal-* token
+   so the tenant runtime re-skin (lib/brand.ts) keeps working; semantic state
+   colours are separate from the accent and used only for compliance/risk. */
 :root {
-  --background: #f8fafc;
-  --foreground: #1e293b;
+  /* Grounds & ink — cool off-white canvas, white surfaces, considered borders */
+  --canvas: #f5f6f8;      /* page background */
+  --surface: #ffffff;     /* cards / panels */
+  --surface-2: #fafbfc;   /* subtle inset (table headers, wells) */
+  --ink: #0f1729;         /* primary text (slate-biased near-black) */
+  --ink-2: #475069;       /* secondary text */
+  --ink-3: #8a93a6;       /* muted / captions */
+  --line: #e5e8ee;        /* hairline borders */
+  --line-2: #eef0f4;      /* faint dividers */
+
+  /* Semantic state — NOT the accent. good / warn / critical / info */
+  --ok: #059669;
+  --ok-soft: #ecfdf5;
+  --warn: #b45309;
+  --warn-soft: #fffbeb;
+  --bad: #e11d48;
+  --bad-soft: #fff1f3;
+  --info: #2563eb;
+  --info-soft: #eff6ff;
+
+  --background: var(--canvas);
+  --foreground: var(--ink);
+}
+
+/* Bind Tailwind v4 utilities to our tokens (font-sans → Inter; colour tokens). */
+@theme inline {
+  --font-sans: var(--font-sans), ui-sans-serif, system-ui, "Segoe UI", Roboto, sans-serif;
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-line: var(--line);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background: var(--canvas);
+  color: var(--ink);
+  font-feature-settings: "cv05" 1, "ss01" 1; /* Inter: single-storey a, stylistic set */
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Financial data reads better with lining, tabular figures. Apply to numeric
+   contexts via the .tnum helper (tables, money, counts, dates). */
+.tnum { font-variant-numeric: tabular-nums lining-nums; }
+
+/* Headings: tighten tracking a touch and balance wrapping for an institutional feel. */
+h1, h2, h3 { letter-spacing: -0.011em; text-wrap: balance; }
+
+/* Consistent, visible keyboard focus (accessibility + polish). */
+:where(a, button, input, select, textarea, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-teal-600, #0d9488);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* Respect reduced-motion for any transitions we add. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }

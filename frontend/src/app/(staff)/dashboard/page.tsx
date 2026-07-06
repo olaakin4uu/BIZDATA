@@ -101,7 +101,7 @@ export default function StaffDashboardPage() {
               Welcome back, {user?.firstName ?? 'Analyst'}
             </h1>
             <p className="text-sm text-slate-300 mt-1 max-w-xl">
-              Estimated recoverable revenue from underdeclaration — matched across banking, payment, telco and processor flows.
+              Estimated recoverable revenue from underdeclaration — matched across §29 financial-institution reporting.
             </p>
           </div>
           <div className="flex items-center gap-2 self-center">
