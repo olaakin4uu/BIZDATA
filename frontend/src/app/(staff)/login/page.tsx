@@ -1,6 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import Image from 'next/image';
 import { authApi } from '@/lib/api/auth';
@@ -10,7 +10,9 @@ import { extractErrorMessage } from '@/lib/utils';
 
 export default function StaffLoginPage() {
   const router = useRouter();
-  const { setAuth, token, user } = useStaffAuthStore();
+  const searchParams = useSearchParams();
+  const expired = searchParams.get('expired') === '1';
+  const { setAuth, token, user, clearAuth } = useStaffAuthStore();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -21,8 +23,16 @@ export default function StaffLoginPage() {
   const [branding, setBranding] = useState<TenantBranding | null>(null);
 
   useEffect(() => {
+    // Don't auto-bounce to the dashboard when we've been sent here by an expired
+    // session — the in-memory store may still hold a stale token that localStorage
+    // was already cleared of. Bouncing back would 401 again → infinite loop
+    // ("blinking"). Clear the stale store first; only redirect on a genuine login.
+    if (expired) {
+      if (token || user) clearAuth();
+      return;
+    }
     if (token && user) router.replace('/dashboard');
-  }, [token, user, router]);
+  }, [expired, token, user, router, clearAuth]);
 
   useEffect(() => {
     tenantApi.branding().then(setBranding).catch(() => setBranding(null));
@@ -83,6 +93,13 @@ export default function StaffLoginPage() {
           <p className="text-xs text-slate-500 mb-5">
             Authorised analysts, supervisors, and administrators only.
           </p>
+
+          {expired && !error && (
+            <div className="mb-4 flex items-start gap-2 px-3 py-2 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-800">
+              <svg xmlns="http://www.w3.org/2000/svg" className="w-4 h-4 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.8} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 1 1-18 0 9 9 0 0 1 18 0Zm-9 3.75h.008v.008H12v-.008Z" /></svg>
+              <span>Your session expired. Please sign in again to continue.</span>
+            </div>
+          )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             {error && (

@@ -14,7 +14,9 @@ export interface Submission {
   recordCount: number;
   acceptedCount: number;
   rejectedCount: number;
+  warningCount?: number;
   validationErrors?: unknown;
+  warnings?: { row: number; messages: string[] }[] | null;
   status: string;
   receiptHash?: string | null;       // §6.5 acknowledgment receipt
   resubmitDueAt?: string | null;     // §6.5 deadline to resubmit a rejected/partial file

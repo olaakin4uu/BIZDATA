@@ -10,6 +10,8 @@ export interface StatutoryConfig {
   citSmallCoThreshold: number;
   cgtRate: number;
   defaultScanThreshold: number;
+  /** Date the phased-in compulsory fields become mandatory (YYYY-MM-DD) or null. */
+  fieldEnforcementDate: string | null;
 }
 export interface StatutoryHistoryItem extends StatutoryConfig {
   isActive: boolean;

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import PasswordInput from '@/components/PasswordInput';
+import Icon, { type IconName } from '@/components/Icon';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import type { ProviderUser } from '@/lib/api/auth';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
@@ -46,20 +47,20 @@ export default function ProviderProfilePage() {
   if (loading) return <LoadingSpinner />;
   if (!me) return (
     <div>
-      <PageHeader title="Profile" />
-      <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error ?? 'Could not load profile'}</div>
+      <PageHeader title="Profile" icon="settings" />
+      <div className="rounded-lg border border-rose-200 bg-[var(--bad-soft)] px-4 py-3 text-sm text-rose-700">{error ?? 'Could not load profile'}</div>
     </div>
   );
 
   const providerName = me.provider?.name ?? me.providerName ?? '—';
 
   return (
-    <div>
-      <PageHeader title="Profile" subtitle="Account and organisation details." />
+    <div className="rise-in">
+      <PageHeader title="Profile" subtitle="Account and organisation details." icon="settings" />
 
       <section className="mb-6">
-        <h2 className="text-sm font-semibold text-slate-800 mb-3">You</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SectionTitle icon="taxpayers">You</SectionTitle>
+        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Info label="Name" value={`${me.firstName} ${me.lastName}`} />
           <Info label="Email" value={me.email} />
           <Info label="Role" value={me.role.replace('_', ' ')} />
@@ -68,8 +69,8 @@ export default function ProviderProfilePage() {
       </section>
 
       <section className="mb-6">
-        <h2 className="text-sm font-semibold text-slate-800 mb-3">Organisation</h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SectionTitle icon="bank">Organisation</SectionTitle>
+        <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Info label="Provider" value={providerName} />
           <Info label="Code" value={me.provider?.providerCode ?? '—'} />
           <Info label="Type" value={me.provider?.providerType?.replace('_', ' ') ?? '—'} />
@@ -85,23 +86,25 @@ export default function ProviderProfilePage() {
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-slate-800 mb-3">Change password</h2>
-        <form onSubmit={changePassword} className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 max-w-sm space-y-3">
-          {pwErr && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{pwErr}</div>}
-          {pwMsg && <div className="px-3 py-2 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">{pwMsg}</div>}
+        <SectionTitle icon="unlock">Change password</SectionTitle>
+        <form onSubmit={changePassword} className="mt-3 max-w-sm space-y-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-6 shadow-[var(--elev-1)]">
+          {pwErr && <div className="rounded-lg border border-rose-200 bg-[var(--bad-soft)] px-3 py-2 text-sm text-rose-700">{pwErr}</div>}
+          {pwMsg && <div className="rounded-lg border border-emerald-200 bg-[var(--ok-soft)] px-3 py-2 text-sm text-emerald-700">{pwMsg}</div>}
           <Field label="Current password">
             <PasswordInput required value={pwForm.currentPassword} onChange={(e) => setPwForm({ ...pwForm, currentPassword: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-sm transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/50" />
           </Field>
           <Field label="New password" hint="At least 8 characters.">
             <PasswordInput required minLength={8} value={pwForm.newPassword} onChange={(e) => setPwForm({ ...pwForm, newPassword: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-sm transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/50" />
           </Field>
           <Field label="Confirm new password">
             <PasswordInput required value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+              className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)] px-3 py-2 text-sm transition-colors focus:border-teal-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500/50" />
           </Field>
-          <button type="submit" disabled={pwBusy} className="px-5 py-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+          <button type="submit" disabled={pwBusy}
+            className="rounded-lg px-5 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-50 disabled:hover:brightness-100"
+            style={{ backgroundImage: 'var(--brand-grad)', boxShadow: 'var(--elev-brand)' }}>
             {pwBusy ? 'Updating…' : 'Change password'}
           </button>
         </form>
@@ -110,11 +113,22 @@ export default function ProviderProfilePage() {
   );
 }
 
+function SectionTitle({ icon, children }: { icon: IconName; children: React.ReactNode }) {
+  return (
+    <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
+      <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-50 text-teal-700 ring-1 ring-teal-100">
+        <Icon name={icon} width={14} height={14} />
+      </span>
+      {children}
+    </h2>
+  );
+}
+
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <div className="text-sm text-slate-800 mt-1">{value}</div>
+    <div className="lift rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[var(--elev-1)]">
+      <p className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">{label}</p>
+      <div className="mt-1 text-sm text-[var(--ink)]">{value}</div>
     </div>
   );
 }
@@ -122,9 +136,9 @@ function Info({ label, value }: { label: string; value: React.ReactNode }) {
 function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <div>
-      <label className="block text-xs font-medium text-slate-700 mb-1">{label}</label>
+      <label className="mb-1 block text-xs font-medium text-[var(--ink-2)]">{label}</label>
       {children}
-      {hint && <p className="text-xs text-slate-400 mt-1">{hint}</p>}
+      {hint && <p className="mt-1 text-xs text-[var(--ink-3)]">{hint}</p>}
     </div>
   );
 }

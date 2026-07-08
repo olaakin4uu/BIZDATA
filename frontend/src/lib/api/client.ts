@@ -45,17 +45,31 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
     } catch {
       // ignore
     }
-    // Expired / invalid session on an authenticated request → clear and bounce to login.
-    if (res.status === 401 && token && typeof window !== 'undefined') {
+    // Expired / invalid / MISSING session on an authenticated request → clear and
+    // bounce to login. This fires whether or not a token was attached: an absent
+    // token still 401s, and without this the page would sit showing empty data
+    // (each dashboard fetch silently catches the error) instead of prompting a
+    // sign-in. Guard with a session flag so parallel 401s don't each navigate.
+    if (res.status === 401 && typeof window !== 'undefined') {
+      // Clear BOTH the raw token key AND the zustand-persisted store snapshot
+      // (bizdata-staff-auth holds {user, token}). Clearing only the raw key left
+      // the store still "authenticated", so the login page's guard bounced back
+      // to /dashboard → 401 → /login … an infinite redirect (the app "blinking").
       localStorage.removeItem('bizdata_staff_token');
-      if (!window.location.pathname.startsWith('/login')) {
-        window.location.href = '/login';
+      localStorage.removeItem('bizdata-staff-auth');
+      if (!window.location.pathname.startsWith('/login') && !sessionStorage.getItem('bizdata_redirecting')) {
+        sessionStorage.setItem('bizdata_redirecting', '1');
+        const from = encodeURIComponent(window.location.pathname + window.location.search);
+        window.location.href = `/login?expired=1&from=${from}`;
       }
     }
     const err = new Error(message || `Request failed (${res.status})`) as Error & { status?: number };
     err.status = res.status;
     throw err;
   }
+
+  // Healthy response → session is good; clear any stale redirect guard.
+  if (typeof window !== 'undefined') sessionStorage.removeItem('bizdata_redirecting');
 
   if (res.status === 204) return undefined as T;
   const text = await res.text();

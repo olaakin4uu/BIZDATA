@@ -3,6 +3,7 @@ import { useEffect, useState, use as usePromise } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
+import Icon from '@/components/Icon';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import type { Submission } from '@/lib/api/submissions';
 import { formatBytes, formatDateTime, formatMoney, statusBadge, extractErrorMessage } from '@/lib/utils';
@@ -25,20 +26,22 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
   if (loading) return <LoadingSpinner />;
   if (!sub) return (
     <div>
-      <PageHeader title="Submission" actions={<Link href="/provider/submissions" className="text-sm text-slate-600 hover:text-slate-900">← Back</Link>} />
-      <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error ?? 'Not found'}</div>
+      <PageHeader title="Submission" icon="document" actions={<Link href="/provider/submissions" className="text-sm text-[var(--ink-2)] transition-colors hover:text-[var(--ink)]">← Back</Link>} />
+      <div className="rounded-lg border border-rose-200 bg-[var(--bad-soft)] px-4 py-3 text-sm text-rose-700">{error ?? 'Not found'}</div>
     </div>
   );
 
   const errors = sub.validationErrors as Record<string, unknown> | null | undefined;
   const needsResubmit = sub.status === 'REJECTED' || sub.status === 'PARTIALLY_ACCEPTED';
+  const warnings = Array.isArray(sub.warnings) ? sub.warnings : [];
 
   return (
-    <div>
+    <div className="rise-in">
       <PageHeader
         title={`Submission ${sub.id.slice(0, 8)}`}
         subtitle={`Period ${sub.periodLabel}`}
-        actions={<Link href="/provider/submissions" className="text-sm text-slate-600 hover:text-slate-900">← All submissions</Link>}
+        icon="document"
+        actions={<Link href="/provider/submissions" className="text-sm text-[var(--ink-2)] transition-colors hover:text-[var(--ink)]">← All submissions</Link>}
       />
 
       {needsResubmit && (
@@ -60,10 +63,41 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
         </div>
       )}
 
+      {warnings.length > 0 && (
+        <div className="mb-6 rounded-xl border border-amber-200 bg-[var(--warn-soft)] px-5 py-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
+              <Icon name="flag" width={16} height={16} />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-amber-800">
+                Accepted — but action needed before these fields become mandatory
+              </p>
+              <p className="mt-0.5 text-xs text-amber-700">
+                {sub.warningCount?.toLocaleString() ?? warnings.length} row(s) are missing fields that will be <strong>required in future</strong>.
+                They were accepted this time, but files with these fields left blank will be rejected once the requirement takes effect.
+                Please start populating them.
+              </p>
+              <ul className="mt-2 max-h-40 space-y-1 overflow-auto text-[11px] text-amber-700">
+                {warnings.slice(0, 20).map((w) => (
+                  <li key={w.row} className="tnum font-mono">Row {w.row}: {w.messages.join('; ')}</li>
+                ))}
+                {warnings.length > 20 && <li className="text-amber-600">…and {warnings.length - 20} more.</li>}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
       {sub.receiptHash && (
-        <div className="mb-6 rounded-xl border border-slate-200 bg-white px-5 py-3">
-          <p className="text-[11px] font-medium uppercase tracking-wide text-slate-400">Acknowledgment receipt (§6.5)</p>
-          <p className="mt-0.5 break-all font-mono text-xs text-slate-600">{sub.receiptHash}</p>
+        <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-100 bg-[var(--ok-soft)] px-5 py-3">
+          <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">
+            <Icon name="shield" width={16} height={16} />
+          </span>
+          <div className="min-w-0">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-emerald-700/80">Acknowledgment receipt (§6.5)</p>
+            <p className="mt-0.5 break-all font-mono text-xs text-emerald-800">{sub.receiptHash}</p>
+          </div>
         </div>
       )}
 
@@ -82,11 +116,16 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
 
       {errors && Object.keys(errors).length > 0 && (
         <section className="mb-6">
-          <h2 className="text-sm font-semibold text-slate-800 mb-2">Validation errors</h2>
-          <p className="text-xs text-slate-500 mb-2">
+          <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
+            <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-rose-50 text-rose-600 ring-1 ring-rose-100">
+              <Icon name="flag" width={14} height={14} />
+            </span>
+            Validation errors
+          </h2>
+          <p className="mb-2 text-xs text-[var(--ink-2)]">
             Rows that failed validation. Please correct and resubmit if needed.
           </p>
-          <pre className="bg-red-50 border border-red-200 rounded-xl p-4 text-[11px] font-mono text-red-800 overflow-auto max-h-72">
+          <pre className="max-h-72 overflow-auto rounded-xl border border-rose-200 bg-[var(--bad-soft)] p-4 font-mono text-[11px] text-rose-800">
             {JSON.stringify(errors, null, 2)}
           </pre>
         </section>
@@ -95,29 +134,34 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
       {sub.records && sub.records.length > 0 && (
         <section>
           <div className="mb-3 flex items-baseline justify-between gap-3">
-            <h2 className="text-sm font-semibold text-slate-800">Sample of ingested records</h2>
-            <span className="text-[11px] text-slate-400">Account &amp; BVN are masked for privacy.</span>
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">
+              <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-teal-50 text-teal-700 ring-1 ring-teal-100">
+                <Icon name="records" width={14} height={14} />
+              </span>
+              Sample of ingested records
+            </h2>
+            <span className="text-[11px] text-[var(--ink-3)]">Account &amp; BVN are masked for privacy.</span>
           </div>
-          <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--elev-1)]">
             <table className="w-full text-sm">
-              <thead className="bg-slate-50 border-b border-slate-200">
+              <thead className="border-b border-[var(--line)] bg-[var(--surface-2)]">
                 <tr>
                   {['Account', 'BVN', 'Name', 'Inflow', 'Flagged'].map((h) => (
-                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold text-slate-500 uppercase">{h}</th>
+                    <th key={h} className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wide text-[var(--ink-3)]">{h}</th>
                   ))}
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-100">
+              <tbody className="divide-y divide-[var(--line-2)]">
                 {sub.records.map((r) => (
-                  <tr key={r.id}>
-                    <td className="px-4 py-3 font-mono text-xs">{r.accountNumber ?? '—'}</td>
-                    <td className="px-4 py-3 font-mono text-xs text-slate-500">{r.bvn ?? '—'}</td>
-                    <td className="px-4 py-3 text-xs">{r.accountName ?? '—'}</td>
-                    <td className="px-4 py-3 text-xs font-medium">{formatMoney(r.totalInflow)}</td>
+                  <tr key={r.id} className="transition-colors hover:bg-[var(--surface-2)]">
+                    <td className="tnum px-4 py-3 font-mono text-xs text-[var(--ink)]">{r.accountNumber ?? '—'}</td>
+                    <td className="tnum px-4 py-3 font-mono text-xs text-[var(--ink-3)]">{r.bvn ?? '—'}</td>
+                    <td className="px-4 py-3 text-xs text-[var(--ink-2)]">{r.accountName ?? '—'}</td>
+                    <td className="tnum px-4 py-3 text-xs font-medium text-[var(--ink)]">{formatMoney(r.totalInflow)}</td>
                     <td className="px-4 py-3 text-xs">
                       {r.flaggedAsUnderdeclared ? (
-                        <span className="inline-flex px-2 py-0.5 bg-red-100 text-red-700 text-xs font-medium rounded-full">FLAGGED</span>
-                      ) : <span className="text-slate-400">—</span>}
+                        <span className="inline-flex rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-rose-200">FLAGGED</span>
+                      ) : <span className="text-[var(--ink-3)]">—</span>}
                     </td>
                   </tr>
                 ))}
@@ -132,9 +176,9 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
 
 function Info({ label, value }: { label: string; value: React.ReactNode }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
-      <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <div className="text-sm text-slate-800 mt-1">{value}</div>
+    <div className="lift rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[var(--elev-1)]">
+      <p className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">{label}</p>
+      <div className="mt-1 text-sm text-[var(--ink)]">{value}</div>
     </div>
   );
 }

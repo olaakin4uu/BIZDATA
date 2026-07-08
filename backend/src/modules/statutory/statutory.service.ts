@@ -17,6 +17,12 @@ export interface StatutoryValues {
   citSmallCoThreshold: number;
   cgtRate: number;
   defaultScanThreshold: number;
+  /**
+   * Date the phased-in compulsory submission fields (sector / businessType /
+   * customerType) become hard-required. ISO 'YYYY-MM-DD', or null to fall back
+   * to the schema's built-in default. Not a rate/day — handled specially.
+   */
+  fieldEnforcementDate: string | null;
 }
 
 // The current code defaults — seeded as version 1 on first run. These mirror the
@@ -30,6 +36,7 @@ const DEFAULTS: StatutoryValues = {
   citSmallCoThreshold: 50_000_000,
   cgtRate: 0.1,
   defaultScanThreshold: 0.2,
+  fieldEnforcementDate: null, // null → schema default (COMPULSORY_FIELD_ENFORCE_FROM)
 };
 
 @Injectable()
@@ -51,6 +58,7 @@ export class StatutoryService {
           citSmallCoThreshold: DEFAULTS.citSmallCoThreshold,
           cgtRate: DEFAULTS.cgtRate,
           defaultScanThreshold: DEFAULTS.defaultScanThreshold,
+          fieldEnforcementDate: null,
         },
       });
     }
@@ -86,6 +94,7 @@ export class StatutoryService {
           citSmallCoThreshold: next.citSmallCoThreshold,
           cgtRate: next.cgtRate,
           defaultScanThreshold: next.defaultScanThreshold,
+          fieldEnforcementDate: next.fieldEnforcementDate ? new Date(next.fieldEnforcementDate) : null,
         },
       });
     });
@@ -110,6 +119,9 @@ export class StatutoryService {
       citSmallCoThreshold: Number(r.citSmallCoThreshold),
       cgtRate: Number(r.cgtRate),
       defaultScanThreshold: Number(r.defaultScanThreshold),
+      fieldEnforcementDate: r.fieldEnforcementDate
+        ? (r.fieldEnforcementDate as Date).toISOString().slice(0, 10)
+        : null,
     };
   }
 }
@@ -128,5 +140,16 @@ function sanitize(p: Partial<StatutoryValues>): Partial<StatutoryValues> {
   if (p.citSmallCoThreshold != null) out.citSmallCoThreshold = money(p.citSmallCoThreshold);
   if (p.cgtRate != null) out.cgtRate = rate(p.cgtRate);
   if (p.defaultScanThreshold != null) out.defaultScanThreshold = rate(p.defaultScanThreshold);
+  // Enforcement date: undefined = leave unchanged; '' / null = clear to null
+  // (revert to schema default); a valid YYYY-MM-DD = set it.
+  if (p.fieldEnforcementDate !== undefined) {
+    const raw = (p.fieldEnforcementDate ?? '').toString().trim();
+    if (raw === '') {
+      out.fieldEnforcementDate = null;
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(new Date(raw).getTime())) {
+      out.fieldEnforcementDate = raw;
+    }
+    // an invalid date is silently ignored (leaves current value)
+  }
   return out;
 }

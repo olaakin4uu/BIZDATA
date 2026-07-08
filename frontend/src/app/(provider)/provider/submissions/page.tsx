@@ -49,23 +49,25 @@ export default function ProviderSubmissionsPage() {
   ];
 
   return (
-    <div>
+    <div className="rise-in">
       <PageHeader
         title="Submissions"
         subtitle="History of files you have uploaded to BizData."
+        icon="document"
         actions={
           <Link href="/provider/submissions/new"
-            className="px-4 py-2 bg-teal-700 hover:bg-teal-800 text-white text-sm font-semibold rounded-lg">
-            + New submission
+            className="inline-flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm font-semibold text-white transition-all hover:brightness-110 active:scale-[0.99]"
+            style={{ backgroundImage: 'var(--brand-grad)', boxShadow: 'var(--elev-brand)' }}>
+            <span className="text-base leading-none">+</span> New submission
           </Link>
         }
       />
 
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-end gap-3">
+      <div className="mb-4 flex flex-wrap items-end gap-3 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4 shadow-[var(--elev-1)]">
         <div>
-          <label className="block text-xs font-medium text-slate-600 mb-1">Status</label>
+          <label className="mb-1 block text-xs font-medium text-[var(--ink-2)]">Status</label>
           <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}
-            className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+            className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-500/50">
             <option value="">All statuses</option>
             {SUBMISSION_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
           </select>

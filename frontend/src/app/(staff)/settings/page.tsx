@@ -254,12 +254,17 @@ function StatutoryPanel() {
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
+  // Enforcement date is handled apart from the numeric grid (it's a date, and can
+  // be cleared to fall back to the built-in default).
+  const [enforceDate, setEnforceDate] = useState('');
+
   const load = () => {
     statutoryApi.active().then((c) => {
       setCfg(c);
       const f: Record<string, string> = {};
       STAT_FIELDS.forEach(({ key }) => { f[key] = String(c[key]); });
       setForm(f);
+      setEnforceDate(c.fieldEnforcementDate ?? '');
     }).catch(() => setCfg(null));
     statutoryApi.history().then(setHistory).catch(() => setHistory([]));
   };
@@ -270,6 +275,8 @@ function StatutoryPanel() {
     try {
       const patch: any = { note: note || undefined };
       STAT_FIELDS.forEach(({ key }) => { patch[key] = Number(form[key]); });
+      // Send the date explicitly ('' clears it back to the schema default).
+      patch.fieldEnforcementDate = enforceDate.trim();
       const c = await statutoryApi.update(patch);
       setMsg(`Saved as version ${c.version}.`);
       setNote('');
@@ -303,6 +310,41 @@ function StatutoryPanel() {
             />
           </Field>
         ))}
+      </div>
+
+      {/* Compulsory-field enforcement date — governs the sector/businessType/
+          customerType grace period on provider submissions. */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+        <Field
+          label="Compulsory-field enforcement date"
+          hint="From this date, sector, businessType & customerType are rejected if blank on a provider submission. Before it, blanks are accepted with a warning. Leave empty to use the built-in default (2027-01-01)."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={enforceDate}
+              onChange={(e) => setEnforceDate(e.target.value)}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+            />
+            {enforceDate && (
+              <button
+                type="button"
+                onClick={() => setEnforceDate('')}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700 underline"
+              >
+                Clear (use default)
+              </button>
+            )}
+            <span className="text-xs text-slate-500">
+              {enforceDate
+                ? (() => {
+                    const days = Math.ceil((new Date(enforceDate).getTime() - Date.now()) / 86_400_000);
+                    return days > 0 ? `enforced in ${days} day${days === 1 ? '' : 's'}` : 'enforced now';
+                  })()
+                : 'using default: 2027-01-01'}
+            </span>
+          </div>
+        </Field>
       </div>
 
       <div>

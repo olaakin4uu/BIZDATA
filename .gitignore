@@ -46,18 +46,46 @@ uploads/
 # Standalone erev restore artifacts (separate app + MySQL data dir — not part of BIZDATA)
 erev_app/
 erev_instance/
-erev_backup_*.sql
 
 # Local Claude Code agent config / scratch
 .claude/
 
-# Superseded standalone guide docs (regenerable; superseded by the All-In-One manual)
-BIZDATA-Complete-Module-Guide.*
-BIZDATA-Dashboard-Guide.*
-BIZDATA-Decision-Support-Phases.*
-BIZDATA-Master-Manual.*
-BIZDATA-Provider-Dashboard-Guide.*
-Screenshot-Recipe-Guide.*
-
+# ── Non-code artifacts (docs, exports, data dumps, media) ────────────────────
+# Generated/authored documents — kept on disk, not in version control.
+*.docx
+*.doc
+*.pdf
+*.pptx
+*.ppt
+*.xlsx
+*.xls
 # Office temp lock files
 ~$*
+
+# Database dumps / backups (schema migrations under prisma/migrations are code
+# and are NOT matched by these).
+*.sql.gz
+*.dump
+*.bak
+erev_backup_*.sql
+*-backup*.sql
+*_backup*.sql
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+
+# Loose data / media dropped at the repo root (app assets live under */public
+# or */assets and are committed there; this only catches stray files).
+/*.csv
+/*.tsv
+/*.png
+/*.jpg
+/*.jpeg
+/*.gif
+/*.mp4
+/*.mov

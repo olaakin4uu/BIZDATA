@@ -8,11 +8,14 @@ import {
   DEFAULT_SCHEMAS,
   parseCsvText,
   validateRow,
+  missingRequiredColumns,
   parsePeriod,
+  normalizePeriodLabel,
   toDecimal,
   toInt,
   extractBvn,
   SchemaTemplate,
+  ValidationContext,
 } from './submission-parser';
 import { validateIngestionRow, isValidBvnModulo11 } from './ingestion-validators';
 import { assertSection29ProviderType } from '../../common/section29';
@@ -88,7 +91,7 @@ export class SubmissionsService {
     const receiptHash = await this.issueReceipt(submission);
 
     try {
-      const result = await this.processFile(submission.id, opts.fileBuffer, provider.providerType, provider.id, provider.providerCode);
+      const result = await this.processFile(submission.id, opts.fileBuffer, provider.providerType, provider.id, provider.providerCode, opts.periodLabel);
       await this.audit.log({
         actorType: opts.submittedByStaffId ? 'STAFF' : 'PROVIDER_USER',
         actorId: opts.submittedByStaffId || opts.submittedByUserId,
@@ -168,7 +171,7 @@ export class SubmissionsService {
     });
     await this.issueReceipt(submission);
     try {
-      const result = await this.processRows(submission.id, rows, provider.providerType, provider.id, provider.providerCode, 1);
+      const result = await this.processRows(submission.id, rows, provider.providerType, provider.id, provider.providerCode, 1, opts.periodQuarter);
       await this.audit.log({
         actorType: opts.submittedByStaffId ? 'STAFF' : 'PROVIDER_USER',
         actorId: opts.submittedByStaffId || opts.submittedByUserId,
@@ -336,13 +339,50 @@ export class SubmissionsService {
     return { uploadId, status: 'ABORTED' };
   }
 
-  private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string) {
+  private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string, submissionPeriodLabel?: string) {
     const csvText = buffer.toString('utf8');
-    const { rows } = parseCsvText(csvText);
+    const { headers, rows } = parseCsvText(csvText);
     if (rows.length === 0) {
-      throw new BadRequestException('No data rows in file');
+      throw new BadRequestException('No data rows found in the file. Add at least one record beneath the header row.');
     }
-    return this.processRows(submissionId, rows, providerType, providerId, providerCode, 2);
+
+    // File-level guard: reject a wrong / mismatched file up front (e.g. the wrong
+    // provider-type template, or a file with no proper header) with a clear
+    // message, rather than failing every row with confusing per-row errors.
+    const schema = await this.resolveSchema(providerType);
+    const missing = missingRequiredColumns(headers, schema);
+    if (missing.length) {
+      throw new BadRequestException(
+        `Your file is missing required column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}. ` +
+        `Download the latest ${providerType.replace(/_/g, ' ')} template and use its header row.`,
+      );
+    }
+
+    return this.processRows(submissionId, rows, providerType, providerId, providerCode, 2, submissionPeriodLabel);
+  }
+
+  /** Resolve the active schema for a provider type: stored override else default. */
+  private async resolveSchema(providerType: string): Promise<SchemaTemplate> {
+    const stored = await this.prisma.providerSchema.findUnique({ where: { providerType: providerType as any } });
+    return stored
+      ? { providerType, columns: (stored.columns as any) || DEFAULT_SCHEMAS[providerType]?.columns || DEFAULT_SCHEMAS.OTHER.columns }
+      : DEFAULT_SCHEMAS[providerType] || DEFAULT_SCHEMAS.OTHER;
+  }
+
+  /**
+   * Grace-period validation context: the active StatutoryConfig's field
+   * enforcement date overrides the schema's built-in enforceFrom. Null config →
+   * fields use their own enforceFrom default.
+   */
+  private async resolveValidationContext(): Promise<ValidationContext> {
+    const cfg = await this.prisma.statutoryConfig.findFirst({
+      where: { isActive: true },
+      select: { fieldEnforcementDate: true },
+    });
+    return {
+      now: new Date(),
+      enforceFrom: cfg?.fieldEnforcementDate ? cfg.fieldEnforcementDate.toISOString().slice(0, 10) : undefined,
+    };
   }
 
   /**
@@ -359,13 +399,88 @@ export class SubmissionsService {
     providerId: string,
     providerCode?: string,
     rowOffset = 1,
+    submissionPeriodLabel?: string,
   ) {
     const rows = rawRows;
-    // Pick schema: stored ProviderSchema for this type if present, else default
-    const stored = await this.prisma.providerSchema.findUnique({ where: { providerType: providerType as any } });
-    const schema: SchemaTemplate = stored
-      ? { providerType, columns: (stored.columns as any) || DEFAULT_SCHEMAS[providerType].columns }
-      : DEFAULT_SCHEMAS[providerType] || DEFAULT_SCHEMAS.OTHER;
+    const schema = await this.resolveSchema(providerType);
+    const enforceBvnCheckDigit = process.env.BVN_CHECKDIGIT_ENFORCED === 'true';
+    const validationCtx = await this.resolveValidationContext();
+    // Grace-period warnings for accepted rows — persisted with the submission
+    // once we know the file has no hard errors. Local (not instance) state so
+    // concurrent uploads never clobber each other.
+    let acceptedWarnings: { row: number; messages: string[] }[] = [];
+
+    // ── All-or-nothing pre-validation (with grace-period warnings) ──────────
+    // Validate EVERY row up front with the cheap, synchronous gates (schema,
+    // period, integrity, in-file duplicates). ERRORS reject the whole file and
+    // persist nothing. WARNINGS (a soft-required field left blank before its
+    // enforcement date) DO NOT reject — the row is accepted, but the provider is
+    // told the field becomes mandatory on the enforcement date. This pass does no
+    // DB writes and no async matching, so it stays fast and memory-flat.
+    {
+      const preErrors: { row: number; messages: string[] }[] = [];
+      const preWarnings: { row: number; messages: string[] }[] = [];
+      const seenInFile = new Set<string>();
+      for (let i = 0; i < rows.length; i++) {
+        const row = rows[i];
+        if (!row.periodLabel && row.periodQuarter) row.periodLabel = row.periodQuarter;
+        // A row without its own period inherits the submission-level period the
+        // provider selected in the UI, so a blank period column isn't a failure.
+        if (!row.periodLabel && submissionPeriodLabel) row.periodLabel = submissionPeriodLabel;
+        // Self-heal a period written in a human variant (Q1 2026, 2026/01, …) to
+        // the canonical YYYY-Qn / YYYY-MM so storage + dup-keys stay consistent.
+        const canonicalPeriod = normalizePeriodLabel(row.periodLabel);
+        if (canonicalPeriod) row.periodLabel = canonicalPeriod;
+        if ((row.transactionCount == null || row.transactionCount === '') && row.totalCreditTransactions != null) {
+          row.transactionCount = row.totalCreditTransactions;
+        }
+        const rn = i + rowOffset;
+        const msgs: string[] = [];
+
+        const { errors: errs, warnings: warns } = validateRow(row, schema, validationCtx);
+        msgs.push(...errs);
+        if (!parsePeriod(row.periodLabel)) msgs.push('Invalid periodLabel');
+        const integrity = validateIngestionRow(row as any, providerType, row.bankCode || providerCode);
+        if (enforceBvnCheckDigit && row.bvn && !isValidBvnModulo11(row.bvn)) {
+          integrity.push('BVN fails modulo-11 check digit');
+        }
+        msgs.push(...integrity);
+
+        // In-file duplicate (period + account) — collision within THIS file.
+        const idx = this.crypto.blindIndex(row.accountNumber || null);
+        if (idx) {
+          const key = `${row.periodLabel}::${idx}`;
+          if (seenInFile.has(key)) msgs.push('Duplicate: this account + period appears more than once in the file');
+          else seenInFile.add(key);
+        }
+
+        if (msgs.length && preErrors.length < 100) preErrors.push({ row: rn, messages: msgs });
+        else if (msgs.length) preErrors.push({ row: rn, messages: msgs.slice(0, 1) });
+        if (warns.length && preWarnings.length < 100) preWarnings.push({ row: rn, messages: warns });
+      }
+
+      if (preErrors.length) {
+        await this.prisma.dataSubmission.update({
+          where: { id: submissionId },
+          data: {
+            status: 'REJECTED',
+            recordCount: rows.length,
+            acceptedCount: 0,
+            rejectedCount: preErrors.length,
+            validationErrors: preErrors as any,
+            processedAt: new Date(),
+            // §6.5: rejected files must be resubmitted within 5 business days.
+            resubmitDueAt: addBusinessDays(new Date(), 5),
+          },
+        });
+        return { recordCount: rows.length, acceptedCount: 0, rejectedCount: preErrors.length };
+      }
+
+      // No errors → the file will be accepted. Keep warnings to persist with the
+      // submission (below), so a graced file is accepted-with-notice.
+      acceptedWarnings = preWarnings;
+    }
+    // ── End pre-validation. Past here, every row is known-valid. ────────────
 
     let accepted = 0, rejected = 0;
     const errors: { row: number; messages: string[] }[] = [];
@@ -388,7 +503,6 @@ export class SubmissionsService {
       select: { periodLabel: true, accountIndex: true },
     });
     const seenKeys = new Set(existing.map((r) => `${r.periodLabel}::${r.accountIndex}`));
-    const enforceBvnCheckDigit = process.env.BVN_CHECKDIGIT_ENFORCED === 'true';
 
     for (let i = 0; i < rows.length; i++) {
       const row = rows[i];
@@ -458,7 +572,15 @@ export class SubmissionsService {
         if (row.bankName) payload.bankName = row.bankName;
       }
       // §6.2 extended columns captured into payload (no dedicated DataRecord cols).
-      for (const k of ['accountType', 'accountOpenedDate', 'residentialState', 'reportingBranch', 'totalDebitTransactions'] as const) {
+      // Includes the common identity/contact columns (rcNumber, customerAddress,
+      // customerEmail). NOTE: address/email are personal data stored here as plain
+      // JSON — acceptable for internal matching/contact, but if these ever surface
+      // to providers or third parties they must be masked/encrypted like BVN.
+      for (const k of [
+        'accountType', 'accountOpenedDate', 'residentialState', 'reportingBranch', 'totalDebitTransactions',
+        'rcNumber', 'customerAddress', 'customerEmail', 'customerType',
+        'transactionDate', 'transactionDescription', 'currency', 'conversionRate',
+      ] as const) {
         if (row[k] != null && row[k] !== '') payload[k] = row[k];
       }
 
@@ -522,7 +644,9 @@ export class SubmissionsService {
         recordCount: rows.length,
         acceptedCount: accepted,
         rejectedCount: rejected,
+        warningCount: acceptedWarnings.length,
         validationErrors: errors.length ? (errors as any) : Prisma.DbNull,
+        warnings: acceptedWarnings.length ? (acceptedWarnings as any) : Prisma.DbNull,
         status: status as any,
         // §6.5: a rejected / partially-accepted file must be resubmitted within 5 business days.
         resubmitDueAt: status === 'ACCEPTED' ? null : addBusinessDays(new Date(), 5),
@@ -530,7 +654,7 @@ export class SubmissionsService {
       },
     });
 
-    return { recordCount: rows.length, acceptedCount: accepted, rejectedCount: rejected };
+    return { recordCount: rows.length, acceptedCount: accepted, rejectedCount: rejected, warningCount: acceptedWarnings.length };
   }
 
   /** Issue the §6.5 acknowledgment receipt hash for a freshly-received submission. */

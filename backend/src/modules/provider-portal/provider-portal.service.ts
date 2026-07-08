@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
 import { ProviderComplianceService } from '../providers/provider-compliance.service';
-import { DEFAULT_SCHEMAS, type SchemaTemplate, type FieldDef } from '../submissions/submission-parser';
+import { DEFAULT_SCHEMAS, COMPULSORY_FIELD_ENFORCE_FROM, type SchemaTemplate, type FieldDef } from '../submissions/submission-parser';
 
 @Injectable()
 export class ProviderPortalService {
@@ -28,13 +28,16 @@ export class ProviderPortalService {
   /**
    * The CSV upload template for THIS provider's type — the exact schema it must
    * file against (a stored ProviderSchema override if the regulator set one, else
-   * the default for the type). Returns the header row plus one illustrative row,
-   * with a matching filename.
+   * the default for the type). Self-documenting: a leading '#' comment block
+   * explains every column (required?, type, format rule) so the provider can fill
+   * it in without guessing. The comment lines are ignored by the parser on
+   * re-upload, so the guidance can be left in place. Followed by the real header
+   * row and one illustrative example row.
    */
   async uploadTemplate(providerId: string): Promise<{ fileName: string; csv: string; providerType: string }> {
     const provider = await this.prisma.dataProvider.findUnique({
       where: { id: providerId },
-      select: { providerType: true },
+      select: { providerType: true, name: true, reportingFrequency: true },
     });
     if (!provider) throw new NotFoundException('Provider not found');
     const type = provider.providerType as string;
@@ -45,10 +48,72 @@ export class ProviderPortalService {
       : DEFAULT_SCHEMAS[type] || DEFAULT_SCHEMAS.OTHER;
 
     const cols = schema.columns;
+    const typeLabel = type.replace(/_/g, ' ');
+    const requiredNow = cols.filter((c) => c.required && !c.validation?.enforceFrom).length;
+    const softCols = cols.filter((c) => c.required && c.validation?.enforceFrom);
+
+    // Resolve the grace-period enforcement date (config override else schema).
+    const enforceDate = await this.resolveFieldEnforcementDate();
+
+    // '#' comment block: a title, a short how-to, then one line per column.
+    const guidance: string[] = [
+      `# BizData return template — ${typeLabel} provider`,
+      `# For: ${provider.name}`,
+      `# Reporting frequency: ${(provider.reportingFrequency ?? 'QUARTERLY')} · Period format: ${periodFormatHint(provider.reportingFrequency)}`,
+      `#`,
+      `# Fill one row per taxpayer/account for the period. Keep the header row (line below this block).`,
+      `# Lines starting with '#' are guidance only and are ignored on upload — you may leave them in or delete them.`,
+      `# The example row beneath the header shows the expected format; replace it with your data.`,
+    ];
+    if (softCols.length) {
+      guidance.push(
+        `#`,
+        `# ⚠ UPCOMING REQUIREMENT: from ${enforceDate}, these fields become mandatory: ${softCols.map((c) => c.name).join(', ')}.`,
+        `#   Until then, rows left blank in these fields are still accepted, but flagged with a warning.`,
+        `#   Please start populating them now to avoid rejected files after ${enforceDate}.`,
+      );
+    }
+    guidance.push(
+      `#`,
+      `# Columns (${cols.length} total, ${requiredNow} required now${softCols.length ? `, ${softCols.length} required from ${enforceDate}` : ''}):`,
+      ...cols.map((c) => `#   ${c.name} — ${columnSpec(c, enforceDate)}`),
+      `#`,
+    );
+
     const header = cols.map((c) => c.name).join(',');
     const example = cols.map((c) => csvCell(exampleValue(c))).join(',');
-    const csv = `${header}\n${example}\n`;
+    const csv = `${guidance.join('\n')}\n${header}\n${example}\n`;
     return { fileName: `bizdata-${type.toLowerCase()}-template.csv`, csv, providerType: type };
+  }
+
+  /**
+   * The active grace-period enforcement date (YYYY-MM-DD) for phased-in
+   * compulsory fields — StatutoryConfig override else the schema default.
+   * Exposed so the portal can show a consistent notice everywhere.
+   */
+  async resolveFieldEnforcementDate(): Promise<string> {
+    const cfg = await this.prisma.statutoryConfig.findFirst({
+      where: { isActive: true },
+      select: { fieldEnforcementDate: true },
+    });
+    return cfg?.fieldEnforcementDate
+      ? cfg.fieldEnforcementDate.toISOString().slice(0, 10)
+      : COMPULSORY_FIELD_ENFORCE_FROM;
+  }
+
+  /**
+   * Provider-facing grace-period notice: which fields become mandatory and when.
+   * Drives the dashboard/upload banner. Returns null once nothing is pending.
+   */
+  async fieldEnforcementNotice(): Promise<{ enforceDate: string; fields: string[] } | null> {
+    const soft = new Set<string>();
+    for (const schema of Object.values(DEFAULT_SCHEMAS)) {
+      for (const c of schema.columns) {
+        if (c.required && c.validation?.enforceFrom) soft.add(c.name);
+      }
+    }
+    if (soft.size === 0) return null;
+    return { enforceDate: await this.resolveFieldEnforcementDate(), fields: [...soft] };
   }
 
   async me(id: string) {
@@ -78,6 +143,8 @@ export class ProviderPortalService {
     return {
       stats: { submissions, records, accepted, flagged },
       recentSubmissions,
+      // Standing notice: upcoming compulsory-field enforcement (null once past).
+      fieldEnforcementNotice: await this.fieldEnforcementNotice(),
     };
   }
 
@@ -132,8 +199,17 @@ function exampleValue(c: FieldDef): string {
   if (n === 'periodlabel' || n === 'periodquarter') return `${new Date().getUTCFullYear()}-Q1`;
   if (n === 'bvn') return '22212345678';
   if (n === 'nin') return '12345678901';
-  if (n === 'accountnumber') return '0123456789';
+  if (n === 'tin') return '12345678-0001';
+  if (n === 'rcnumber') return 'RC123456';
+  if (n === 'accountnumber') return '0123456788'; // valid NUBAN for bank code 057 (passes check-digit)
   if (n === 'accountname') return 'ADACHI VENTURES LTD';
+  if (n === 'customeraddress') return '12 Ahmadu Bello Way, Kano';
+  if (n === 'customeremail') return 'accounts@adachiventures.ng';
+  if (n === 'customertype') return 'CORPORATE';
+  if (n === 'transactiondate') return '2026-03-31';
+  if (n === 'transactiondescription') return 'Q1 aggregate account activity';
+  if (n === 'currency') return 'NGN';
+  if (n === 'conversionrate') return '1.00';
   if (n === 'bankcode') return '057';
   if (n === 'bankname') return 'Example Bank';
   if (n === 'sector') return 'TRADING';
@@ -153,6 +229,85 @@ function exampleValue(c: FieldDef): string {
   }
   if (c.type === 'integer') return '12';
   return 'value';
+}
+
+/**
+ * Human-readable spec for one column: required-ness, type, and format rules.
+ * `enforceDate` is the resolved grace-period date (from config) shown on
+ * soft-required columns.
+ */
+function columnSpec(c: FieldDef, enforceDate?: string): string {
+  // A soft-required column (grace period active) reads as "required from DATE",
+  // not a flat REQUIRED — it's accepted-with-warning until then.
+  const soft = c.required && !!c.validation?.enforceFrom;
+  const parts: string[] = [soft ? 'required soon' : c.required ? 'REQUIRED' : 'optional'];
+
+  // Type / format
+  if (c.type === 'decimal') parts.push('number (amount)');
+  else if (c.type === 'integer') parts.push('whole number');
+  else parts.push('text');
+
+  // Validation rules
+  if (c.validation?.length != null) parts.push(`exactly ${c.validation.length} digits`);
+  if (c.validation?.min != null) parts.push(`min ${c.validation.min}`);
+  if (c.validation?.max != null) parts.push(`max ${c.validation.max}`);
+  if (c.validation?.enum) parts.push(`one of: ${c.validation.enum.join(' / ')}`);
+  if (c.validation?.format === 'email') parts.push('valid email address');
+  if (c.validation?.format === 'date') parts.push('date — YYYY-MM-DD preferred; DD/MM/YYYY also accepted');
+  if (c.validation?.format === 'currency') parts.push('3-letter code, e.g. NGN');
+
+  // A friendly hint for well-known columns.
+  const hint = COLUMN_HINTS[c.name.toLowerCase()];
+  if (hint) parts.push(hint);
+
+  const spec = parts.join(', ');
+  if (soft) {
+    const when = enforceDate ?? c.validation!.enforceFrom;
+    return `${spec} — REQUIRED from ${when}; blank is accepted with a warning until then`;
+  }
+  return spec;
+}
+
+/** Extra plain-language hints for recognised columns (kept in sync with schemas). */
+const COLUMN_HINTS: Record<string, string> = {
+  periodlabel: 'the reporting period, e.g. 2026-Q1 (quarterly), 2026-03 (monthly) or 2026 (annual)',
+  periodquarter: 'alias of periodLabel; e.g. 2026-Q1',
+  bvn: 'Bank Verification Number',
+  nin: 'National Identity Number',
+  accountnumber: '10-digit NUBAN',
+  accountname: 'name on the account / policyholder',
+  bankcode: 'CBN bank sort code',
+  totalinflow: 'total credits into the account for the period (₦)',
+  totaloutflow: 'total debits for the period (₦)',
+  openingbalance: 'balance at the start of the period (₦)',
+  closingbalance: 'balance at the end of the period (₦)',
+  transactioncount: 'number of transactions in the period',
+  walletid: "the provider's wallet/account identifier",
+  merchantid: 'merchant identifier',
+  phonenumber: 'MSISDN, e.g. 0803...',
+  sector: 'economic sector, e.g. TRADING, HOSPITALITY, TECH',
+  businesstype: 'nature of business, e.g. "Retail shop"',
+  policynumber: 'insurance policy number',
+  sumassured: 'sum assured (₦)',
+  residentialstate: 'account holder state of residence',
+  accountopeneddate: 'YYYY-MM-DD',
+  tin: 'Tax Identification Number — the strongest taxpayer match key; include it whenever you hold it',
+  rcnumber: 'CAC registration number for corporate account holders, e.g. RC123456',
+  customeraddress: 'account holder / customer address',
+  customeremail: 'account holder / customer email',
+  transactiondate: 'statement / period date, YYYY-MM-DD',
+  transactiondescription: 'free-text narrative or notes for the period',
+  currency: 'ISO 4217 code; defaults to NGN if blank',
+  conversionrate: 'rate to NGN when currency is not NGN (e.g. 1650.00)',
+};
+
+/** Period-format hint driven by the provider's reporting frequency. */
+function periodFormatHint(freq: string | null | undefined): string {
+  switch ((freq ?? 'QUARTERLY').toUpperCase()) {
+    case 'MONTHLY': return 'YYYY-MM (e.g. 2026-03)';
+    case 'ANNUAL': return 'YYYY (e.g. 2026)';
+    default: return 'YYYY-Qn (e.g. 2026-Q1)';
+  }
 }
 
 /** Quote a CSV cell if it contains a comma, quote, or newline (RFC-4180). */

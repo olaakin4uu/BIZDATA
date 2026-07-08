@@ -20,14 +20,15 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
 
   if (!token || !user) {
     return (
-      <div className="flex min-h-screen items-center justify-center text-slate-400 text-sm">
+      <div className="flex min-h-screen items-center justify-center gap-2 text-[var(--ink-3)] text-sm">
+        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
         Redirecting to sign in…
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col">
+    <div className="min-h-screen flex flex-col">
       <ProviderNav />
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8">{children}</main>
     </div>

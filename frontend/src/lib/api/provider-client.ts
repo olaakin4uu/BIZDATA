@@ -38,8 +38,13 @@ export async function providerApiFetch<T>(path: string, options: ProviderApiFetc
 
   if (!res.ok) {
     if (res.status === 401 && typeof window !== 'undefined') {
+      // Clear the raw token AND the persisted store snapshot, else the login
+      // guard bounces back and the app loops ("blinking").
       localStorage.removeItem('bizdata_provider_token');
-      window.location.href = '/provider/login';
+      localStorage.removeItem('bizdata-provider-auth');
+      if (!window.location.pathname.startsWith('/provider/login')) {
+        window.location.href = '/provider/login?expired=1';
+      }
       return undefined as T;
     }
     let message = res.statusText;

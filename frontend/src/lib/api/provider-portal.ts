@@ -10,6 +10,8 @@ export interface ProviderDashboard {
     flagged: number;
   };
   recentSubmissions: Submission[];
+  /** Upcoming compulsory-field enforcement notice (null once past). */
+  fieldEnforcementNotice?: { enforceDate: string; fields: string[] } | null;
 }
 
 export type PeriodStatus = 'ON_TIME' | 'LATE' | 'MISSING' | 'PENDING';
