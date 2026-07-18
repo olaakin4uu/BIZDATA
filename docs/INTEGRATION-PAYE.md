@@ -104,3 +104,46 @@ curl -X POST "https://findata.kirs.gov.ng/api/integration/paye" \
         { "tin": "01234567-0001", "registered": false }
       ]'
 ```
+
+---
+
+# Outbound: create PAYE registration (BIZDATA → Tax App)
+
+The reverse direction — BIZDATA registers an employer FOR PAYE by calling the
+Tax app. **This endpoint must be built on the Tax-app side.** Until it exists,
+BIZDATA issues a *provisional* PAYE number locally (`PAYE-PROV-…`) and marks the
+employer registered in BIZDATA only.
+
+To activate the real registration, set on the BIZDATA backend:
+
+```
+PAYE_REG_PROVIDER=taxapp
+TAX_APP_BASE_URL=https://<the-tax-app-host>/api
+TAX_APP_API_KEY=<key the Tax app issues to BIZDATA>
+```
+
+BIZDATA will then POST to:
+
+```
+POST {TAX_APP_BASE_URL}/paye/registrations
+x-api-key: {TAX_APP_API_KEY}
+Content-Type: application/json
+
+{
+  "businessName": "FARIN GILASHI ENTERPRISES",
+  "rcNumber": "RC123456",     // may be null
+  "tin": "01234567-0001",     // may be null
+  "source": "BIZDATA"
+}
+```
+
+Expected **200/201** response:
+
+```json
+{ "payeRegNumber": "PAYE-KN-0099" }
+```
+
+BIZDATA stores the returned `payeRegNumber`, sets `payeStatus=REGISTERED` and
+`payeSource=TAX_APP_SYNC`. A non-2xx response fails that registration (the row
+stays a PAYE gap) and is surfaced to the operator. Staff trigger this per-row
+(**Tax Net → ⚠ Register PAYE**) or in bulk (**Register all for PAYE**).

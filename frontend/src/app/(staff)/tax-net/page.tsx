@@ -43,6 +43,29 @@ export default function TaxNetPage() {
     finally { setBusyId(null); }
   };
 
+  const registerPayeOne = async (row: TaxNetRow) => {
+    setBusyId(row.id); setMsg(null);
+    try {
+      const r = await taxNetApi.registerPaye(row.id);
+      setMsg(`${row.name} registered for PAYE — ${r.payeRegNumber}${r.official ? '' : ' (provisional)'}`);
+      load();
+    } catch (e) { setMsg(extractErrorMessage(e)); }
+    finally { setBusyId(null); }
+  };
+
+  const [payeBusy, setPayeBusy] = useState(false);
+  const autoRegisterPaye = async () => {
+    const n = report?.summary.payeGap.count ?? 0;
+    if (!confirm(`Register all ${n} PAYE-gap corporate(s) for PAYE remittance? This uses the ${'configured provider'} (provisional until the Tax app is wired).`)) return;
+    setPayeBusy(true); setMsg(null);
+    try {
+      const r = await taxNetApi.autoRegisterPaye({});
+      setMsg(`PAYE-registered ${r.registered} corporate(s)${r.failed ? `, ${r.failed} failed` : ''} via ${r.provider}.`);
+      load();
+    } catch (e) { setMsg(extractErrorMessage(e)); }
+    finally { setPayeBusy(false); }
+  };
+
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Banner */}
@@ -118,6 +141,15 @@ export default function TaxNetPage() {
           title="Corporates observed earning that are NOT confirmed PAYE-registered by the Tax app">
           ⚠ PAYE gap{s ? ` (${s.payeGap.count})` : ''}
         </button>
+        {s && s.payeGap.count > 0 && (
+          <button
+            onClick={autoRegisterPaye}
+            disabled={payeBusy}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white disabled:opacity-50"
+            title="Register every PAYE-gap corporate for PAYE remittance">
+            {payeBusy ? 'Registering…' : `⤵ Register all for PAYE (${s.payeGap.count})`}
+          </button>
+        )}
         <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
           className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white ml-auto">
           <option value="">All types</option>
@@ -182,7 +214,13 @@ export default function TaxNetPage() {
                     ) : r.payeStatus === 'REGISTERED' ? (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title={r.payeRegNumber ?? undefined}>Registered</span>
                     ) : r.payeGap ? (
-                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1 bg-rose-50 text-rose-700 ring-rose-200" title="Earning but not confirmed PAYE-registered">⚠ Gap</span>
+                      <button
+                        onClick={() => registerPayeOne(r)}
+                        disabled={busyId === r.id}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1 bg-rose-50 text-rose-700 ring-rose-200 hover:bg-rose-100 disabled:opacity-50"
+                        title="Earning but not PAYE-registered — click to register for PAYE">
+                        {busyId === r.id ? '…' : '⚠ Register PAYE'}
+                      </button>
                     ) : (
                       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 bg-slate-50 text-slate-500 ring-slate-200">Unknown</span>
                     )}

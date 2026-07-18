@@ -22,6 +22,20 @@ export class PayeController {
   setManual(@Param('id') id: string, @Body() dto: any, @CurrentStaff() u: any) {
     return this.paye.setManual(id, dto, u.id);
   }
+
+  @Post('register/:id')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'ANALYST')
+  @ApiOperation({ summary: 'Register ONE corporate employer for PAYE (real Tax-app reg when configured, else provisional)' })
+  register(@Param('id') id: string, @CurrentStaff() u: any) {
+    return this.paye.registerForPaye(id, u.id);
+  }
+
+  @Post('auto-register')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')
+  @ApiOperation({ summary: 'Bulk-register the PAYE-gap corporates (optionally scoped by ids / minInflow / limit)' })
+  autoRegister(@Body() body: { ids?: string[]; minInflow?: number; limit?: number }, @CurrentStaff() u: any) {
+    return this.paye.autoRegisterPaye(u.id, { ids: body?.ids, minInflow: body?.minInflow, limit: body?.limit });
+  }
 }
 
 // Partner endpoint: the KIRS Tax app pushes PAYE-registration status into

@@ -50,6 +50,12 @@ export const taxNetApi = {
   setPaye: (taxpayerId: string, status: 'REGISTERED' | 'NOT_REGISTERED' | 'UNKNOWN', payeRegNumber?: string) =>
     apiFetch(`/paye/taxpayer/${taxpayerId}`, { method: 'POST', body: { status, payeRegNumber } }),
 
+  registerPaye: (taxpayerId: string) =>
+    apiFetch<{ id: string; payeRegNumber: string; official: boolean; provider: string }>(`/paye/register/${taxpayerId}`, { method: 'POST', body: {} }),
+
+  autoRegisterPaye: (opts: { ids?: string[]; minInflow?: number; limit?: number } = {}) =>
+    apiFetch<{ registered: number; failed: number; candidates: number; provider: string }>(`/paye/auto-register`, { method: 'POST', body: opts }),
+
   register: (id: string, tin?: string) =>
     apiFetch<{ id: string; tin: string; netStatus: NetStatus }>(`/tax-net/register/${id}`, {
       method: 'POST',
