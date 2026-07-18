@@ -11,7 +11,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import { ScanService } from '../src/modules/scan/scan.service';
-import { AuditService } from '../src/modules/audit/audit.service';
+import { AuditService } from '../src/common/services/audit.service';
 import { StatutoryService } from '../src/modules/statutory/statutory.service';
 import { PortfoliosService } from '../src/modules/portfolios/portfolios.service';
 
