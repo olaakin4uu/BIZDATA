@@ -1,32 +1,40 @@
 /**
  * One-shot: run an under-declaration scan for a given year via the real
- * ScanService (same engine the UI triggers), without needing a staff login.
+ * ScanService — WITHOUT bootstrapping the full Nest HTTP app (which pulls in
+ * request-scoped JWT strategies that can't init in a standalone context).
+ * We wire ScanService + its 4 deps by hand against a PrismaClient (pg adapter).
  *
  * Usage: npx tsx scripts/run-scan.ts <year> [threshold]
  */
 import 'dotenv/config';
-import { NestFactory } from '@nestjs/core';
-import { AppModule } from '../src/app.module';
+import { PrismaClient } from '@prisma/client';
+import { PrismaPg } from '@prisma/adapter-pg';
+import { Pool } from 'pg';
 import { ScanService } from '../src/modules/scan/scan.service';
-import { PrismaService } from '../src/prisma/prisma.service';
+import { AuditService } from '../src/modules/audit/audit.service';
+import { StatutoryService } from '../src/modules/statutory/statutory.service';
+import { PortfoliosService } from '../src/modules/portfolios/portfolios.service';
 
 async function main() {
   const year = parseInt(process.argv[2] ?? '2026', 10);
   const threshold = process.argv[3] ? parseFloat(process.argv[3]) : undefined;
 
-  const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn', 'log'] });
-  const scanSvc = app.get(ScanService);
-  const prisma = app.get(PrismaService);
+  const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+  const prisma = new PrismaClient({ adapter: new PrismaPg(pool) }) as any;
 
-  // Use a real SUPER_ADMIN staff id as the scan initiator (audit trail).
+  // Manual DI: every dep bottoms out at prisma (+ audit).
+  const audit = new AuditService(prisma);
+  const statutory = new StatutoryService(prisma, audit);
+  const portfolios = new PortfoliosService(prisma, audit);
+  const scanSvc = new ScanService(prisma, audit, portfolios, statutory);
+
   const admin = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' }, select: { id: true, email: true } });
   if (!admin) throw new Error('No SUPER_ADMIN user found to attribute the scan to');
   console.log(`Initiating scan for year ${year}${threshold != null ? ` (threshold ${threshold})` : ' (default threshold)'} as ${admin.email}`);
 
   const scan = await scanSvc.create({ year, threshold }, admin.id);
-  console.log(`Scan created: ${scan.id} (status ${scan.status}). Waiting for it to finish…`);
+  console.log(`Scan created: ${scan.id} (status ${scan.status}). Waiting…`);
 
-  // create() runs the scan async via setImmediate; poll the row until it completes.
   for (let i = 0; i < 180; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     const row = await prisma.underdeclarationScan.findUnique({ where: { id: scan.id } });
@@ -41,7 +49,8 @@ async function main() {
     if (i % 5 === 0) process.stdout.write(`  …still running (${i * 2}s)\r`);
   }
 
-  await app.close();
+  await prisma.$disconnect();
+  await pool.end();
 }
 
 main().catch((e) => { console.error(e); process.exit(1); });
