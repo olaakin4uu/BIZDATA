@@ -71,8 +71,14 @@ export function renderTaxReportHtml(r: any): string {
   <table><thead><tr><th>Tax</th><th class="num">Paid (Tax app)</th><th class="num">Assessed (BizData)</th></tr></thead><tbody>${taxCardRows}</tbody></table>
 
   <h2>Cross-provider identity & transactions</h2>
-  <p class="muted">Cross-matched across ${r.crossIdentity.providerCount} provider(s), ${r.crossIdentity.distinctAccounts} account(s), ${r.crossIdentity.distinctBvns} BVN(s) — matched by ${esc(r.crossIdentity.matchMethods.join(', ') || '—')}.</p>
+  <p class="muted">Cross-matched across ${r.crossIdentity.providerCount} provider(s), ${r.crossIdentity.distinctAccounts} account(s), ${r.crossIdentity.distinctBvns} BVN(s) — matched by ${esc(r.crossIdentity.matchMethods.join(', ') || '—')}. Largest single provider ${ngn(r.crossIdentity.biggestSingleProviderInflow)} · consolidated ${ngn(r.crossIdentity.combinedInflow)}.</p>
+  ${r.crossIdentity.isSpreader ? `<p class="warn">⚠ Spreader pattern: no single provider over the reporting threshold, but the consolidated total crosses it — inflow appears split across banks.</p>` : ''}
   ${provBlocks}
+  ${(r.crossIdentity.identityLinks && r.crossIdentity.identityLinks.length) ? `
+  <h3 style="font-size:13px;margin-top:12px;color:#b45309">Same identifier found at other providers (possible same person, resolved separately)</h3>
+  <table><thead><tr><th>Other provider</th><th>Matched via</th><th>Resolved-as taxpayer</th><th class="num">Inflow</th><th class="num">Records</th></tr></thead><tbody>
+  ${r.crossIdentity.identityLinks.map((l: any) => `<tr><td>${esc(l.providerName)}</td><td>${esc((l.via||[]).join(', '))}</td><td>${esc(l.otherTaxpayerName ?? '—')}</td><td class="num">${ngn(l.inflow)}</td><td class="num">${l.records}</td></tr>`).join('')}
+  </tbody></table>` : ''}
 
   <h2>AI analytics signals</h2>
   <table><thead><tr><th>Agent</th><th>Severity</th><th class="num">Score</th><th>Finding</th></tr></thead><tbody>${signalRows}</tbody></table>

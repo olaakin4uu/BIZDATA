@@ -196,15 +196,77 @@ export class TaxReportService {
       provMap.set(key, g);
     }
     const providerBreakdown = [...provMap.values()]
-      .map((g) => ({ ...g, matchMethods: [...g.matchMethods] }))
+      .map((g) => ({ ...g, matchMethods: [...g.matchMethods], sameAtOtherProviders: false }))
       .sort((a, b) => b.totalInflow - a.totalInflow);
-    // Distinct identity anchors seen for this customer across providers (shows how
-    // the cross-match was made — same BVN/account under one taxpayer).
+
+    // ── CROSS-PROVIDER IDENTITY MATCH ──
+    // Take this customer's identifiers (encrypted BVN/NIN + account number) and
+    // find records at OTHER providers carrying the SAME identifier — even if they
+    // resolved to a different taxpayerId (catches fragmented/same-person spread).
+    // Match priority: BVN → NIN → account. (TIN lives on the taxpayer, not the
+    // record; the taxpayer-level resolution already keys on it.)
+    const myBvns = [...new Set(recs.map((r) => r.bvn).filter(Boolean))] as string[];      // encrypted values
+    const myNins = [...new Set(recs.map((r) => r.nin).filter(Boolean))] as string[];
+    const myAccts = [...new Set(recs.map((r) => r.accountNumber).filter(Boolean))] as string[];
+    const myProviderIds = new Set(providerBreakdown.map((p) => p.providerId));
+
+    const linkMatches = (myBvns.length || myNins.length || myAccts.length)
+      ? await this.prisma.dataRecord.findMany({
+          where: {
+            taxpayerId: { not: taxpayerId },  // records NOT already under this taxpayer
+            OR: [
+              ...(myBvns.length ? [{ bvn: { in: myBvns } }] : []),
+              ...(myNins.length ? [{ nin: { in: myNins } }] : []),
+              ...(myAccts.length ? [{ accountNumber: { in: myAccts } }] : []),
+            ],
+          },
+          select: {
+            taxpayerId: true, bvn: true, nin: true, accountNumber: true, accountName: true,
+            totalInflow: true, provider: { select: { id: true, name: true } },
+            taxpayer: { select: { businessName: true, firstName: true, lastName: true, type: true } },
+          },
+          take: 500,
+        })
+      : [];
+
+    // Group linkage hits by the OTHER provider + which identifier matched.
+    const linkByProvider = new Map<string, any>();
+    for (const m of linkMatches) {
+      const via = myBvns.includes(m.bvn as any) ? 'BVN' : myNins.includes(m.nin as any) ? 'NIN' : 'ACCOUNT';
+      const key = m.provider.id;
+      const g = linkByProvider.get(key) ?? {
+        providerId: m.provider.id, providerName: m.provider.name,
+        inflow: 0, records: 0, via: new Set<string>(),
+        otherTaxpayerName: m.taxpayer ? (m.taxpayer.type === 'CORPORATE' ? m.taxpayer.businessName : [m.taxpayer.firstName, m.taxpayer.lastName].filter(Boolean).join(' ')) : null,
+        alreadyLinked: myProviderIds.has(m.provider.id),
+      };
+      g.inflow += Number(m.totalInflow ?? 0);
+      g.records += 1;
+      g.via.add(via);
+      linkByProvider.set(key, g);
+    }
+    const identityLinks = [...linkByProvider.values()].map((g) => ({ ...g, via: [...g.via] })).sort((a, b) => b.inflow - a.inflow);
+
+    // Distinct identity anchors + the cross-provider consolidated picture.
+    const providerInflows = providerBreakdown.map((p) => p.totalInflow);
+    const biggestSingle = providerInflows.length ? Math.max(...providerInflows) : 0;
+    const combined = providerInflows.reduce((a, b) => a + b, 0);
+    const threshold = tp.type === 'CORPORATE' ? cfg.reportingThresholdCorporate : cfg.reportingThresholdIndividual;
+    // SPREADER: money split across providers so no single provider hits the
+    // threshold, but the consolidated total does.
+    const isSpreader = providerBreakdown.length > 1 && biggestSingle < threshold && combined >= threshold;
+
     const crossIdentity = {
       providerCount: providerBreakdown.length,
       distinctAccounts: new Set(recs.map((r) => r.accountNumber).filter(Boolean)).size,
-      distinctBvns: new Set(recs.map((r) => r.bvn).filter(Boolean)).size,
+      distinctBvns: myBvns.length,
       matchMethods: [...new Set(recs.map((r) => r.matchMethod).filter(Boolean))],
+      biggestSingleProviderInflow: biggestSingle,
+      combinedInflow: combined,
+      isSpreader,
+      // Same identifier found at other providers (possible unresolved same person).
+      identityLinks,
+      identityLinkCount: identityLinks.length,
     };
 
     // ── Cases + AI agent signals (the "AI" narrative) ──
@@ -224,6 +286,8 @@ export class TaxReportService {
       payeStatus: tp.payeStatus ?? 'UNKNOWN', signalCount: signals.length,
       highSignals: signals.filter((s) => s.severity === 'HIGH').length, taxCards,
       providerCount: crossIdentity.providerCount, distinctAccounts: crossIdentity.distinctAccounts,
+      isSpreader: crossIdentity.isSpreader, combined: crossIdentity.combinedInflow,
+      biggestSingle: crossIdentity.biggestSingleProviderInflow, identityLinkCount: crossIdentity.identityLinkCount,
     });
 
     return {
@@ -259,6 +323,8 @@ export class TaxReportService {
     }
     if (d.totalUndeclared > 0) out.push(`Across all periods on file, total apparent undeclared income is ${ngn(d.totalUndeclared)}, with an estimated recoverable tax of ${ngn(d.estimatedRecoverable)}.`);
     if (d.providerCount > 1) out.push(`This customer was cross-matched across ${d.providerCount} providers${d.distinctAccounts ? ` and ${d.distinctAccounts} distinct accounts` : ''} — the inflow figure is the consolidated picture, not a single provider's view.`);
+    if (d.isSpreader) out.push(`⚠ SPREADER PATTERN: no single provider reported over the reporting threshold (largest ${ngn(d.biggestSingle)}), but the consolidated total across providers is ${ngn(d.combined)} — money appears split to stay under the radar.`);
+    if (d.identityLinkCount > 0) out.push(`This customer's identifiers (BVN/NIN/account) also appear in ${d.identityLinkCount} other provider record group(s) that resolved to different taxpayers — possible unresolved same-person activity worth reviewing.`);
     if (d.type === 'CORPORATE') out.push(`PAYE registration status: ${d.payeStatus}.`);
     const paidTypes = d.taxCards.filter((c: any) => c.onFile).map((c: any) => `${c.taxType} ${ngn(c.paid)}`);
     out.push(paidTypes.length ? `Taxes paid on file: ${paidTypes.join(', ')}.` : `No tax payments are on file from the Tax app yet (PAYE/WHT/CGT/CIT).`);
