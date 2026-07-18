@@ -10,10 +10,12 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const pathname = usePathname() ?? '';
   const router = useRouter();
   const { token, user, hasHydrated, clearAuth, setUser } = useStaffAuthStore();
-  const isLoginRoute = pathname === '/login';
   const isChangePwRoute = pathname === '/change-password';
-  // Routes that render without the app chrome and don't require a full session.
-  const isBareRoute = isLoginRoute || isChangePwRoute;
+  // Public auth routes: render without app chrome and don't require a session.
+  const isPublicAuthRoute =
+    pathname === '/login' || pathname === '/forgot-password' || pathname === '/reset-password';
+  // Routes that render bare (no sidebar / top bar).
+  const isBareRoute = isPublicAuthRoute || isChangePwRoute;
 
   useEffect(() => {
     // Only decide to redirect AFTER the persisted auth has hydrated from
@@ -22,12 +24,13 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       router.replace('/login');
       return;
     }
-    // A user whose password was reset by an admin must set a new one before
-    // reaching any app page. Send them to the forced-change screen from anywhere.
-    if (hasHydrated && token && user?.mustChangePassword && !isChangePwRoute) {
+    // A user whose password was reset must set a new one before reaching any
+    // app page. Send them to the forced-change screen — but never yank them off
+    // a public auth route (they may be mid reset-link flow).
+    if (hasHydrated && token && user?.mustChangePassword && !isChangePwRoute && !isPublicAuthRoute) {
       router.replace('/change-password');
     }
-  }, [hasHydrated, isBareRoute, isChangePwRoute, token, user, router]);
+  }, [hasHydrated, isBareRoute, isChangePwRoute, isPublicAuthRoute, token, user, router]);
 
   const handleSignOut = () => {
     clearAuth();

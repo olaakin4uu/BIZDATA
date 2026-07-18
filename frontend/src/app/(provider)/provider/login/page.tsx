@@ -25,7 +25,9 @@ export default function ProviderLoginPage() {
     try {
       const res = await providerAuthApi.providerLogin(email.trim().toLowerCase(), password);
       setAuth(res.user, res.accessToken);
-      router.replace('/provider/dashboard');
+      // A provider whose password was reset by an admin must set their own via
+      // the profile page before working; a self-service reset already set it.
+      router.replace(res.user.mustChangePassword ? '/provider/profile' : '/provider/dashboard');
     } catch (err) {
       setError(extractErrorMessage(err));
     } finally {
@@ -77,7 +79,10 @@ export default function ProviderLoginPage() {
                 className="w-full px-3.5 py-2.5 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface-2)] transition-shadow focus:outline-none focus:ring-2 focus:ring-teal-500/60 focus:border-teal-400 focus:bg-white" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-[var(--ink-2)] mb-1.5">Password</label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-xs font-medium text-[var(--ink-2)]">Password</label>
+                <Link href="/provider/forgot-password" className="text-xs text-teal-700 hover:text-teal-800 hover:underline font-medium">Forgot password?</Link>
+              </div>
               <PasswordInput required autoComplete="current-password" value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3.5 py-2.5 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface-2)] transition-shadow focus:outline-none focus:ring-2 focus:ring-teal-500/60 focus:border-teal-400 focus:bg-white" />

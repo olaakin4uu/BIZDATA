@@ -120,7 +120,10 @@ export default function StaffLoginPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-700 mb-1">Password</label>
+              <div className="flex items-center justify-between mb-1">
+                <label className="block text-xs font-medium text-slate-700">Password</label>
+                <Link href="/forgot-password" className="text-xs text-teal-700 hover:underline font-medium">Forgot password?</Link>
+              </div>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}

@@ -8,15 +8,19 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
   const pathname = usePathname() ?? '';
   const router = useRouter();
   const { token, user } = useProviderAuthStore();
-  const isLogin = pathname === '/provider/login';
+  // Public auth routes render without the portal chrome and need no session.
+  const isPublicAuthRoute =
+    pathname === '/provider/login' ||
+    pathname === '/provider/forgot-password' ||
+    pathname === '/provider/reset-password';
 
   useEffect(() => {
-    if (!isLogin && (!token || !user)) {
+    if (!isPublicAuthRoute && (!token || !user)) {
       router.replace('/provider/login');
     }
-  }, [isLogin, token, user, router]);
+  }, [isPublicAuthRoute, token, user, router]);
 
-  if (isLogin) return <>{children}</>;
+  if (isPublicAuthRoute) return <>{children}</>;
 
   if (!token || !user) {
     return (

@@ -35,6 +35,7 @@ export interface ProviderUser {
   avatarUrl?: string | null;
   isActive?: boolean;
   lastLoginAt?: string | null;
+  mustChangePassword?: boolean;
   provider?: {
     id: string;
     name: string;
@@ -64,6 +65,12 @@ export const authApi = {
       method: 'PATCH',
       body: { currentPassword, newPassword },
     }),
+
+  // Self-service reset. forgot() always resolves 200 (no account enumeration).
+  staffForgotPassword: (email: string) =>
+    apiFetch<{ ok: boolean }>('/auth/staff/forgot-password', { method: 'POST', body: { email } }),
+  staffResetPassword: (token: string, newPassword: string) =>
+    apiFetch<{ success: boolean }>('/auth/staff/reset-password', { method: 'POST', body: { token, newPassword } }),
 
   uploadStaffAvatar: (file: File) => {
     const fd = new FormData();
@@ -96,6 +103,12 @@ export const providerAuthApi = {
       method: 'PATCH',
       body: { currentPassword, newPassword },
     }),
+
+  // Self-service reset for provider users. forgot() always resolves 200.
+  providerForgotPassword: (email: string) =>
+    providerApiFetch<{ ok: boolean }>('/auth/provider/forgot-password', { method: 'POST', body: { email } }),
+  providerResetPassword: (token: string, newPassword: string) =>
+    providerApiFetch<{ success: boolean }>('/auth/provider/reset-password', { method: 'POST', body: { token, newPassword } }),
 
   uploadProviderAvatar: (file: File) => {
     const fd = new FormData();
