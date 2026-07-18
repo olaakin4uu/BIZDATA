@@ -1,17 +1,20 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, Logger } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
-import { randomBytes } from 'crypto';
+import { randomBytes, createHash } from 'crypto';
 import * as bcrypt from 'bcrypt';
 import { generateSecret, verifyTotp, keyuri } from '../../common/services/totp';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
+import { MailService } from '../../common/services/mail.service';
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
     private audit: AuditService,
+    private mail: MailService,
   ) {}
 
   async staffLogin(email: string, password: string, ip?: string, userAgent?: string, totp?: string) {
@@ -92,6 +95,9 @@ export class AuthService {
       kind: 'PROVIDER_USER',
       role: user.role,
       providerId: user.providerId,
+      // Epoch-ms of the last password change; the provider guard evicts tokens
+      // minted before a later change (mirrors staff — see providerLogin/guard).
+      pwdIat: user.passwordChangedAt?.getTime() ?? 0,
     });
 
     await this.audit.log({
@@ -115,6 +121,7 @@ export class AuthService {
         providerId: user.providerId,
         providerName: user.provider?.name,
         avatarUrl: user.avatarUrl,
+        mustChangePassword: user.mustChangePassword,
       },
     };
   }
@@ -257,7 +264,144 @@ export class AuthService {
     if (!ok) throw new BadRequestException('Current password is incorrect');
     if (newPassword.length < 8) throw new BadRequestException('New password must be at least 8 characters');
     const hash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.dataProviderUser.update({ where: { id }, data: { passwordHash: hash } });
+    // Stamp the password epoch and clear any forced-change flag — mirrors the
+    // staff change: existing provider sessions are evicted by the guard.
+    await this.prisma.dataProviderUser.update({
+      where: { id },
+      data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: false },
+    });
+    return { success: true };
+  }
+
+  // ─── Self-service password reset ("forgot password") ───────────────────────
+  // Single-use, expiring, hashed tokens (mirrors IntegrationApiKey). The raw
+  // token travels only in the emailed link; we store only its SHA-256 hash.
+
+  private static readonly RESET_TTL_MS = 60 * 60 * 1000; // 1 hour
+  private hashToken(raw: string): string {
+    return createHash('sha256').update(raw).digest('hex');
+  }
+
+  /**
+   * Request a reset link. ALWAYS returns the same generic response whether or
+   * not the email maps to an account — this prevents account enumeration. When
+   * it does match an active account we mint a token, store its hash, and email
+   * the link. Rate-limiting is enforced at the controller (@Throttle).
+   */
+  async requestPasswordReset(
+    userType: 'STAFF' | 'PROVIDER',
+    email: string,
+    frontendUrl: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ ok: true }> {
+    const normalized = email.trim().toLowerCase();
+    const account =
+      userType === 'STAFF'
+        ? await this.prisma.user.findUnique({ where: { email: normalized } })
+        : await this.prisma.dataProviderUser.findUnique({ where: { email: normalized } });
+
+    // Only act for a real, active account — but the response is identical either
+    // way, and we never reveal which branch ran.
+    if (account && account.isActive) {
+      const raw = randomBytes(32).toString('hex');
+      const expiresAt = new Date(Date.now() + AuthService.RESET_TTL_MS);
+      await this.prisma.passwordResetToken.create({
+        data: { tokenHash: this.hashToken(raw), userType, userId: account.id, expiresAt },
+      });
+
+      const base = (frontendUrl || '').replace(/\/$/, '');
+      const path = userType === 'STAFF' ? '/reset-password' : '/provider/reset-password';
+      const resetUrl = `${base}${path}?token=${raw}`;
+      await this.mail.sendPasswordReset(account.email, resetUrl);
+
+      // In dev (no SMTP), surface the link in logs so the flow is testable.
+      if (!this.mail.isConfigured()) {
+        this.logger.warn(`[dev] password reset link for ${account.email}: ${resetUrl}`);
+      }
+
+      await this.audit.log({
+        actorType: userType === 'STAFF' ? 'STAFF' : 'PROVIDER_USER',
+        actorId: account.id,
+        staffId: userType === 'STAFF' ? account.id : undefined,
+        action: 'PASSWORD_RESET_REQUESTED',
+        entity: userType === 'STAFF' ? 'User' : 'DataProviderUser',
+        entityId: account.id,
+        ip,
+        userAgent,
+      });
+    }
+
+    return { ok: true };
+  }
+
+  /**
+   * Complete a reset: verify the token (exists, unused, unexpired), set the new
+   * password, stamp passwordChangedAt (evicts all existing sessions) and force a
+   * change on next login, then mark the token used. Generic errors — never say
+   * whether it was the token or the account that was the problem.
+   */
+  async resetPassword(
+    userType: 'STAFF' | 'PROVIDER',
+    rawToken: string,
+    newPassword: string,
+    ip?: string,
+    userAgent?: string,
+  ): Promise<{ success: true }> {
+    if (!rawToken) throw new BadRequestException('Invalid or expired reset link');
+    if (!newPassword || newPassword.length < 8) {
+      throw new BadRequestException('New password must be at least 8 characters');
+    }
+
+    const record = await this.prisma.passwordResetToken.findUnique({
+      where: { tokenHash: this.hashToken(rawToken) },
+    });
+    if (
+      !record ||
+      record.userType !== userType ||
+      record.usedAt ||
+      record.expiresAt.getTime() < Date.now()
+    ) {
+      throw new BadRequestException('Invalid or expired reset link');
+    }
+
+    const hash = await bcrypt.hash(newPassword, 10);
+    // Set password, move the epoch (evicts sessions), and force a change on next
+    // login — then burn the token, all in one transaction.
+    await this.prisma.$transaction(async (tx) => {
+      if (userType === 'STAFF') {
+        await tx.user.update({
+          where: { id: record.userId },
+          data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: true },
+        });
+      } else {
+        await tx.dataProviderUser.update({
+          where: { id: record.userId },
+          data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: true },
+        });
+      }
+      await tx.passwordResetToken.update({
+        where: { id: record.id },
+        data: { usedAt: new Date() },
+      });
+      // Invalidate any other outstanding reset tokens for this account.
+      await tx.passwordResetToken.updateMany({
+        where: { userType, userId: record.userId, usedAt: null },
+        data: { usedAt: new Date() },
+      });
+    });
+
+    await this.audit.log({
+      actorType: userType === 'STAFF' ? 'STAFF' : 'PROVIDER_USER',
+      actorId: record.userId,
+      staffId: userType === 'STAFF' ? record.userId : undefined,
+      action: 'PASSWORD_RESET_COMPLETED',
+      entity: userType === 'STAFF' ? 'User' : 'DataProviderUser',
+      entityId: record.userId,
+      ip,
+      userAgent,
+    });
+
     return { success: true };
   }
 

@@ -3,6 +3,7 @@ import {
   UseInterceptors, UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { Throttle } from '@nestjs/throttler';
 import { IsEmail, IsOptional, IsString, MinLength } from 'class-validator';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiConsumes } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
@@ -19,6 +20,15 @@ class LoginDto {
 
 class ChangePasswordDto {
   @IsString() @MinLength(1) currentPassword: string;
+  @IsString() @MinLength(8) newPassword: string;
+}
+
+class ForgotPasswordDto {
+  @IsEmail() email: string;
+}
+
+class ResetPasswordDto {
+  @IsString() @MinLength(1) token: string;
   @IsString() @MinLength(8) newPassword: string;
 }
 
@@ -42,6 +52,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Staff login' })
   staffLogin(@Body() dto: LoginDto, @Req() req: any) {
     return this.service.staffLogin(dto.email, dto.password, req.ip, req.headers?.['user-agent'], dto.totp);
+  }
+
+  @Post('staff/forgot-password')
+  @Throttle({ default: { limit: 3, ttl: 15 * 60 * 1000 } })
+  @ApiOperation({ summary: 'Request a staff password-reset link (always returns 200)' })
+  staffForgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: any) {
+    return this.service.requestPasswordReset(
+      'STAFF', dto.email, process.env.FRONTEND_URL || '', req.ip, req.headers?.['user-agent'],
+    );
+  }
+
+  @Post('staff/reset-password')
+  @Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })
+  @ApiOperation({ summary: 'Complete a staff password reset with a token' })
+  staffResetPassword(@Body() dto: ResetPasswordDto, @Req() req: any) {
+    return this.service.resetPassword('STAFF', dto.token, dto.newPassword, req.ip, req.headers?.['user-agent']);
   }
 
   @Post('staff/mfa/setup')
@@ -77,6 +103,22 @@ export class AuthController {
   @ApiOperation({ summary: 'Provider user login' })
   providerLogin(@Body() dto: LoginDto, @Req() req: any) {
     return this.service.providerLogin(dto.email, dto.password, req.ip, req.headers?.['user-agent']);
+  }
+
+  @Post('provider/forgot-password')
+  @Throttle({ default: { limit: 3, ttl: 15 * 60 * 1000 } })
+  @ApiOperation({ summary: 'Request a provider password-reset link (always returns 200)' })
+  providerForgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: any) {
+    return this.service.requestPasswordReset(
+      'PROVIDER', dto.email, process.env.FRONTEND_URL || '', req.ip, req.headers?.['user-agent'],
+    );
+  }
+
+  @Post('provider/reset-password')
+  @Throttle({ default: { limit: 5, ttl: 15 * 60 * 1000 } })
+  @ApiOperation({ summary: 'Complete a provider password reset with a token' })
+  providerResetPassword(@Body() dto: ResetPasswordDto, @Req() req: any) {
+    return this.service.resetPassword('PROVIDER', dto.token, dto.newPassword, req.ip, req.headers?.['user-agent']);
   }
 
   @Get('staff/me')
