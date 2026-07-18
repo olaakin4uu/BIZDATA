@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { providersApi } from '@/lib/api/providers';
 import { complianceApi, type ProviderCompliance, type ComplianceSummary, type PeriodStatus } from '@/lib/api/compliance';
@@ -35,11 +35,30 @@ export default function ProvidersDashboardPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [uploadsFor, setUploadsFor] = useState<{ id: string; name: string } | null>(null);
 
-  useEffect(() => {
-    setRows(null); setSummary(null);
-    complianceApi.list(year).then(setRows).catch(() => setRows([]));
-    complianceApi.summary(year).then(setSummary).catch(() => setSummary(null));
+  // Fetch compliance data. `showLoading` blanks the table (used on first load /
+  // year change); on a silent background refresh we keep the current rows visible
+  // and just swap them in when the new data arrives (no flicker).
+  const load = useCallback((showLoading: boolean) => {
+    if (showLoading) { setRows(null); setSummary(null); }
+    complianceApi.list(year).then(setRows).catch(() => { if (showLoading) setRows([]); });
+    complianceApi.summary(year).then(setSummary).catch(() => { if (showLoading) setSummary(null); });
   }, [year]);
+
+  // Load on mount + whenever the year changes.
+  useEffect(() => { load(true); }, [load]);
+
+  // Auto-refresh when the user returns to this tab/page (e.g. after a provider
+  // uploads a submission in another tab, or on navigating back). Without this the
+  // list showed stale data until the manual refresh button was clicked.
+  useEffect(() => {
+    const refresh = () => { if (document.visibilityState === 'visible') load(false); };
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+    };
+  }, [load]);
 
   // Derived analytics
   const derived = useMemo(() => {
