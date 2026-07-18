@@ -129,7 +129,15 @@ export class UsersService {
       throw new BadRequestException('New password must be at least 8 characters');
     }
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.user.update({ where: { id }, data: { passwordHash } });
+    // passwordChangedAt evicts every existing session for this user (the guard
+    // rejects tokens issued before it) — so an admin reset actually locks out a
+    // compromised session, not just the login. mustChangePassword forces the
+    // user to set their own password on next login, so the admin-set one is
+    // only ever temporary and the admin never knows the user's real password.
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash, passwordChangedAt: new Date(), mustChangePassword: true },
+    });
 
     await this.audit.log({
       actorType: 'STAFF',

@@ -37,10 +37,15 @@ export class AuthService {
       data: { lastLoginAt: new Date() },
     });
 
+    // `pwdIat` binds this token to the current password epoch (epoch-ms of the
+    // last password change). Changing the password (self-service or admin reset)
+    // bumps passwordChangedAt, and the guard rejects any token whose pwdIat
+    // predates it — evicting old sessions, even on a sub-second change.
     const accessToken = await this.jwt.signAsync({
       sub: user.id,
       kind: 'STAFF',
       role: user.role,
+      pwdIat: user.passwordChangedAt?.getTime() ?? 0,
     });
 
     await this.audit.log({
@@ -63,6 +68,7 @@ export class AuthService {
         lastName: user.lastName,
         role: user.role,
         avatarUrl: user.avatarUrl,
+        mustChangePassword: user.mustChangePassword,
       },
     };
   }
@@ -170,7 +176,13 @@ export class AuthService {
     if (!ok) throw new BadRequestException('Current password is incorrect');
     if (newPassword.length < 8) throw new BadRequestException('New password must be at least 8 characters');
     const hash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.user.update({ where: { id }, data: { passwordHash: hash } });
+    // Stamp the password epoch and clear any admin-forced-change flag. Existing
+    // tokens carry the old pwdIat and are rejected by the guard from here on —
+    // including this caller's, so the client must re-login after changing.
+    await this.prisma.user.update({
+      where: { id },
+      data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: false },
+    });
     return { success: true };
   }
 

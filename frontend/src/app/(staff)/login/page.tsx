@@ -31,7 +31,7 @@ export default function StaffLoginPage() {
       if (token || user) clearAuth();
       return;
     }
-    if (token && user) router.replace('/dashboard');
+    if (token && user) router.replace(user.mustChangePassword ? '/change-password' : '/dashboard');
   }, [expired, token, user, router, clearAuth]);
 
   useEffect(() => {
@@ -44,7 +44,8 @@ export default function StaffLoginPage() {
     try {
       const res = await authApi.staffLogin(email.trim().toLowerCase(), password, needsTotp ? totp.trim() : undefined);
       setAuth(res.user, res.accessToken);
-      router.replace('/dashboard');
+      // After an admin reset the account must set its own password first.
+      router.replace(res.user.mustChangePassword ? '/change-password' : '/dashboard');
     } catch (err) {
       const msg = extractErrorMessage(err);
       if (msg === 'MFA code required' && !needsTotp) {

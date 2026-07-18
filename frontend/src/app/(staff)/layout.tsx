@@ -11,14 +11,23 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
   const router = useRouter();
   const { token, user, hasHydrated, clearAuth, setUser } = useStaffAuthStore();
   const isLoginRoute = pathname === '/login';
+  const isChangePwRoute = pathname === '/change-password';
+  // Routes that render without the app chrome and don't require a full session.
+  const isBareRoute = isLoginRoute || isChangePwRoute;
 
   useEffect(() => {
     // Only decide to redirect AFTER the persisted auth has hydrated from
     // localStorage — otherwise a direct URL load flickers to /login.
-    if (hasHydrated && !isLoginRoute && (!token || !user)) {
+    if (hasHydrated && !isBareRoute && (!token || !user)) {
       router.replace('/login');
+      return;
     }
-  }, [hasHydrated, isLoginRoute, token, user, router]);
+    // A user whose password was reset by an admin must set a new one before
+    // reaching any app page. Send them to the forced-change screen from anywhere.
+    if (hasHydrated && token && user?.mustChangePassword && !isChangePwRoute) {
+      router.replace('/change-password');
+    }
+  }, [hasHydrated, isBareRoute, isChangePwRoute, token, user, router]);
 
   const handleSignOut = () => {
     clearAuth();
@@ -30,7 +39,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     setUser(updated);
   };
 
-  if (isLoginRoute) {
+  if (isBareRoute) {
     return <>{children}</>;
   }
 

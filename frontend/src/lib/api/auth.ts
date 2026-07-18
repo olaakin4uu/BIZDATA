@@ -14,6 +14,9 @@ export interface StaffUser {
   recoveryCodesRemaining?: number;
   lastLoginAt?: string | null;
   createdAt?: string;
+  // True after an admin password reset — the user must set a new password
+  // before using the app. Cleared on the next self-service change.
+  mustChangePassword?: boolean;
 }
 
 export interface StaffLoginResponse {

@@ -122,6 +122,14 @@ model User {
   mfaSecret      String?
   mfaRecoveryCodes String[] @default([]) // bcrypt hashes of one-time backup codes
   lastLoginAt    DateTime?
+  // Set on every password change (self-service or admin reset). A staff JWT
+  // carries a `pwdIat` claim; the guard rejects any token issued before this
+  // instant, so changing the password evicts all existing sessions.
+  passwordChangedAt DateTime?
+  // Set true when an admin resets the password. The account can authenticate
+  // but is forced to set a new password before doing anything else; cleared on
+  // the next self-service change.
+  mustChangePassword Boolean  @default(false)
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
