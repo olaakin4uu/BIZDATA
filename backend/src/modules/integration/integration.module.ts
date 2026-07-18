@@ -13,5 +13,8 @@ import { DeclaredIncomeModule } from '../declared-income/declared-income.module'
   imports: [CasesModule, DeclaredIncomeModule],
   controllers: [IntegrationKeysController, IntegrationTaxpayerController, IntegrationDeclaredIncomeController],
   providers: [IntegrationService, ApiKeyGuard],
+  // Exported so other modules (e.g. PayeModule) can reuse the partner API-key
+  // guard on their own /integration/* endpoints.
+  exports: [IntegrationService, ApiKeyGuard],
 })
 export class IntegrationModule {}

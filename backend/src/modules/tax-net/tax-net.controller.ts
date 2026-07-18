@@ -22,6 +22,7 @@ export class TaxNetController {
       year: q.year ? parseInt(q.year, 10) : undefined,
       page: q.page ? parseInt(q.page, 10) : undefined,
       limit: q.limit ? parseInt(q.limit, 10) : undefined,
+      payeGap: q.payeGap === 'true' || q.payeGap === '1',
     });
   }
 

@@ -42,7 +42,7 @@ export class TaxNetService {
    * The comparative report. Aggregates observed inflow per taxpayer from data
    * records, classifies each, and returns segment summaries plus a ranked list.
    */
-  async report(opts: { status?: NetStatus; type?: string; page?: number; limit?: number; year?: number } = {}) {
+  async report(opts: { status?: NetStatus; type?: string; page?: number; limit?: number; year?: number; payeGap?: boolean } = {}) {
     const page = Math.max(1, opts.page ?? 1);
     const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
 
@@ -80,6 +80,7 @@ export class TaxNetService {
         id: true, type: true, status: true, firstName: true, lastName: true,
         businessName: true, cacRcNumber: true, tinIndex: true, ninIndex: true,
         bvnIndex: true, stateOfResidence: true, sector: true,
+        payeStatus: true, payeRegNumber: true,
       },
     });
 
@@ -95,6 +96,10 @@ export class TaxNetService {
       summary[net].count += 1;
       summary[net].observedInflow += obs.inflow;
       const provs = [...(providersByTp.get(tp.id) ?? [])];
+      // PAYE gap: a CORPORATE observed earning money that the Tax app has NOT
+      // confirmed as PAYE-registered. A strong lead that an employer is off PAYE.
+      const payeStatus = tp.payeStatus ?? 'UNKNOWN';
+      const payeGap = tp.type === 'CORPORATE' && obs.inflow > 0 && payeStatus !== 'REGISTERED';
       return {
         id: tp.id, type: tp.type, status: tp.status,
         name: tp.type === 'CORPORATE' ? (tp.businessName ?? '—') : [tp.firstName, tp.lastName].filter(Boolean).join(' ') || '—',
@@ -102,6 +107,7 @@ export class TaxNetService {
         hasTin: !!tp.tinIndex, hasNin: !!tp.ninIndex, hasBvn: !!tp.bvnIndex,
         stateOfResidence: tp.stateOfResidence, sector: tp.sector,
         netStatus: net, observedInflow: obs.inflow, recordCount: obs.records,
+        payeStatus, payeRegNumber: tp.payeRegNumber, payeGap,
         providers: provs,                              // all source providers
         sourceProvider: provs[0] ?? null,              // primary (first) source
         providerCount: provs.length,
@@ -112,7 +118,15 @@ export class TaxNetService {
     let list = enriched;
     if (opts.status) list = list.filter((x) => x.netStatus === opts.status);
     if (opts.type) list = list.filter((x) => x.type === opts.type);
+    if (opts.payeGap) list = list.filter((x) => x.payeGap);
     list.sort((a, b) => b.observedInflow - a.observedInflow);
+
+    // PAYE-gap tally across ALL taxpayers (independent of the current filter).
+    const payeGapAll = enriched.filter((x) => x.payeGap);
+    const payeGapSummary = {
+      count: payeGapAll.length,
+      observedInflow: payeGapAll.reduce((s, x) => s + x.observedInflow, 0),
+    };
 
     const total = list.length;
     const rows = list.slice((page - 1) * limit, (page - 1) * limit + limit);
@@ -125,6 +139,7 @@ export class TaxNetService {
         totalTaxpayers: taxpayers.length,
         // coverage = share of taxpayers legitimately in the net
         coveragePct: taxpayers.length ? Math.round((summary.CAPTURED.count / taxpayers.length) * 100) : 0,
+        payeGap: payeGapSummary,
       },
       rows, total, page, limit,
     };

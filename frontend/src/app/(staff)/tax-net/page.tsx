@@ -15,6 +15,7 @@ export default function TaxNetPage() {
   const [report, setReport] = useState<TaxNetReport | null>(null);
   const [statusFilter, setStatusFilter] = useState<NetStatus | ''>('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [payeGapOnly, setPayeGapOnly] = useState(false);
   const [page, setPage] = useState(1);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
@@ -24,10 +25,10 @@ export default function TaxNetPage() {
   const limit = 25;
 
   const load = () => {
-    taxNetApi.report({ status: statusFilter || undefined, type: typeFilter || undefined, page, limit })
+    taxNetApi.report({ status: statusFilter || undefined, type: typeFilter || undefined, payeGap: payeGapOnly || undefined, page, limit })
       .then(setReport).catch(() => setReport(null));
   };
-  useEffect(load, [statusFilter, typeFilter, page]);
+  useEffect(load, [statusFilter, typeFilter, payeGapOnly, page]);
   useEffect(() => { identityApi.status().then(setIdStatus).catch(() => setIdStatus(null)); }, []);
 
   const s = report?.summary;
@@ -111,6 +112,12 @@ export default function TaxNetPage() {
             </button>
           ))}
         </div>
+        <button
+          onClick={() => { setPayeGapOnly((v) => !v); setPage(1); }}
+          className={`px-3 py-1.5 rounded-lg text-xs font-semibold border ${payeGapOnly ? 'bg-rose-600 text-white border-rose-600' : 'bg-white border-rose-200 text-rose-700 hover:bg-rose-50'}`}
+          title="Corporates observed earning that are NOT confirmed PAYE-registered by the Tax app">
+          ⚠ PAYE gap{s ? ` (${s.payeGap.count})` : ''}
+        </button>
         <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }}
           className="px-3 py-1.5 border border-slate-300 rounded-lg text-sm bg-white ml-auto">
           <option value="">All types</option>
@@ -131,14 +138,15 @@ export default function TaxNetPage() {
                 <th className="px-4 py-3 font-medium">Identity</th>
                 <th className="px-4 py-3 font-medium text-right">Observed inflow</th>
                 <th className="px-4 py-3 font-medium">Tax-net status</th>
+                <th className="px-4 py-3 font-medium">PAYE</th>
                 <th className="px-4 py-3 font-medium text-right">Action</th>
               </tr>
             </thead>
             <tbody>
               {report === null ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">Loading…</td></tr>
               ) : report.rows.length === 0 ? (
-                <tr><td colSpan={7} className="px-4 py-8 text-center text-sm text-slate-400">No taxpayers match.</td></tr>
+                <tr><td colSpan={8} className="px-4 py-8 text-center text-sm text-slate-400">No taxpayers match.</td></tr>
               ) : report.rows.map((r) => (
                 <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50/60">
                   <td className="px-4 py-3">
@@ -167,6 +175,17 @@ export default function TaxNetPage() {
                     <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${NET_META[r.netStatus].chip}`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${NET_META[r.netStatus].dot}`} />{NET_META[r.netStatus].label}
                     </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    {r.type !== 'CORPORATE' ? (
+                      <span className="text-[10px] text-slate-300">n/a</span>
+                    ) : r.payeStatus === 'REGISTERED' ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 bg-emerald-50 text-emerald-700 ring-emerald-200" title={r.payeRegNumber ?? undefined}>Registered</span>
+                    ) : r.payeGap ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-semibold ring-1 bg-rose-50 text-rose-700 ring-rose-200" title="Earning but not confirmed PAYE-registered">⚠ Gap</span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 bg-slate-50 text-slate-500 ring-slate-200">Unknown</span>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-right">
                     {r.netStatus === 'CAPTURED' ? (

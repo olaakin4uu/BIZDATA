@@ -276,6 +276,14 @@ model Taxpayer {
   businessType   String?        // nature of business (e.g. "Retail", "Restaurant", "Consultancy") — provider-supplied
   identityVerifiedAt DateTime?  // set when NIN was confirmed via an external source (NIBSS/NIMC)
   identitySource String?        // 'NIBSS' | 'NIMC' | 'MOCK' — how the NIN was verified
+  // ── PAYE / employer registration (mainly for CORPORATE taxpayers) ──
+  // BIZDATA cannot know PAYE status natively; it is pushed from the KIRS Tax app
+  // (POST /integration/paye) or set manually by staff. A corporate that is
+  // observed earning but is not REGISTERED is a PAYE-gap lead (see Tax Net).
+  payeStatus     String?        @default("UNKNOWN") // 'REGISTERED' | 'NOT_REGISTERED' | 'UNKNOWN'
+  payeRegNumber  String?        // employer/PAYE registration number from the Tax app
+  payeVerifiedAt DateTime?      // when the PAYE status was last confirmed
+  payeSource     String?        // 'TAX_APP_SYNC' | 'MANUAL'
   riskScore      Int            @default(100)
   riskLevel      RiskLevel      @default(LOW)
   riskComputedAt DateTime?

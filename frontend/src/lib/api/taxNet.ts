@@ -16,6 +16,9 @@ export interface TaxNetRow {
   netStatus: NetStatus;
   observedInflow: number;
   recordCount: number;
+  payeStatus: string;          // REGISTERED | NOT_REGISTERED | UNKNOWN
+  payeRegNumber: string | null;
+  payeGap: boolean;            // corporate + earning + not PAYE-registered
   providers: string[];
   sourceProvider: string | null;
   providerCount: number;
@@ -28,6 +31,7 @@ export interface TaxNetReport {
     invisible: { count: number; observedInflow: number };
     totalTaxpayers: number;
     coveragePct: number;
+    payeGap: { count: number; observedInflow: number };
   };
   rows: TaxNetRow[];
   total: number;
@@ -36,12 +40,15 @@ export interface TaxNetReport {
 }
 
 export const taxNetApi = {
-  report: (params: { status?: NetStatus; type?: string; year?: number; page?: number; limit?: number } = {}) => {
+  report: (params: { status?: NetStatus; type?: string; year?: number; page?: number; limit?: number; payeGap?: boolean } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => { if (v !== undefined && v !== null && v !== '') qs.set(k, String(v)); });
     const q = qs.toString();
     return apiFetch<TaxNetReport>(`/tax-net/report${q ? `?${q}` : ''}`);
   },
+
+  setPaye: (taxpayerId: string, status: 'REGISTERED' | 'NOT_REGISTERED' | 'UNKNOWN', payeRegNumber?: string) =>
+    apiFetch(`/paye/taxpayer/${taxpayerId}`, { method: 'POST', body: { status, payeRegNumber } }),
 
   register: (id: string, tin?: string) =>
     apiFetch<{ id: string; tin: string; netStatus: NetStatus }>(`/tax-net/register/${id}`, {

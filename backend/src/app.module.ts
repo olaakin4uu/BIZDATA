@@ -37,6 +37,7 @@ import { IdentityModule } from './modules/identity/identity.module';
 import { StatutoryModule } from './modules/statutory/statutory.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { ModelFeedbackModule } from './modules/model-feedback/model-feedback.module';
+import { PayeModule } from './modules/paye/paye.module';
 
 @Module({
   imports: [
@@ -74,6 +75,7 @@ import { ModelFeedbackModule } from './modules/model-feedback/model-feedback.mod
     IdentityModule,
     StatutoryModule,
     IntegrationModule,
+    PayeModule,
     ModelFeedbackModule,
   ],
   providers: [
