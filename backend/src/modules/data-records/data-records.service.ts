@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
+import { ReportableService } from '../../common/services/reportable.service';
 
 @Injectable()
 export class DataRecordsService {
@@ -12,6 +13,7 @@ export class DataRecordsService {
     private audit: AuditService,
     private crypto: CryptoService,
     private pii: PiiAccessService,
+    private reportable: ReportableService,
   ) {}
 
   /** Decrypt PII on a record (and its taxpayer include), masking unless allowed. */
@@ -37,11 +39,17 @@ export class DataRecordsService {
   async findAll(query: any) {
     const page = Math.max(1, parseInt(query.page || '1', 10));
     const limit = Math.min(200, Math.max(1, parseInt(query.limit || '50', 10)));
+    // STATUTORY REPORTING THRESHOLD — records only surface for taxpayers whose
+    // aggregated quarterly inflow (summed across ALL their records, however many
+    // transactions the provider submitted) meets their type threshold.
+    const reportableIds = await this.reportable.reportableTaxpayerIds(
+      query.periodYear ? { year: parseInt(query.periodYear, 10) } : {},
+    );
     const where: Prisma.DataRecordWhereInput = {
       ...(query.providerId ? { providerId: query.providerId } : {}),
       ...(query.providerType ? { providerType: query.providerType } : {}),
       ...(query.periodYear ? { periodYear: parseInt(query.periodYear, 10) } : {}),
-      ...(query.taxpayerId ? { taxpayerId: query.taxpayerId } : {}),
+      ...(query.taxpayerId ? { taxpayerId: query.taxpayerId } : { taxpayerId: { in: [...reportableIds] } }),
       ...(query.flagged === 'true' ? { flaggedAsUnderdeclared: true } : {}),
       ...(query.flagged === 'false' ? { flaggedAsUnderdeclared: false } : {}),
       ...(query.reviewStatus ? { reviewStatus: query.reviewStatus } : {}),
@@ -130,12 +138,15 @@ export class DataRecordsService {
   }
 
   async stats() {
+    // Reportable-taxpayer records only (statutory threshold).
+    const ids = [...(await this.reportable.reportableTaxpayerIds())];
+    const tp = { taxpayerId: { in: ids } } as Prisma.DataRecordWhereInput;
     const [total, flagged, pendingReview, confirmed, cleared] = await Promise.all([
-      this.prisma.dataRecord.count(),
-      this.prisma.dataRecord.count({ where: { flaggedAsUnderdeclared: true } }),
-      this.prisma.dataRecord.count({ where: { reviewStatus: 'PENDING_REVIEW' } }),
-      this.prisma.dataRecord.count({ where: { reviewStatus: 'CONFIRMED' } }),
-      this.prisma.dataRecord.count({ where: { reviewStatus: 'CLEARED' } }),
+      this.prisma.dataRecord.count({ where: tp }),
+      this.prisma.dataRecord.count({ where: { ...tp, flaggedAsUnderdeclared: true } }),
+      this.prisma.dataRecord.count({ where: { ...tp, reviewStatus: 'PENDING_REVIEW' } }),
+      this.prisma.dataRecord.count({ where: { ...tp, reviewStatus: 'CONFIRMED' } }),
+      this.prisma.dataRecord.count({ where: { ...tp, reviewStatus: 'CLEARED' } }),
     ]);
     return { total, flagged, pendingReview, confirmed, cleared };
   }

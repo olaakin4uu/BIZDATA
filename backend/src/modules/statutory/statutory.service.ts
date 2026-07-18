@@ -17,6 +17,8 @@ export interface StatutoryValues {
   citSmallCoThreshold: number;
   cgtRate: number;
   defaultScanThreshold: number;
+  reportingThresholdIndividual: number; // ₦ per period an individual must reach to be reportable
+  reportingThresholdCorporate: number;  // ₦ per period a corporate must reach to be reportable
   /**
    * Date the phased-in compulsory submission fields (sector / businessType /
    * customerType) become hard-required. ISO 'YYYY-MM-DD', or null to fall back
@@ -36,6 +38,8 @@ const DEFAULTS: StatutoryValues = {
   citSmallCoThreshold: 50_000_000,
   cgtRate: 0.1,
   defaultScanThreshold: 0.2,
+  reportingThresholdIndividual: 50_000_000,
+  reportingThresholdCorporate: 250_000_000,
   fieldEnforcementDate: null, // null → schema default (COMPULSORY_FIELD_ENFORCE_FROM)
 };
 
@@ -58,6 +62,8 @@ export class StatutoryService {
           citSmallCoThreshold: DEFAULTS.citSmallCoThreshold,
           cgtRate: DEFAULTS.cgtRate,
           defaultScanThreshold: DEFAULTS.defaultScanThreshold,
+          reportingThresholdIndividual: DEFAULTS.reportingThresholdIndividual,
+          reportingThresholdCorporate: DEFAULTS.reportingThresholdCorporate,
           fieldEnforcementDate: null,
         },
       });
@@ -119,6 +125,8 @@ export class StatutoryService {
       citSmallCoThreshold: Number(r.citSmallCoThreshold),
       cgtRate: Number(r.cgtRate),
       defaultScanThreshold: Number(r.defaultScanThreshold),
+      reportingThresholdIndividual: Number(r.reportingThresholdIndividual),
+      reportingThresholdCorporate: Number(r.reportingThresholdCorporate),
       fieldEnforcementDate: r.fieldEnforcementDate
         ? (r.fieldEnforcementDate as Date).toISOString().slice(0, 10)
         : null,
@@ -140,6 +148,8 @@ function sanitize(p: Partial<StatutoryValues>): Partial<StatutoryValues> {
   if (p.citSmallCoThreshold != null) out.citSmallCoThreshold = money(p.citSmallCoThreshold);
   if (p.cgtRate != null) out.cgtRate = rate(p.cgtRate);
   if (p.defaultScanThreshold != null) out.defaultScanThreshold = rate(p.defaultScanThreshold);
+  if (p.reportingThresholdIndividual != null) out.reportingThresholdIndividual = money(p.reportingThresholdIndividual);
+  if (p.reportingThresholdCorporate != null) out.reportingThresholdCorporate = money(p.reportingThresholdCorporate);
   // Enforcement date: undefined = leave unchanged; '' / null = clear to null
   // (revert to schema default); a valid YYYY-MM-DD = set it.
   if (p.fieldEnforcementDate !== undefined) {

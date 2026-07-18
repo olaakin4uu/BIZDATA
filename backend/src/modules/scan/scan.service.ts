@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { PortfoliosService } from '../portfolios/portfolios.service';
 import { StatutoryService } from '../statutory/statutory.service';
+import { ReportableService } from '../../common/services/reportable.service';
 import {
   ENGINE_VERSION,
   normalizeInflow,
@@ -21,6 +22,7 @@ export class ScanService {
     private audit: AuditService,
     private portfolios: PortfoliosService,
     private statutory: StatutoryService,
+    private reportable: ReportableService,
   ) {}
 
   async create(dto: { year: number; threshold?: number; providerTypes?: string[] }, staffId: string) {
@@ -101,12 +103,18 @@ export class ScanService {
       let totalFlagged = 0;
       let totalEstimatedTax = 0;
 
+      // STATUTORY REPORTING THRESHOLD — only taxpayers whose cumulative inflow in
+      // a quarter meets their type's threshold may be reported. Everyone else is
+      // never scanned/flagged/cased, no matter how much data was uploaded.
+      const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
+
       // Per-sector threshold overrides from the analyst feedback loop (fairness-gated).
       const sectorOverrides = new Map(
         (await this.prisma.sectorThreshold.findMany()).map((o) => [o.sector, Number(o.threshold)]),
       );
 
       for (const [taxpayerId, agg] of byTaxpayer) {
+        if (!reportableIds.has(taxpayerId)) continue; // below statutory reporting threshold
         const taxpayer = await this.prisma.taxpayer.findUnique({
           where: { id: taxpayerId },
           select: { type: true, sector: true },

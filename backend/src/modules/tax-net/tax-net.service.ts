@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, NotFoundException } from '@nestjs/comm
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
+import { ReportableService } from '../../common/services/reportable.service';
 
 /**
  * Tax-net comparative & registration.
@@ -23,6 +24,7 @@ export class TaxNetService {
     private prisma: PrismaService,
     private audit: AuditService,
     private crypto: CryptoService,
+    private reportable: ReportableService,
   ) {}
 
   /** Truth-of-record classification for one taxpayer row. */
@@ -74,8 +76,14 @@ export class TaxNetService {
       providersByTp.set(l.taxpayerId, set);
     }
 
-    // All taxpayers (identity fields only — no PII decryption needed to classify).
+    // STATUTORY REPORTING THRESHOLD — Tax Net only concerns parties that are
+    // reportable (cumulative quarterly inflow >= their type threshold). Below-
+    // threshold parties are never shown, however much data was uploaded.
+    const reportableIds = await this.reportable.reportableTaxpayerIds({ year: opts.year });
+
+    // Reportable taxpayers only (identity fields — no PII decryption to classify).
     const taxpayers = await this.prisma.taxpayer.findMany({
+      where: { id: { in: [...reportableIds] } },
       select: {
         id: true, type: true, status: true, firstName: true, lastName: true,
         businessName: true, cacRcNumber: true, tinIndex: true, ninIndex: true,

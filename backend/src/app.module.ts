@@ -6,6 +6,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 
 import { PrismaModule } from './prisma/prisma.module';
 import { CommonModule } from './common/common.module';
+import { ReportableModule } from './common/reportable.module';
 
 import { AuthModule } from './modules/auth/auth.module';
 import { TenantModule } from './modules/tenant/tenant.module';
@@ -46,6 +47,7 @@ import { PayeModule } from './modules/paye/paye.module';
     ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 100 }] }),
     PrismaModule,
     CommonModule,
+    ReportableModule,
     AuthModule,
     TenantModule,
     UsersModule,

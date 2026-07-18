@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { BenchmarkingService } from './benchmarking.service';
+import { ReportableService } from '../../common/services/reportable.service';
 import { AGENTS } from './registry';
 import { TaxpayerProfile, AgentContext, severityFor, clamp01 } from './agent.types';
 import { aggregateAgentScore, compositeConfidence, confidenceToRisk } from '../scan/detection-engine';
@@ -16,6 +17,7 @@ export class AgentsService {
     private prisma: PrismaService,
     private audit: AuditService,
     private benchmarking: BenchmarkingService,
+    private reportable: ReportableService,
   ) {}
 
   /** Build one profile per taxpayer for the year from bank-report aggregates. */
@@ -28,9 +30,12 @@ export class AgentsService {
         transactionCount: true, matchConfidence: true, accountName: true, payload: true,
       },
     });
+    // STATUTORY REPORTING THRESHOLD — agents only profile reportable taxpayers,
+    // so no signal is ever raised for a below-threshold party.
+    const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
     const byTp = new Map<string, typeof records>();
     for (const r of records) {
-      if (!r.taxpayerId) continue;
+      if (!r.taxpayerId || !reportableIds.has(r.taxpayerId)) continue;
       (byTp.get(r.taxpayerId) ?? byTp.set(r.taxpayerId, []).get(r.taxpayerId)!).push(r);
     }
     if (byTp.size === 0) return [];
@@ -180,11 +185,18 @@ export class AgentsService {
   }
 
   async signals(query: { year?: string; taxpayerId?: string; agentKey?: string; severity?: string; page?: string; limit?: string }) {
+    const yr = query.year ? parseInt(query.year, 10) : undefined;
+    // Statutory threshold: only signals for reportable taxpayers (unless a
+    // specific taxpayer is requested, e.g. their own 360 view).
+    const reportableFilter = query.taxpayerId
+      ? {}
+      : { taxpayerId: { in: [...(await this.reportable.reportableTaxpayerIds(yr ? { year: yr } : {}))] } };
     const where: Prisma.RiskSignalWhereInput = {
-      ...(query.year ? { year: parseInt(query.year, 10) } : {}),
+      ...(yr ? { year: yr } : {}),
       ...(query.taxpayerId ? { taxpayerId: query.taxpayerId } : {}),
       ...(query.agentKey ? { agentKey: query.agentKey } : {}),
       ...(query.severity ? { severity: query.severity } : {}),
+      ...reportableFilter,
     };
     // Back-compat: callers that don't request pagination (dashboard, case/360
     // views) get the plain array. Only the Agent Signals page passes page/limit
@@ -221,7 +233,8 @@ export class AgentsService {
 
   /** Signal counts by agent + severity, for the summary strip. */
   async signalSummary(year?: number) {
-    const where = year ? { year } : {};
+    const reportableIds = [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
+    const where: Prisma.RiskSignalWhereInput = { ...(year ? { year } : {}), taxpayerId: { in: reportableIds } };
     const [byAgent, bySeverity] = await Promise.all([
       this.prisma.riskSignal.groupBy({ by: ['agentKey'], where, _count: { _all: true } }),
       this.prisma.riskSignal.groupBy({ by: ['severity'], where, _count: { _all: true } }),

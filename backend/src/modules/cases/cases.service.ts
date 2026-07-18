@@ -8,6 +8,7 @@ import { PiiAccessService } from '../../common/services/pii-access.service';
 import { extractFinancials, reconcile, scoreReconciliation, computeCgt } from '../agents/implementations/document-intelligence.agent';
 import { severityFor } from '../agents/agent.types';
 import { StatutoryService } from '../statutory/statutory.service';
+import { ReportableService } from '../../common/services/reportable.service';
 
 // Statutory windows / rates. CONFIRM against the gazetted NTAA/NTA text — kept
 // as named constants so they can move to tenant config.
@@ -48,12 +49,23 @@ export class CasesService {
     private crypto: CryptoService,
     private pii: PiiAccessService,
     private statutory: StatutoryService,
+    private reportable: ReportableService,
   ) {}
+
+  // STATUTORY REPORTING THRESHOLD — a where-fragment limiting cases to reportable
+  // taxpayers. Cases are only created for reportable taxpayers (the scan is
+  // gated), but this also hides any pre-threshold cases from list/stats views.
+  private async reportableWhere(year?: number): Promise<Prisma.UnderdeclarationCaseWhereInput> {
+    const ids = await this.reportable.reportableTaxpayerIds(year ? { year } : {});
+    return { taxpayerId: { in: [...ids] } };
+  }
 
   /** Dashboard headline metrics, the detection→recovery funnel, and breakdowns. */
   async stats(query: { year?: string } = {}) {
+    const year = query.year ? parseInt(query.year, 10) : undefined;
     const where: Prisma.UnderdeclarationCaseWhereInput = {
-      ...(query.year ? { year: parseInt(query.year, 10) } : {}),
+      ...(year ? { year } : {}),
+      ...(await this.reportableWhere(year)),
     };
 
     const [byStatus, byRisk, atRiskAgg, recoveredAgg, totalEstAgg, totalCount] = await Promise.all([
@@ -106,6 +118,7 @@ export class CasesService {
       ...(query.status ? { status: query.status } : {}),
       ...(query.riskLevel ? { riskLevel: query.riskLevel } : {}),
       ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
+      ...(await this.reportableWhere(query.year ? parseInt(query.year, 10) : undefined)),
     };
     const orderBy: Prisma.UnderdeclarationCaseOrderByWithRelationInput =
       query.sort === 'confidence' ? { confidence: 'desc' } : { estimatedTaxDue: 'desc' };
