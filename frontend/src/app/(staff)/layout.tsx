@@ -66,7 +66,7 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       <div className="flex flex-1 flex-col overflow-hidden">
         {/* Global top bar with the user profile menu pinned top-right. */}
         <header className="flex h-14 flex-shrink-0 items-center justify-end border-b border-slate-200 bg-white px-6">
-          <UserMenu user={user} onSignOut={handleSignOut} onUploadAvatar={handleUploadAvatar} />
+          <UserMenu user={user} onSignOut={handleSignOut} onUploadAvatar={handleUploadAvatar} accountHref="/account" />
         </header>
         <main className="flex-1 overflow-auto">{children}</main>
       </div>

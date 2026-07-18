@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 
 export interface UserMenuUser {
   firstName?: string | null;
@@ -16,9 +17,12 @@ interface UserMenuProps {
   onUploadAvatar: (file: File) => Promise<void>;
   /** Trigger button styling — 'light' for white top bars, 'dark' for the teal provider bar. */
   variant?: 'light' | 'dark';
+  /** Route for the "Account & security" item. Omit to hide it (e.g. provider bar has no such page). */
+  accountHref?: string;
 }
 
-export default function UserMenu({ user, onSignOut, onUploadAvatar, variant = 'light' }: UserMenuProps) {
+export default function UserMenu({ user, onSignOut, onUploadAvatar, variant = 'light', accountHref }: UserMenuProps) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -149,6 +153,19 @@ export default function UserMenu({ user, onSignOut, onUploadAvatar, variant = 'l
           </button>
 
           {error && <p className="px-4 pb-2 text-xs text-red-500">{error}</p>}
+
+          {accountHref && (
+            <button
+              onClick={() => { setOpen(false); router.push(accountHref); }}
+              role="menuitem"
+              className="flex w-full items-center gap-2 px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 transition-colors border-t border-slate-100"
+            >
+              <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Account &amp; security
+            </button>
+          )}
 
           <button
             onClick={onSignOut}
