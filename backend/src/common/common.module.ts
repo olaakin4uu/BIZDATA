@@ -9,6 +9,7 @@ import { AuditService } from './services/audit.service';
 import { CryptoService } from './services/crypto.service';
 import { RequestContextService } from './services/request-context.service';
 import { PiiAccessService } from './services/pii-access.service';
+import { MailService } from './services/mail.service';
 import { RequestContextInterceptor } from './interceptors/request-context.interceptor';
 
 @Global()
@@ -31,8 +32,9 @@ import { RequestContextInterceptor } from './interceptors/request-context.interc
     CryptoService,
     RequestContextService,
     PiiAccessService,
+    MailService,
     { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
   ],
-  exports: [JwtModule, AuditService, CryptoService, RequestContextService, PiiAccessService, PassportModule],
+  exports: [JwtModule, AuditService, CryptoService, RequestContextService, PiiAccessService, MailService, PassportModule],
 })
 export class CommonModule {}

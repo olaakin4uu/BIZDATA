@@ -14,7 +14,7 @@ export class JwtProviderStrategy extends PassportStrategy(Strategy, 'jwt-provide
     });
   }
 
-  async validate(payload: { sub: string; kind: string; role?: string; providerId?: string }) {
+  async validate(payload: { sub: string; kind: string; role?: string; providerId?: string; pwdIat?: number }) {
     if (payload.kind !== 'PROVIDER_USER') {
       throw new UnauthorizedException('Not a provider token');
     }
@@ -24,6 +24,13 @@ export class JwtProviderStrategy extends PassportStrategy(Strategy, 'jwt-provide
     });
     if (!user) throw new UnauthorizedException('Provider user not found');
     if (!user.isActive) throw new UnauthorizedException('Account is inactive');
+    // Session invalidation on password change (mirrors the staff strategy):
+    // reject tokens minted before the current password epoch.
+    if (user.passwordChangedAt) {
+      if ((payload.pwdIat ?? 0) < user.passwordChangedAt.getTime()) {
+        throw new UnauthorizedException('Session expired — please sign in again.');
+      }
+    }
     return user;
   }
 }

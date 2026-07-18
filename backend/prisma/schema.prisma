@@ -209,6 +209,13 @@ model DataProviderUser {
   role         ProviderUserRole @default(COMPLIANCE_OFFICER)
   isActive     Boolean          @default(true)
   lastLoginAt  DateTime?
+  // Mirrors the staff User fields: a provider JWT carries a `pwdIat` claim and
+  // the guard rejects tokens issued before this instant, so a password change
+  // (self-service, admin reset, or forgot-password) evicts existing sessions.
+  passwordChangedAt DateTime?
+  // Set when the password was reset (admin or forgot-password); forces the user
+  // to set a new password before using the portal. Cleared on next self-change.
+  mustChangePassword Boolean    @default(false)
   createdAt    DateTime         @default(now())
   updatedAt    DateTime         @updatedAt
 
@@ -216,6 +223,29 @@ model DataProviderUser {
   submissions  DataSubmission[] @relation("SubmittedByProviderUser")
 
   @@map("data_provider_users")
+}
+
+// ─── PASSWORD RESET TOKENS ────────────────────────────────────────────────────
+// Single-use, expiring tokens for self-service "forgot password". Only the
+// SHA-256 hash of the token is stored (mirrors IntegrationApiKey); the raw
+// token travels only in the emailed reset link. Covers both account types.
+enum ResetUserType {
+  STAFF
+  PROVIDER
+}
+
+model PasswordResetToken {
+  id         String        @id @default(uuid())
+  tokenHash  String        @unique // SHA-256 of the raw token; raw only in the email link
+  userType   ResetUserType
+  userId     String                // User.id or DataProviderUser.id, per userType
+  expiresAt  DateTime
+  usedAt     DateTime?             // set once consumed; a used token cannot be reused
+  createdAt  DateTime      @default(now())
+
+  @@index([userType, userId])
+  @@index([expiresAt])
+  @@map("password_reset_tokens")
 }
 
 // ─── TAXPAYERS ────────────────────────────────────────────────────────────────
