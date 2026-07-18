@@ -34,6 +34,22 @@ const db = mysql.createPool({
   namedPlaceholders: true,
 });
 
+// ─── Period label ─────────────────────────────────────────────────────────────
+// erev's transaction rows are a yearly bulk dataset, not a specific quarterly
+// filing. DO NOT hardcode a future quarter (the original bug: everything landed on
+// `${year}-Q4`, which shows as "filed" in compliance even before Q4 exists).
+// Default to the quarter we're actually importing in; override with PERIOD_LABEL
+// (e.g. "2026-Q2" or "2026" for annual) when the data belongs to a known period.
+function defaultPeriodLabel(year: number): string {
+  const envLabel = process.env.PERIOD_LABEL?.trim();
+  if (envLabel) return envLabel;
+  const now = new Date();
+  // Only quarter-stamp if importing within the same year; otherwise use annual.
+  if (now.getUTCFullYear() !== year) return `${year}`;
+  const q = Math.floor(now.getUTCMonth() / 3) + 1;
+  return `${year}-Q${q}`;
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function toProviderType(type: string): ProviderType {
   switch (type) {
@@ -168,7 +184,7 @@ async function migrateTransactions(providerMap: Map<number, string>) {
     const sub = await prisma.dataSubmission.create({
       data: {
         providerId,
-        periodLabel:  `${year}-Q4`,
+        periodLabel:  defaultPeriodLabel(year),
         periodYear:   year,
         status:       SubmissionStatus.ACCEPTED,
         recordCount:  0,
@@ -266,7 +282,7 @@ async function migrateTransactions(providerMap: Map<number, string>) {
             bvn:            row.bvn ?? undefined,
             nin:            row.nin ?? undefined,
             phoneNumber:    row.phone ?? undefined,
-            periodLabel:    `${year}-Q4`,
+            periodLabel:    defaultPeriodLabel(year),
             periodYear:     year,
             matchMethod:    taxpayerId ? (row.bvn ? 'BVN' : row.tin ? 'TIN' : 'NAME') : 'UNMATCHED',
             matchConfidence: taxpayerId ? 0.9 : 0.0,
