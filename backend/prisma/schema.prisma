@@ -296,6 +296,7 @@ model Taxpayer {
   cases           UnderdeclarationCase[]
   riskSignals     RiskSignal[]
   crossStateReferrals CrossStateReferral[]
+  taxPayments     TaxPayment[]
 
   @@map("taxpayers")
 }
@@ -314,6 +315,30 @@ model DeclaredIncome {
 
   @@unique([taxpayerId, year])
   @@map("declared_incomes")
+}
+
+/// Tax actually PAID by a taxpayer, by type (PAYE, WHT, CGT, CIT, VAT, …).
+/// BIZDATA does not know this natively — it is pushed from the KIRS Tax app
+/// (POST /integration/tax-payments) or entered by staff. Powers the per-type
+/// "tax cards" in the AI tax report (paid vs assessed vs observed).
+model TaxPayment {
+  id          String   @id @default(uuid())
+  taxpayerId  String
+  taxType     String   // 'PAYE' | 'WHT' | 'CGT' | 'CIT' | 'VAT' | 'OTHER'
+  year        Int
+  period      String?  // optional finer period, e.g. '2026-Q2' or '2026-03'
+  amountPaid  Decimal  @db.Decimal(18, 2)
+  reference   String?  // payment/receipt reference from the Tax app
+  source      String?  // 'TAX_APP_SYNC' | 'MANUAL'
+  paidAt      DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  taxpayer    Taxpayer @relation(fields: [taxpayerId], references: [id])
+
+  @@index([taxpayerId, year])
+  @@index([taxpayerId, taxType, year])
+  @@map("tax_payments")
 }
 
 // ─── SUBMISSIONS ─────────────────────────────────────────────────────────────

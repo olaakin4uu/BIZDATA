@@ -107,6 +107,19 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             onClick={async () => {
               const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
               const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
+              const res = await fetch(`${base}/cases/${id}/tax-report.html`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+              const html = await res.text();
+              const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+              window.open(url, '_blank');
+            }}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white"
+          >
+            AI Tax Report
+          </button>
+          <button
+            onClick={async () => {
+              const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
+              const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
               const res = await fetch(`${base}/cases/${id}/evidence`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
               const html = await res.text();
               const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));

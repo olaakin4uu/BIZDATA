@@ -39,6 +39,7 @@ import { StatutoryModule } from './modules/statutory/statutory.module';
 import { IntegrationModule } from './modules/integration/integration.module';
 import { ModelFeedbackModule } from './modules/model-feedback/model-feedback.module';
 import { PayeModule } from './modules/paye/paye.module';
+import { TaxReportModule } from './modules/tax-report/tax-report.module';
 
 @Module({
   imports: [
@@ -78,6 +79,7 @@ import { PayeModule } from './modules/paye/paye.module';
     StatutoryModule,
     IntegrationModule,
     PayeModule,
+    TaxReportModule,
     ModelFeedbackModule,
   ],
   providers: [
