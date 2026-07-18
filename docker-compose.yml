@@ -35,10 +35,10 @@ services:
       TENANT_NAME: ${TENANT_NAME:-BizData Tenant}
     ports:
       - "4200:4200"
-    command: >
-      sh -c "npx prisma db push --skip-generate &&
-             npx tsx prisma/seed.ts || true &&
-             node dist/main.js"
+    # No command override — the image's entrypoint (docker-entrypoint.sh) runs
+    # `prisma migrate deploy` + idempotent seed, then starts the server. This
+    # replaces the old `prisma db push` here, which the deployment runbook
+    # forbids in production (push does not record migration history).
 
   frontend:
     build:

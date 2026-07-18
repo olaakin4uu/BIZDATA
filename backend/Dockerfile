@@ -19,5 +19,9 @@ COPY --from=build /app/dist ./dist
 COPY --from=build /app/prisma ./prisma
 COPY --from=build /app/prisma.config.ts ./
 COPY package.json ./
+COPY docker-entrypoint.sh ./
+RUN chmod +x docker-entrypoint.sh
 EXPOSE 4200
-CMD ["node", "dist/main.js"]
+# Entrypoint runs `prisma migrate deploy` + idempotent seed before starting the
+# server, so a fresh instance never boots against an empty/un-migrated DB.
+CMD ["./docker-entrypoint.sh"]
