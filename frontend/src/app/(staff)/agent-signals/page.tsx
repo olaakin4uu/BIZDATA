@@ -1,6 +1,7 @@
 'use client';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { agentsApi, AGENT_NAMES, type SignalsPage, type SignalSummary, type AgentSeverity } from '@/lib/api/agents';
 
 const CURRENT_YEAR = new Date().getFullYear();
@@ -18,11 +19,17 @@ const AGENT_COLORS: Record<string, string> = {
 };
 
 export default function AgentSignalsPage() {
-  const [year, setYear] = useState(CURRENT_YEAR);
+  const params = useSearchParams();
+  // Honor deep-links from the dashboard tiles, e.g. /agent-signals?year=2026&agentKey=pattern
+  const initialYear = Number(params.get('year')) || CURRENT_YEAR;
+  const initialAgent = params.get('agentKey') ?? '';
+  const initialSeverity = params.get('severity') ?? '';
+
+  const [year, setYear] = useState(initialYear);
   const [summary, setSummary] = useState<SignalSummary | null>(null);
   const [data, setData] = useState<SignalsPage | null>(null);
-  const [agentKey, setAgentKey] = useState('');
-  const [severity, setSeverity] = useState('');
+  const [agentKey, setAgentKey] = useState(initialAgent);
+  const [severity, setSeverity] = useState(initialSeverity);
   const [page, setPage] = useState(1);
   const limit = 25;
 

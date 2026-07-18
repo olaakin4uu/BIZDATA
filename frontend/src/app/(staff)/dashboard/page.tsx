@@ -470,13 +470,18 @@ function AgentsPanel({ year }: { year: number }) {
           <span className="h-3 w-3 rounded-full bg-indigo-500" />
           <h3 className="text-sm font-semibold text-slate-800">AI analytics agents · {year}</h3>
         </div>
-        <button
-          onClick={run}
-          disabled={running}
-          className="px-4 py-1.5 text-xs font-bold rounded-lg bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white disabled:opacity-50 shadow-sm transition-all"
-        >
-          {running ? 'Running…' : 'Run agents'}
-        </button>
+        <div className="flex items-center gap-3">
+          <Link href={`/agent-signals?year=${year}`} className="text-xs font-semibold text-indigo-600 hover:underline">
+            View full report →
+          </Link>
+          <button
+            onClick={run}
+            disabled={running}
+            className="px-4 py-1.5 text-xs font-bold rounded-lg bg-gradient-to-r from-teal-600 to-teal-700 hover:from-teal-500 hover:to-teal-600 text-white disabled:opacity-50 shadow-sm transition-all"
+          >
+            {running ? 'Running…' : 'Run agents'}
+          </button>
+        </div>
       </div>
       {msg && (
         <p className={`text-xs mb-3 font-medium ${msg.startsWith('Run failed') ? 'text-rose-600' : 'text-teal-700'}`}>
@@ -488,13 +493,18 @@ function AgentsPanel({ year }: { year: number }) {
           {Object.keys(AGENT_NAMES).map((key, i) => {
             const a = perAgent[key] ?? { count: 0, high: 0 };
             return (
-              <div key={key} className={`rounded-xl border px-4 py-3 ${AGENT_COLORS[i % AGENT_COLORS.length]}`}>
+              <Link
+                key={key}
+                href={`/agent-signals?year=${year}&agentKey=${key}`}
+                className={`rounded-xl border px-4 py-3 ${AGENT_COLORS[i % AGENT_COLORS.length]} hover:shadow-md hover:ring-1 hover:ring-indigo-300 transition block`}
+                title={`View ${AGENT_NAMES[key]} signals`}
+              >
                 <p className="text-xs font-semibold text-slate-700">{AGENT_NAMES[key]}</p>
                 <p className="text-xs text-slate-500 mt-1">
                   <span className="font-bold text-slate-700">{a.count}</span> signal{a.count === 1 ? '' : 's'}
                   {a.high > 0 && <span className="ml-1.5 text-rose-600 font-bold">· {a.high} high</span>}
                 </p>
-              </div>
+              </Link>
             );
           })}
         </div>
