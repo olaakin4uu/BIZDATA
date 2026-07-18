@@ -2,9 +2,12 @@ import { Module } from '@nestjs/common';
 import { TaxReportService } from './tax-report.service';
 import { TaxReportController, IntegrationTaxPaymentsController } from './tax-report.controller';
 import { IntegrationModule } from '../integration/integration.module';
+import { StatutoryModule } from '../statutory/statutory.module';
 
 @Module({
-  imports: [IntegrationModule], // ApiKeyGuard for the partner endpoint
+  // IntegrationModule → ApiKeyGuard (partner endpoint); StatutoryModule →
+  // StatutoryService (thresholds/rates used by the report).
+  imports: [IntegrationModule, StatutoryModule],
   controllers: [TaxReportController, IntegrationTaxPaymentsController],
   providers: [TaxReportService],
   exports: [TaxReportService],
