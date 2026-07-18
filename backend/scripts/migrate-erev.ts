@@ -106,6 +106,48 @@ async function migrateProviders(): Promise<Map<number, string>> {
   return idMap;
 }
 
+// ─── STEP 1b: migrate institution logins → DataProviderUser ───────────────────
+// erev's `kirs_institution_users` are the bank/insurer staff who log in to submit
+// data — these map to BIZDATA's provider-portal logins (DataProviderUser). Their
+// Laravel bcrypt hashes ($2y$) are cross-compatible with node bcrypt, so the
+// passwords carry over unchanged. The other erev user table (`users`) is
+// revenue-collection field agents — a different domain — and is intentionally skipped.
+async function migrateProviderUsers(providerMap: Map<number, string>) {
+  const [rows]: any = await db.query('SELECT * FROM kirs_institution_users ORDER BY id');
+  let created = 0, skipped = 0, noProvider = 0;
+
+  for (const row of rows) {
+    const providerId = providerMap.get(row.kirs_institution_id);
+    if (!providerId) { noProvider++; continue; }
+
+    // Dedup by unique email — never overwrite an existing login.
+    const existing = await prisma.dataProviderUser.findUnique({ where: { email: row.email } });
+    if (existing) { skipped++; continue; }
+
+    const { firstName, lastName } = normaliseName(row.name ?? 'Provider User');
+    try {
+      await prisma.dataProviderUser.create({
+        data: {
+          providerId,
+          email:             row.email,
+          passwordHash:      row.password,           // Laravel bcrypt ($2y$) works with node bcrypt
+          firstName:         firstName || 'Provider',
+          lastName:          lastName || 'User',
+          isActive:          !!row.is_active,
+          lastLoginAt:       row.last_login_at ? new Date(row.last_login_at) : undefined,
+          passwordChangedAt: row.password_changed_at ? new Date(row.password_changed_at) : undefined,
+          // role defaults to COMPLIANCE_OFFICER
+        },
+      });
+      created++;
+    } catch (e: any) {
+      if (e.code === 'P2002') { skipped++; }        // unique email race
+      else { console.error(`ProviderUser ${row.email} error: ${e.message?.slice(0, 80)}`); skipped++; }
+    }
+  }
+  console.log(`Provider users: ${created} created, ${skipped} skipped, ${noProvider} had no mapped provider`);
+}
+
 // ─── STEP 2: migrate transaction records → Taxpayer + DataRecord ──────────────
 async function migrateTransactions(providerMap: Map<number, string>) {
   const [rows]: any = await db.query(
@@ -258,18 +300,23 @@ async function main() {
   console.log('Step 1: Providers…');
   const providerMap = await migrateProviders();
 
+  console.log('Step 1b: Provider/institution logins…');
+  await migrateProviderUsers(providerMap);
+
   console.log('Step 2: Taxpayers + transaction records…');
   await migrateTransactions(providerMap);
 
   console.log('\n=== Migration complete ===');
   const counts = await Promise.all([
     prisma.dataProvider.count(),
+    prisma.dataProviderUser.count(),
     prisma.taxpayer.count(),
     prisma.dataRecord.count(),
   ]);
-  console.log(`DataProviders: ${counts[0]}`);
-  console.log(`Taxpayers:     ${counts[1]}`);
-  console.log(`DataRecords:   ${counts[2]}`);
+  console.log(`DataProviders:     ${counts[0]}`);
+  console.log(`DataProviderUsers: ${counts[1]}`);
+  console.log(`Taxpayers:         ${counts[2]}`);
+  console.log(`DataRecords:       ${counts[3]}`);
 }
 
 main()
