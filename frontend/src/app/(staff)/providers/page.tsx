@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { providersApi } from '@/lib/api/providers';
 import { complianceApi, type ProviderCompliance, type ComplianceSummary, type PeriodStatus } from '@/lib/api/compliance';
 import ProviderUploadsModal from '@/components/providers/ProviderUploadsModal';
-import { PROVIDER_TYPES, isSection29ProviderType } from '@/lib/utils';
+import { PROVIDER_TYPES, isSection29ProviderType, extractErrorMessage } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
@@ -34,13 +34,14 @@ export default function ProvidersDashboardPage() {
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [uploadsFor, setUploadsFor] = useState<{ id: string; name: string } | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   // Fetch compliance data. `showLoading` blanks the table (used on first load /
   // year change); on a silent background refresh we keep the current rows visible
   // and just swap them in when the new data arrives (no flicker).
   const load = useCallback((showLoading: boolean) => {
-    if (showLoading) { setRows(null); setSummary(null); }
-    complianceApi.list(year).then(setRows).catch(() => { if (showLoading) setRows([]); });
+    if (showLoading) { setRows(null); setSummary(null); setLoadErr(null); }
+    complianceApi.list(year).then((r) => { setRows(r); setLoadErr(null); }).catch((e) => { if (showLoading) { setRows([]); setLoadErr(extractErrorMessage(e)); } });
     complianceApi.summary(year).then(setSummary).catch(() => { if (showLoading) setSummary(null); });
   }, [year]);
 
@@ -182,8 +183,10 @@ export default function ProvidersDashboardPage() {
               </tr>
             </thead>
             <tbody>
-              {rows === null ? (
+              {rows === null && !loadErr ? (
                 <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">Loading provider compliance…</td></tr>
+              ) : loadErr ? (
+                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-rose-600">Couldn’t load providers: {loadErr} <button onClick={() => load(true)} className="ml-2 text-teal-700 hover:underline font-medium">Retry</button></td></tr>
               ) : sorted.length === 0 ? (
                 <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">No providers match.</td></tr>
               ) : sorted.map((r) => {

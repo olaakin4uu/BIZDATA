@@ -4,7 +4,7 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { declaredIncomeApi, type DeclaredIncome } from '@/lib/api/declared-income';
-import { formatMoney } from '@/lib/utils';
+import { formatMoney, extractErrorMessage } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
@@ -21,14 +21,15 @@ export default function DeclaredIncomeListPage() {
   const [page, setPage] = useState(1);
   const [year, setYear] = useState<number | ''>('');
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const limit = 50;
 
   const load = () => {
     setLoading(true);
     declaredIncomeApi
       .list({ year: year || undefined, page, limit })
-      .then((r) => { setRows(r.records); setTotal(r.total); })
-      .catch(() => { setRows([]); setTotal(0); })
+      .then((r) => { setRows(r.records); setTotal(r.total); setErr(null); })
+      .catch((e) => { setRows([]); setTotal(0); setErr(extractErrorMessage(e)); })
       .finally(() => setLoading(false));
   };
 
@@ -72,6 +73,13 @@ export default function DeclaredIncomeListPage() {
           </select>
         </div>
       </div>
+
+      {err && (
+        <div className="mb-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+          <span>Couldn’t load declared income: {err}</span>
+          <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium">Retry</button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}

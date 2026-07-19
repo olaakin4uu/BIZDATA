@@ -3,16 +3,28 @@ import { useEffect, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import StatCard from '@/components/StatCard';
 import { ndpaApi, type DpoReport } from '@/lib/api/ndpa';
-import { formatDate } from '@/lib/utils';
+import { formatDate, extractErrorMessage } from '@/lib/utils';
 
 export default function DpoPage() {
   const [r, setR] = useState<DpoReport | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => { ndpaApi.dpoReport().then(setR).catch(() => setR(null)); }, []);
+  const load = () => {
+    setErr(null);
+    ndpaApi.dpoReport().then(setR).catch((e) => { setR(null); setErr(extractErrorMessage(e)); });
+  };
+  useEffect(load, []);
 
   return (
     <div className="p-6 max-w-4xl mx-auto">
       <PageHeader title="Data protection (NDPA 2023)" subtitle="DPO oversight: lawful basis, access events, and §28 storage-limitation status." />
+
+      {err && (
+        <div className="my-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+          <span>Couldn’t load the DPO report: {err}</span>
+          <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium">Retry</button>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 my-6">
         <StatCard label="PII access events" value={r?.accessOversight.piiAccessEvents?.toLocaleString() ?? '—'} hint="JIT-elevated reveals" />
@@ -31,7 +43,7 @@ export default function DpoPage() {
             <Row k="Encryption at rest" v={r.encryptionAtRest} />
             <Row k="Storage limitation (§28)" v={`${r.storageLimitation.retentionYears}-year retention; purge horizon ${formatDate(r.storageLimitation.cutoff)}; ${r.storageLimitation.purgesRun} purge run(s) on record.`} />
           </dl>
-        ) : <p className="text-xs text-slate-400">Loading…</p>}
+        ) : <p className="text-xs text-slate-400">{err ? 'Unavailable.' : 'Loading…'}</p>}
         <p className="text-xs text-slate-400 pt-3 border-t border-slate-100">
           Bank-report data past the retention horizon is purged automatically on a monthly schedule and recorded in the tamper-evident audit trail.
         </p>

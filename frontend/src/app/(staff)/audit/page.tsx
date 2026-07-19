@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
-import { formatDateTime } from '@/lib/utils';
+import { formatDateTime, extractErrorMessage } from '@/lib/utils';
 
 const ACTOR_TYPES = ['STAFF', 'PROVIDER_USER', 'SYSTEM'];
 
@@ -17,6 +17,7 @@ export default function AuditPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const [selected, setSelected] = useState<AuditLog | null>(null);
   const limit = 50;
 
@@ -31,8 +32,8 @@ export default function AuditPage() {
       page,
       limit,
     })
-      .then((r) => { setRows(r.logs); setTotal(r.total); })
-      .catch(() => { setRows([]); setTotal(0); })
+      .then((r) => { setRows(r.logs); setTotal(r.total); setErr(null); })
+      .catch((e) => { setRows([]); setTotal(0); setErr(extractErrorMessage(e)); })
       .finally(() => setLoading(false));
   };
 
@@ -98,6 +99,13 @@ export default function AuditPage() {
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         </div>
       </div>
+
+      {err && (
+        <div className="mb-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+          <span>Couldn’t load the audit log: {err}</span>
+          <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium">Retry</button>
+        </div>
+      )}
 
       <DataTable
         columns={columns}
