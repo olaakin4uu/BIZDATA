@@ -128,12 +128,6 @@ export default function SettingsPage() {
             </p>
             <ApiKeysPanel />
           </section>
-
-          <p className="text-xs text-slate-500">
-            Looking for your password or two-factor settings? They’ve moved to{' '}
-            <a href="/account" className="text-teal-700 hover:underline font-medium">Account &amp; security</a>{' '}
-            (top-right user menu).
-          </p>
         </>
       )}
 
