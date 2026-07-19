@@ -50,26 +50,37 @@ function defaultPeriodLabel(year: number): string {
   return `${year}-Q${q}`;
 }
 
+// The last instant of a quarter (UTC). Used to decide if a quarter has ended.
+function quarterEndUtc(year: number, q: number): Date {
+  return new Date(Date.UTC(year, q * 3, 0, 23, 59, 59, 999)); // day 0 of the month after → last day of Q
+}
+
 // Derive the reporting period for a record from its erev transaction_date.
-//  - dated row   → its real quarter (YYYY-Qn), undated=false.
-//  - undated row (transaction_date NULL — ~72% of the erev dataset) → the
-//    UNDATED_PERIOD_LABEL period (so it still COUNTS somewhere for compliance —
-//    we park these in 2026-Q2 for now), but flagged undated=true so they stay
-//    distinguishable from genuinely-dated rows (stored in record.payload).
-function periodFromRow(row: any, fallbackYear: number): { label: string; year: number; undated: boolean } {
+//  - dated row IN AN ENDED quarter → its real quarter (YYYY-Qn), dateSource='transaction_date'.
+//  - dated row in a NOT-YET-ENDED quarter (Q3/Q4 of the current year while we're
+//    mid-year) → folded into UNDATED_PERIOD_LABEL, dateSource='future-dated'.
+//    Policy: no data may sit in a quarter that has not ended.
+//  - undated row (transaction_date NULL — ~72% of the erev dataset) →
+//    UNDATED_PERIOD_LABEL, dateSource='undated'.
+// The fallback (UNDATED_PERIOD_LABEL, default the row's year) still lets the data
+// COUNT somewhere for compliance while staying distinguishable via payload.
+function periodFromRow(row: any, fallbackYear: number, now: Date): { label: string; year: number; dateSource: string } {
+  const fallbackLabel = process.env.UNDATED_PERIOD_LABEL?.trim();
   const raw = row.transaction_date;
   if (raw) {
     const d = raw instanceof Date ? raw : new Date(String(raw));
     if (!isNaN(d.getTime())) {
       const y = d.getUTCFullYear();
       const q = Math.floor(d.getUTCMonth() / 3) + 1;
-      return { label: `${y}-Q${q}`, year: y, undated: false };
+      if (quarterEndUtc(y, q).getTime() <= now.getTime()) {
+        return { label: `${y}-Q${q}`, year: y, dateSource: 'transaction_date' };
+      }
+      // Future / not-yet-ended quarter → fold into the fallback period.
+      return { label: fallbackLabel || `${y}`, year: y, dateSource: 'future-dated' };
     }
   }
-  // Undated: report under UNDATED_PERIOD_LABEL (default the row's year); flagged.
   const y = row.transaction_year ?? fallbackYear;
-  const label = process.env.UNDATED_PERIOD_LABEL?.trim() || `${y}`;
-  return { label, year: y, undated: true };
+  return { label: fallbackLabel || `${y}`, year: y, dateSource: 'undated' };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -192,6 +203,9 @@ async function migrateTransactions(providerMap: Map<number, string>) {
     'SELECT * FROM kirs_transaction_records ORDER BY id',
   );
 
+  // "Now" fixed once per run — decides which quarters count as ended.
+  const now = new Date();
+
   let taxpayersCreated = 0;
   let taxpayersReused  = 0;
   let recordsCreated   = 0;
@@ -300,8 +314,9 @@ async function migrateTransactions(providerMap: Map<number, string>) {
         if (!providerId) { recordsSkipped++; return; }
 
         const fallbackYear = row.transaction_year ?? new Date(row.created_at).getFullYear();
-        // True reporting period from the transaction date (undated → annual bucket).
-        const period = periodFromRow(row, fallbackYear);
+        // Reporting period from the transaction date: ended quarter → real quarter;
+        // future/not-ended quarter or undated → fallback period (2026-Q2), flagged.
+        const period = periodFromRow(row, fallbackYear, now);
         const submissionId = await getOrCreateSubmission(providerId, period.label, period.year);
         const taxpayerId   = await findOrCreateTaxpayer(row);
 
@@ -328,9 +343,10 @@ async function migrateTransactions(providerMap: Map<number, string>) {
             accountIndex:   acctIdx ?? undefined,
             totalInflow:    row.transaction_amount ?? 0,
             transactionCount: 1,
-            // dateSource marks whether the reporting period came from a real
-            // transaction_date or is an undated row parked in UNDATED_PERIOD_LABEL.
-            payload:        { dateSource: period.undated ? 'undated' : 'transaction_date' },
+            // dateSource: 'transaction_date' (real ended quarter), 'future-dated'
+            // (dated in a not-yet-ended quarter, folded into the fallback period),
+            // or 'undated' (no transaction_date). Keeps parked rows distinguishable.
+            payload:        { dateSource: period.dateSource },
           },
         });
         recordsCreated++;
