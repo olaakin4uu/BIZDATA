@@ -5,7 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { providersApi, type Provider } from '@/lib/api/providers';
-import { PROVIDER_TYPES, REVIEW_STATUSES, formatMoney, statusBadge } from '@/lib/utils';
+import { SECTION_29_PROVIDER_TYPES, REVIEW_STATUSES, formatMoney, statusBadge } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
@@ -107,7 +107,7 @@ export default function DataRecordsPage() {
           <select value={providerType} onChange={(e) => { setProviderType(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">All</option>
-            {PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+            {SECTION_29_PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
           </select>
         </div>
         <div>

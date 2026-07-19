@@ -78,9 +78,10 @@ export default function PortfoliosPage() {
               </div>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{w.staff.role.replace('_', ' ')}</span>
             </div>
-            <div className="grid grid-cols-3 gap-2 text-center">
+            <div className="grid grid-cols-4 gap-2 text-center">
               <Stat n={w.openCases} l="open" color="text-slate-800" />
               <Stat n={formatMoneyShort(w.revenueAtRisk)} l="at risk" color="text-rose-700" />
+              <Stat n={formatMoneyShort(w.recovered)} l="recovered" color="text-emerald-700" />
               <Stat n={w.portfolios} l="portfolios" color="text-purple-700" />
             </div>
           </div>

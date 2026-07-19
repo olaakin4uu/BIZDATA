@@ -87,16 +87,22 @@ export default function Taxpayer360Page() {
           </Panel>
 
           <Panel title="Observed flows by year">
-            {profile.dataRecordsByYear.map((y) => (
-              <div key={y.year} className="mb-2">
-                <p className="text-xs font-semibold text-slate-700">{y.year}</p>
-                {y.records.map((r, i) => (
-                  <div key={i} className="flex justify-between text-xs py-0.5 text-slate-500">
-                    <span>{r.provider ?? '—'} · {r.periodLabel} · {r.matchMethod ?? '—'}</span><span>{formatMoney(r.totalInflow)}</span>
+            {profile.dataRecordsByYear.map((y) => {
+              const yearTotal = y.records.reduce((sum, r) => sum + Number(r.totalInflow ?? 0), 0);
+              return (
+                <div key={y.year} className="mb-3">
+                  <div className="flex justify-between items-baseline border-b border-slate-100 pb-1 mb-1">
+                    <p className="text-xs font-semibold text-slate-700">{y.year}</p>
+                    <p className="text-xs font-semibold text-slate-800">Observed total: {formatMoney(String(yearTotal))}</p>
                   </div>
-                ))}
-              </div>
-            ))}
+                  {y.records.map((r, i) => (
+                    <div key={i} className="flex justify-between text-xs py-0.5 text-slate-500">
+                      <span>{r.provider ?? '—'} · {r.periodLabel} · {r.matchMethod ?? '—'}</span><span>{formatMoney(r.totalInflow)}</span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
             {profile.dataRecordsByYear.length === 0 && <p className="text-xs text-slate-400">No records.</p>}
           </Panel>
 
