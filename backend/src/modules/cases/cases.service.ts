@@ -218,6 +218,47 @@ export class CasesService {
     const genDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
     const genTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
 
+    // Group source records by provider → account number so each account reads as
+    // one block (header + its dated transactions + a subtotal), matching the
+    // on-screen cross-provider ledger.
+    type Rec = (typeof records)[number];
+    const dateOf = (r: Rec) => ((r.payload ?? {}) as { transactionDate?: string }).transactionDate ?? '';
+    const provMap = new Map<string, { provider: string; accts: Map<string, Rec[]> }>();
+    for (const r of records) {
+      const pname = r.provider?.name ?? r.providerType;
+      if (!provMap.has(pname)) provMap.set(pname, { provider: pname, accts: new Map() });
+      const acctNo = r.accountNumber ?? '(no account no.)';
+      const accts = provMap.get(pname)!.accts;
+      if (!accts.has(acctNo)) accts.set(acctNo, []);
+      accts.get(acctNo)!.push(r);
+    }
+    const sumBy = (rows: Rec[], k: 'totalInflow' | 'totalOutflow') => rows.reduce((s, x) => s + Number((x as any)[k] ?? 0), 0);
+    const provTotal = (p: { accts: Map<string, Rec[]> }) => {
+      let n = 0; for (const rows of p.accts.values()) n += sumBy(rows, 'totalInflow'); return n;
+    };
+    const sourceRecordsHtml = [...provMap.values()]
+      .sort((a, b) => provTotal(b) - provTotal(a))
+      .map((p) => {
+        const acctBlocks = [...p.accts.entries()]
+          .sort((a, b) => sumBy(b[1], 'totalInflow') - sumBy(a[1], 'totalInflow'))
+          .map(([acctNo, rows]) => {
+            const sorted = [...rows].sort((a, b) => dateOf(a).localeCompare(dateOf(b)));
+            const name = sorted[0]?.accountName ?? '';
+            const txns = sorted.map((r) => {
+              const pl = (r.payload ?? {}) as { transactionDate?: string };
+              return `<tr><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`;
+            }).join('');
+            return `<tr class="acct-hd"><td colspan="5">Account <span class="mono">${esc(acctNo)}</span>${name ? ` · ${esc(name)}` : ''} <span class="note">(${sorted.length} txn)</span></td></tr>
+             ${txns}
+             <tr class="acct-sub"><td colspan="2">Account subtotal</td><td class="num">${ngn(sumBy(rows, 'totalInflow'))}</td><td class="num">${ngn(sumBy(rows, 'totalOutflow'))}</td><td></td></tr>`;
+          }).join('');
+        return `<div class="prov-hd">${esc(p.provider)} <span class="note">(${p.accts.size} account${p.accts.size === 1 ? '' : 's'})</span></div>
+         <table class="rec"><colgroup><col style="width:16%"><col style="width:12%"><col style="width:24%"><col style="width:24%"><col style="width:12%"></colgroup>
+         <tr><th>Date</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
+         ${acctBlocks}
+         </table>`;
+      }).join('');
+
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Evidence Bundle ${ref}</title>
 <style>
  :root{--ink:#0f172a;--soft:#475569;--line:#e2e8f0;--brand:#0f766e;--bad:#b91c1c;--bg:#f8fafc}
@@ -246,6 +287,12 @@ export class CasesService {
  .num{text-align:right;font-variant-numeric:tabular-nums} tr.tot td{font-weight:800;color:var(--bad);border-top:2px solid var(--ink);border-bottom:none;background:#fef2f2}
  ul{margin:6px 0;padding-left:18px} li{margin:3px 0}
  .note{font-size:10.5px;color:var(--soft);margin-top:8px}
+ .mono{font-family:Consolas,monospace}
+ .prov-hd{margin-top:16px;font-weight:700;font-size:12.5px;color:var(--ink);border-bottom:2px solid var(--brand);padding-bottom:3px}
+ table.rec{margin-top:2px} table.rec{page-break-inside:auto}
+ tr.acct-hd td{background:#eef2f6;font-weight:700;color:var(--brand);border-bottom:1px solid var(--line);font-size:11px}
+ tr.acct-sub td{font-weight:700;border-top:1px solid var(--soft);border-bottom:2px solid var(--line);background:#fafcfe}
+ tr{page-break-inside:avoid}
  .sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:44px}
  .sig .line{border-top:1px solid var(--ink);padding-top:5px;font-size:11px;color:var(--soft)}
  .foot{margin-top:36px;border-top:1px solid var(--line);padding-top:10px;font-size:9.5px;color:var(--soft)}
@@ -312,11 +359,8 @@ export class CasesService {
    ${signals.map((s) => `<tr><td>${esc(s.agentKey)}</td><td>${esc(s.severity)}</td><td class="num">${Math.round(Number(s.score) * 100)}%</td><td>${esc(s.summary)}</td></tr>`).join('') || '<tr><td colspan="4" class="note">No agent signals.</td></tr>'}
    </table>
 
-   <h3>Source records (${records.length}) — by provider &amp; account</h3>
-   <table><colgroup><col style="width:22%"><col style="width:14%"><col style="width:12%"><col style="width:11%"><col style="width:19%"><col style="width:12%"><col style="width:10%"></colgroup>
-   <tr><th>Provider</th><th>Account</th><th>Date</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
-   ${records.map((r) => { const pl = (r.payload ?? {}) as { transactionDate?: string }; return `<tr><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.accountNumber ?? '—')}</td><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`; }).join('')}
-   </table>
+   <h3>Source records (${records.length}) — grouped by provider &amp; account</h3>
+   ${sourceRecordsHtml}
 
    <div class="sig">
      <div class="line">Prepared by — Assessing Officer</div>
