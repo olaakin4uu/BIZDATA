@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { agentsApi, AGENT_NAMES, type SignalsPage, type SignalSummary, type AgentSeverity } from '@/lib/api/agents';
+import { extractErrorMessage } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2];
@@ -28,6 +29,7 @@ export default function AgentSignalsPage() {
   const [year, setYear] = useState(initialYear);
   const [summary, setSummary] = useState<SignalSummary | null>(null);
   const [data, setData] = useState<SignalsPage | null>(null);
+  const [err, setErr] = useState<string | null>(null);
   const [agentKey, setAgentKey] = useState(initialAgent);
   const [severity, setSeverity] = useState(initialSeverity);
   const [page, setPage] = useState(1);
@@ -35,9 +37,9 @@ export default function AgentSignalsPage() {
 
   useEffect(() => { agentsApi.signalSummary(year).then(setSummary).catch(() => setSummary(null)); }, [year]);
   useEffect(() => {
-    setData(null);
+    setData(null); setErr(null);
     agentsApi.signalsPage({ year, agentKey: agentKey || undefined, severity: severity || undefined, page, limit })
-      .then(setData).catch(() => setData(null));
+      .then(setData).catch((e) => { setData(null); setErr(extractErrorMessage(e)); });
   }, [year, agentKey, severity, page]);
 
   const sevCount = (s: string) => summary?.bySeverity.find((x) => x.severity === s)?.count ?? 0;
@@ -111,11 +113,13 @@ export default function AgentSignalsPage() {
               </tr>
             </thead>
             <tbody>
-              {data === null ? (
+              {data === null && !err ? (
                 <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">Loading…</td></tr>
-              ) : data.signals.length === 0 ? (
+              ) : err ? (
+                <tr><td colSpan={5} className="px-4 py-8 text-center text-sm text-rose-600">Couldn’t load signals: {err}</td></tr>
+              ) : data!.signals.length === 0 ? (
                 <tr><td colSpan={5} className="px-4 py-8 text-center text-slate-400">No signals match. Run the agents from the Dashboard if none exist yet.</td></tr>
-              ) : data.signals.map((sig) => (
+              ) : data!.signals.map((sig) => (
                 <tr key={sig.id} className="border-b border-slate-50 hover:bg-slate-50/60 align-top">
                   <td className="px-4 py-3">
                     <Link href={`/taxpayers/${sig.taxpayerId}`} className="font-medium text-slate-800 hover:text-indigo-700">{sig.taxpayerName}</Link>

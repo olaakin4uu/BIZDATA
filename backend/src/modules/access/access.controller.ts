@@ -25,8 +25,8 @@ export class AccessController {
 
   @Get('pending')
   @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')
-  pending() {
-    return this.service.pending();
+  pending(@CurrentStaff() u: any) {
+    return this.service.pending(u?.id);
   }
 
   @Post(':id/approve')

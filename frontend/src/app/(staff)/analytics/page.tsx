@@ -182,7 +182,7 @@ function SectorView({ data }: { data: SectorAnalytics | null }) {
                   <td className="px-4 py-3 text-right tabular-nums text-slate-700">{r.taxpayers.toLocaleString()}</td>
                   <td className="px-4 py-3 text-center">
                     <span className={`text-xs font-semibold ${r.flaggedPct >= 60 ? 'text-rose-700' : r.flaggedPct >= 30 ? 'text-amber-600' : 'text-slate-600'}`}>
-                      {r.flaggedTaxpayers} <span className="text-slate-400 font-normal">({r.flaggedPct}%)</span>
+                      {r.flaggedTaxpayers.toLocaleString()} <span className="text-slate-400 font-normal">({r.flaggedPct}%)</span>
                     </span>
                   </td>
                   <td className="px-4 py-3 text-center">

@@ -89,10 +89,17 @@ export class AccessService {
     return updated;
   }
 
-  /** Pending queue for supervisors. */
-  pending() {
+  /**
+   * Pending queue for approvers. Excludes the caller's OWN request — an approver
+   * cannot approve their own elevation (approve() throws), so showing it with an
+   * Approve button that always fails is misleading.
+   */
+  pending(approverId?: string) {
     return this.prisma.accessElevation.findMany({
-      where: { status: 'PENDING' },
+      where: {
+        status: 'PENDING',
+        ...(approverId ? { staffId: { not: approverId } } : {}),
+      },
       include: { staff: { select: { id: true, firstName: true, lastName: true, role: true } } },
       orderBy: { requestedAt: 'asc' },
     });

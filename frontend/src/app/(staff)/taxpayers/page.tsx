@@ -93,7 +93,7 @@ export default function TaxpayersListPage() {
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load(); } }}
-            placeholder="Name, NIN, RC number, TIN…"
+            placeholder="Name or RC (partial) · NIN / TIN / BVN (exact)"
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500"
           />
         </div>

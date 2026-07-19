@@ -55,12 +55,18 @@ export default function UsersListPage() {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-end gap-3">
         <div className="flex-1 min-w-[180px]">
           <label className="block text-xs font-medium text-slate-600 mb-1">Search</label>
-          <input
-            value={search} onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load(); } }}
-            placeholder="Name or email…"
-            className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm"
-          />
+          <div className="flex gap-2">
+            <input
+              value={search} onChange={(e) => setSearch(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load(); } }}
+              placeholder="Name or email…"
+              className="flex-1 px-3 py-2 border border-slate-300 rounded-lg text-sm"
+            />
+            <button type="button" onClick={() => { setPage(1); load(); }}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white text-sm font-medium rounded-lg">
+              Search
+            </button>
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Role</label>
