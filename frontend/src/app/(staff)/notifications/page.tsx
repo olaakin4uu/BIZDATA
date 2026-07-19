@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
-import { formatDateTime } from '@/lib/utils';
+import { formatDateTime, extractErrorMessage } from '@/lib/utils';
 
 const SEV: Record<string, string> = {
   CRITICAL: 'bg-red-100 text-red-800',
@@ -17,14 +17,20 @@ export default function NotificationsPage() {
   const [rows, setRows] = useState<Notification[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
-  const load = () => notificationsApi.list().then(setRows).catch(() => setRows([]));
+  const load = () =>
+    notificationsApi.list()
+      .then((r) => { setRows(r); setLoadErr(null); })
+      .catch((e) => { setRows([]); setLoadErr(extractErrorMessage(e)); });
   useEffect(() => { load(); }, []);
 
   const generate = async () => {
     setBusy(true); setMsg(null);
-    try { const r = await notificationsApi.generate(2025); setMsg(`${r.created} new alert(s)`); load(); }
-    catch { setMsg('Failed'); } finally { setBusy(false); }
+    // Scan the current tax year, not a hard-coded past year (was 2025 — silently
+    // produced no alerts once the year rolled over).
+    try { const r = await notificationsApi.generate(new Date().getFullYear()); setMsg(`${r.created} new alert(s)`); load(); }
+    catch (e) { setMsg(`Failed: ${extractErrorMessage(e)}`); } finally { setBusy(false); }
   };
   const markRead = async (id: string) => { await notificationsApi.markRead(id); load(); };
 
@@ -38,14 +44,19 @@ export default function NotificationsPage() {
           </button>
         )}
       </div>
-      {msg && <p className="text-xs text-teal-700 mb-2">{msg}</p>}
+      {msg && <p className={`text-xs mb-2 ${msg.startsWith('Failed') ? 'text-rose-600' : 'text-teal-700'}`}>{msg}</p>}
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100 mt-4">
-        {rows === null ? (
+        {rows === null && !loadErr ? (
           <p className="text-xs text-slate-400 p-6">Loading…</p>
-        ) : rows.length === 0 ? (
+        ) : loadErr ? (
+          <div className="p-6 text-center">
+            <p className="text-sm text-rose-600">Couldn’t load alerts: {loadErr}</p>
+            <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium mt-1">Retry</button>
+          </div>
+        ) : rows!.length === 0 ? (
           <p className="text-xs text-slate-400 p-6">No alerts. Run the alert scan to generate them.</p>
-        ) : rows.map((n) => (
+        ) : rows!.map((n) => (
           <div key={n.id} className={`p-4 flex items-start gap-3 ${n.read ? 'opacity-60' : ''}`}>
             <span className={`shrink-0 px-2 py-0.5 rounded-full text-xs font-medium ${SEV[n.severity] ?? SEV.INFO}`}>{n.severity}</span>
             <div className="min-w-0 flex-1">
