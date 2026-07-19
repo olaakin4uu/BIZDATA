@@ -179,6 +179,12 @@ export class CasesService {
     });
     if (!c) throw new NotFoundException('Case not found');
 
+    // Organisation branding for the letterhead (logo uploaded under Settings).
+    const tenant = await this.prisma.tenant.findFirst({ select: { name: true, shortName: true, logoUrl: true } });
+    const orgName = tenant?.name || 'Internal Revenue Service';
+    const orgShort = tenant?.shortName || 'IRS';
+    const orgLogo = tenant?.logoUrl || null;
+
     const clear = await this.pii.canRevealPii();
     const tp = c.taxpayer;
     const name = tp.businessName || [tp.firstName, tp.lastName].filter(Boolean).join(' ') || 'Unknown';
@@ -186,10 +192,12 @@ export class CasesService {
     const bvn = this.pii.reveal(this.crypto.decrypt(tp.bvnEnc), 'bvn', clear);
     const nin = this.pii.reveal(this.crypto.decrypt(tp.ninEnc), 'nin', clear);
 
+    // Ordered by provider → account number → date so the printed source-records
+    // table reads grouped the same way as the on-screen cross-provider ledger.
     const records = await this.prisma.dataRecord.findMany({
       where: { taxpayerId: c.taxpayerId, periodYear: c.year },
       include: { provider: { select: { name: true } } },
-      orderBy: { totalInflow: 'desc' },
+      orderBy: [{ provider: { name: 'asc' } }, { accountNumber: 'asc' }, { totalInflow: 'desc' }],
     });
     const signals = await this.prisma.riskSignal.findMany({ where: { taxpayerId: c.taxpayerId, year: c.year } });
     const reasons = (c.reasons as any[]) ?? [];
@@ -223,7 +231,9 @@ export class CasesService {
  .content{position:relative;z-index:1}
  /* letterhead */
  .lh{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:14px}
- .crest{flex:0 0 54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;letter-spacing:.03em}
+ .crest{flex:0 0 54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;letter-spacing:.03em;overflow:hidden}
+ .crest img{width:100%;height:100%;object-fit:contain;background:#fff}
+ .logo-img{height:56px;width:auto;max-width:220px;object-fit:contain}
  .lh h1{font-size:17px;margin:0;color:var(--ink)} .lh .sub{font-size:11px;color:var(--soft);margin-top:2px}
  .class-band{background:var(--bad);color:#fff;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;text-align:center;padding:5px;margin:16px 0 4px;border-radius:3px}
  .doctitle{text-align:center;margin:20px 0 4px} .doctitle h2{font-size:19px;margin:0;letter-spacing:.02em} .doctitle .ref{font-size:11px;color:var(--soft);margin-top:4px}
@@ -251,12 +261,14 @@ export class CasesService {
  }
 </style></head><body>
  <div class="sheet">
-  <div class="paper-wm"><span>Confidential — KIRS</span></div>
+  <div class="paper-wm"><span>Confidential — ${esc(orgShort)}</span></div>
   <div class="content">
    <div class="lh">
-     <div class="crest">KIRS</div>
+     ${orgLogo
+       ? `<img class="logo-img" src="${esc(orgLogo)}" alt="${esc(orgName)}">`
+       : `<div class="crest">${esc(orgShort)}</div>`}
      <div>
-       <h1>Kano State Internal Revenue Service</h1>
+       <h1>${esc(orgName)}</h1>
        <div class="sub">Bank Reports Intelligence System · Enforcement &amp; Assessment</div>
      </div>
    </div>
@@ -300,10 +312,10 @@ export class CasesService {
    ${signals.map((s) => `<tr><td>${esc(s.agentKey)}</td><td>${esc(s.severity)}</td><td class="num">${Math.round(Number(s.score) * 100)}%</td><td>${esc(s.summary)}</td></tr>`).join('') || '<tr><td colspan="4" class="note">No agent signals.</td></tr>'}
    </table>
 
-   <h3>Source records (${records.length})</h3>
-   <table><colgroup><col style="width:14%"><col style="width:26%"><col style="width:12%"><col style="width:18%"><col style="width:18%"><col style="width:12%"></colgroup>
-   <tr><th>Date</th><th>Provider</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
-   ${records.map((r) => { const pl = (r.payload ?? {}) as { transactionDate?: string }; return `<tr><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`; }).join('')}
+   <h3>Source records (${records.length}) — by provider &amp; account</h3>
+   <table><colgroup><col style="width:22%"><col style="width:14%"><col style="width:12%"><col style="width:11%"><col style="width:19%"><col style="width:12%"><col style="width:10%"></colgroup>
+   <tr><th>Provider</th><th>Account</th><th>Date</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
+   ${records.map((r) => { const pl = (r.payload ?? {}) as { transactionDate?: string }; return `<tr><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.accountNumber ?? '—')}</td><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`; }).join('')}
    </table>
 
    <div class="sig">

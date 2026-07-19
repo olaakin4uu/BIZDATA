@@ -97,23 +97,31 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   };
   useEffect(load, [id]);
 
-  // Group the observed flows by provider (the cross-provider consolidation), each
-  // block sorted as a dated ledger with inflow/outflow subtotals. Providers are
-  // ordered by total inflow so the biggest exposure leads.
+  // Group the observed flows by PROVIDER, then by ACCOUNT NUMBER within each
+  // provider (the cross-provider consolidation). Each account is a dated ledger
+  // with its own subtotal; providers/accounts are ordered by total inflow.
   const providerGroups = useMemo(() => {
     const txDate = (r: DataRecord) => ((r.payload ?? {}) as { transactionDate?: string }).transactionDate ?? '';
-    const map = new Map<string, { providerId: string; providerName: string; rows: DataRecord[]; inflow: number; outflow: number }>();
+    type Acct = { accountNumber: string; accountName: string; rows: DataRecord[]; inflow: number; outflow: number };
+    type Grp = { providerId: string; providerName: string; accounts: Map<string, Acct>; rows: DataRecord[]; inflow: number; outflow: number };
+    const map = new Map<string, Grp>();
     for (const r of records) {
       const pid = r.provider?.id ?? r.providerId ?? r.providerType;
-      const name = r.provider?.name ?? r.providerType;
-      if (!map.has(pid)) map.set(pid, { providerId: pid, providerName: name, rows: [], inflow: 0, outflow: 0 });
+      const pname = r.provider?.name ?? r.providerType;
+      if (!map.has(pid)) map.set(pid, { providerId: pid, providerName: pname, accounts: new Map(), rows: [], inflow: 0, outflow: 0 });
       const g = map.get(pid)!;
-      g.rows.push(r);
-      g.inflow += Number(r.totalInflow ?? 0);
-      g.outflow += Number(r.totalOutflow ?? 0);
+      const acctNo = r.accountNumber || '(no account no.)';
+      if (!g.accounts.has(acctNo)) g.accounts.set(acctNo, { accountNumber: acctNo, accountName: r.accountName || '', rows: [], inflow: 0, outflow: 0 });
+      const a = g.accounts.get(acctNo)!;
+      a.rows.push(r); a.inflow += Number(r.totalInflow ?? 0); a.outflow += Number(r.totalOutflow ?? 0);
+      g.rows.push(r); g.inflow += Number(r.totalInflow ?? 0); g.outflow += Number(r.totalOutflow ?? 0);
     }
-    const groups = [...map.values()];
-    groups.forEach((g) => g.rows.sort((a, b) => txDate(a).localeCompare(txDate(b))));
+    const groups = [...map.values()].map((g) => {
+      const accounts = [...g.accounts.values()];
+      accounts.forEach((a) => a.rows.sort((x, y) => txDate(x).localeCompare(txDate(y))));
+      accounts.sort((a, b) => b.inflow - a.inflow);
+      return { ...g, accounts };
+    });
     groups.sort((a, b) => b.inflow - a.inflow);
     return groups;
   }, [records]);
@@ -241,38 +249,55 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   </p>
                 )}
                 {providerGroups.map((g) => (
-                  <div key={g.providerId} className="overflow-x-auto">
-                    <div className="flex items-baseline justify-between border-b border-slate-200 pb-1 mb-1">
+                  <div key={g.providerId} className="rounded-lg border border-slate-200">
+                    {/* Provider header */}
+                    <div className="flex items-baseline justify-between bg-slate-50 border-b border-slate-200 px-3 py-2 rounded-t-lg">
                       <span className="text-sm font-semibold text-slate-800">{g.providerName}</span>
                       <span className="text-xs text-slate-500">
-                        {g.rows.length} txn{g.rows.length === 1 ? '' : 's'} · in {formatMoney(g.inflow)} · out {formatMoney(g.outflow)}
+                        {g.accounts.length} account{g.accounts.length === 1 ? '' : 's'} · {g.rows.length} txn{g.rows.length === 1 ? '' : 's'} · in {formatMoney(g.inflow)} · out {formatMoney(g.outflow)}
                       </span>
                     </div>
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
-                          <th className="py-2 font-medium">Date</th>
-                          <th className="py-2 font-medium">Description</th>
-                          <th className="py-2 font-medium text-right">Inflow</th>
-                          <th className="py-2 font-medium text-right">Outflow</th>
-                          <th className="py-2 font-medium text-center">Type</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {g.rows.map((r) => {
-                          const pl = (r.payload ?? {}) as { transactionDate?: string; description?: string; transactionType?: string };
-                          return (
-                            <tr key={r.id} className="border-b border-slate-50">
-                              <td className="py-2 text-slate-600 whitespace-nowrap tnum">{pl.transactionDate ? formatDate(pl.transactionDate) : '—'}</td>
-                              <td className="py-2 text-slate-500 max-w-[220px] truncate" title={pl.description ?? ''}>{pl.description ?? '—'}</td>
-                              <td className="py-2 text-right text-slate-700 tnum">{formatMoney(r.totalInflow)}</td>
-                              <td className="py-2 text-right text-slate-400 tnum">{formatMoney(r.totalOutflow)}</td>
-                              <td className="py-2 text-center text-xs text-slate-400">{pl.transactionType ?? '—'}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                    {/* Accounts within the provider */}
+                    <div className="divide-y divide-slate-100">
+                      {g.accounts.map((a) => (
+                        <div key={a.accountNumber} className="px-3 py-2 overflow-x-auto">
+                          <div className="flex items-baseline justify-between mb-1">
+                            <span className="text-xs font-semibold text-slate-700">
+                              Acct <span className="tnum font-mono">{a.accountNumber}</span>
+                              {a.accountName && <span className="ml-2 font-normal text-slate-400">{a.accountName}</span>}
+                            </span>
+                            <span className="text-[11px] text-slate-500">
+                              {a.rows.length} txn{a.rows.length === 1 ? '' : 's'} · in {formatMoney(a.inflow)} · out {formatMoney(a.outflow)}
+                            </span>
+                          </div>
+                          <table className="w-full text-sm">
+                            <thead>
+                              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                                <th className="py-1.5 font-medium">Date</th>
+                                <th className="py-1.5 font-medium">Description</th>
+                                <th className="py-1.5 font-medium text-right">Inflow</th>
+                                <th className="py-1.5 font-medium text-right">Outflow</th>
+                                <th className="py-1.5 font-medium text-center">Type</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {a.rows.map((r) => {
+                                const pl = (r.payload ?? {}) as { transactionDate?: string; description?: string; transactionType?: string };
+                                return (
+                                  <tr key={r.id} className="border-b border-slate-50">
+                                    <td className="py-1.5 text-slate-600 whitespace-nowrap tnum">{pl.transactionDate ? formatDate(pl.transactionDate) : '—'}</td>
+                                    <td className="py-1.5 text-slate-500 max-w-[220px] truncate" title={pl.description ?? ''}>{pl.description ?? '—'}</td>
+                                    <td className="py-1.5 text-right text-slate-700 tnum">{formatMoney(r.totalInflow)}</td>
+                                    <td className="py-1.5 text-right text-slate-400 tnum">{formatMoney(r.totalOutflow)}</td>
+                                    <td className="py-1.5 text-center text-xs text-slate-400">{pl.transactionType ?? '—'}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 ))}
               </div>
