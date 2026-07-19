@@ -77,7 +77,7 @@ export default function ProviderLoginPage() {
             </span>
           )}
           <p className="text-[10px] uppercase tracking-[0.22em] text-teal-100/90">Provider Portal</p>
-          <h1 className="text-3xl font-bold text-white mt-0.5 tracking-tight">BizData</h1>
+          <h1 className="text-3xl font-bold text-white mt-0.5 tracking-tight">FinData</h1>
         </div>
 
         <div className="rounded-2xl border border-white/60 bg-white/95 p-6 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">

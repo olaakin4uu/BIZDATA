@@ -8,8 +8,8 @@ export class TenantService {
   async get() {
     let tenant = await this.prisma.tenant.findFirst();
     if (!tenant) {
-      const name = process.env.TENANT_NAME || 'BizData Tenant';
-      const shortName = name.split(' ')[0] || 'BizData';
+      const name = process.env.TENANT_NAME || 'FinData Tenant';
+      const shortName = name.split(' ')[0] || 'FinData';
       tenant = await this.prisma.tenant.create({
         data: {
           name,

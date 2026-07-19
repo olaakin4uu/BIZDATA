@@ -120,7 +120,7 @@ export default function TwoFactorPanel() {
           <p className="text-xs text-slate-500">
             On a phone, you can also{' '}
             <a href={setup.otpauth} className="text-teal-700 hover:underline font-medium">tap to open your authenticator</a>.
-            {' '}Account: <span className="font-mono">BizData</span> · type: time-based · 6 digits.
+            {' '}Account: <span className="font-mono">FinData</span> · type: time-based · 6 digits.
           </p>
 
           <p className="text-sm font-medium text-slate-800 mt-4 mb-2">2. Enter the 6-digit code to confirm</p>

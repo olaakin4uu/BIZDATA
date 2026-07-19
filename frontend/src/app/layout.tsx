@@ -17,7 +17,7 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: 'BizData — Financial-Institution Data Intelligence',
+  title: 'FinData — Financial-Institution Data Intelligence',
   description: 'Cross-reference declared income against §29 financial-institution reporting to support tax assessment.',
 };
 

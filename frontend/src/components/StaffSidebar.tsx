@@ -67,7 +67,7 @@ export default function StaffSidebar() {
           <span className="grid h-6 w-6 place-items-center rounded-md bg-teal-500/15 text-teal-400">
             <Icon name="target" width={15} height={15} />
           </span>
-          <h1 className="text-xl font-semibold tracking-tight text-white">BizData</h1>
+          <h1 className="text-xl font-semibold tracking-tight text-white">FinData</h1>
         </div>
       </div>
 

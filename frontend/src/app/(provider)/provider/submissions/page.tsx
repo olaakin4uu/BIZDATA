@@ -52,7 +52,7 @@ export default function ProviderSubmissionsPage() {
     <div className="rise-in">
       <PageHeader
         title="Submissions"
-        subtitle="History of files you have uploaded to BizData."
+        subtitle="History of files you have uploaded to FinData."
         icon="document"
         actions={
           <Link href="/provider/submissions/new"

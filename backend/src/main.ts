@@ -53,8 +53,8 @@ async function bootstrap() {
   });
 
   const swaggerConfig = new DocumentBuilder()
-    .setTitle('BizData API')
-    .setDescription('BizData — Multi-Source Data Intelligence Platform')
+    .setTitle('FinData API')
+    .setDescription('FinData — Multi-Source Data Intelligence Platform')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
@@ -63,7 +63,7 @@ async function bootstrap() {
 
   const port = process.env.PORT || 4200;
   await app.listen(port);
-  console.log(`BizData backend running on http://localhost:${port}`);
+  console.log(`FinData backend running on http://localhost:${port}`);
   console.log(`Swagger docs: http://localhost:${port}/api/docs`);
 }
 

@@ -57,7 +57,7 @@ export default function NewProviderSubmissionPage() {
       <SubmissionUploader
         reportingFrequency={freq}
         submissionLinkPrefix="/provider/submissions"
-        description={`Your reporting frequency is set to ${freq}. Files up to 100 MB are accepted. Every row is validated against the ${providerType || 'BizData'} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
+        description={`Your reporting frequency is set to ${freq}. Files up to 100 MB are accepted. Every row is validated against the ${providerType || 'FinData'} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
         onUpload={(payload) => providerPortalApi.upload(payload)}
       />
     </div>

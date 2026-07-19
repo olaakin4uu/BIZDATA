@@ -57,7 +57,7 @@ export class ProviderPortalService {
 
     // '#' comment block: a title, a short how-to, then one line per column.
     const guidance: string[] = [
-      `# BizData return template — ${typeLabel} provider`,
+      `# FinData return template — ${typeLabel} provider`,
       `# For: ${provider.name}`,
       `# Reporting frequency: ${(provider.reportingFrequency ?? 'QUARTERLY')} · Period format: ${periodFormatHint(provider.reportingFrequency)}`,
       `#`,

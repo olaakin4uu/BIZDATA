@@ -53,7 +53,7 @@ export default function ProviderNav() {
               <span className="text-[10px] uppercase tracking-[0.18em] text-teal-100/90">
                 Provider Portal
               </span>
-              <span className="text-lg font-bold tracking-tight mt-0.5">BizData</span>
+              <span className="text-lg font-bold tracking-tight mt-0.5">FinData</span>
             </span>
           </Link>
           <nav className="flex items-center gap-1">

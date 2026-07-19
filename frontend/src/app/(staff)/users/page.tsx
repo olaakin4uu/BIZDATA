@@ -44,7 +44,7 @@ export default function UsersListPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <PageHeader
         title="Staff users"
-        subtitle="People who can sign in to the BizData back office."
+        subtitle="People who can sign in to the FinData back office."
         actions={
           <Link href="/users/new" className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg">
             + New user

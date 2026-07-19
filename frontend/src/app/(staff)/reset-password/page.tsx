@@ -40,7 +40,7 @@ function StaffResetPasswordInner() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-slate-200">
           <h1 className="text-lg font-semibold text-slate-800 mb-1">Choose a new password</h1>
-          <p className="text-xs text-slate-500 mb-5">Set a new password for your BizData account.</p>
+          <p className="text-xs text-slate-500 mb-5">Set a new password for your FinData account.</p>
 
           {done ? (
             <div className="px-3 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">

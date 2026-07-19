@@ -22,7 +22,7 @@ export class MailService {
 
   constructor() {
     const host = process.env.SMTP_HOST;
-    this.from = process.env.SMTP_FROM || 'BizData <no-reply@bizdata.local>';
+    this.from = process.env.SMTP_FROM || 'FinData <no-reply@findata.local>';
     if (!host) {
       this.logger.warn(
         'SMTP_HOST not set — email sending is disabled (password-reset links will not be delivered). Set SMTP_* to enable.',
@@ -62,13 +62,13 @@ export class MailService {
 
   /** Compose + send a password-reset link. */
   async sendPasswordReset(to: string, resetUrl: string): Promise<void> {
-    const subject = 'Reset your BizData password';
+    const subject = 'Reset your FinData password';
     const text =
-      `We received a request to reset your BizData password.\n\n` +
+      `We received a request to reset your FinData password.\n\n` +
       `Open this link to choose a new password (valid for 1 hour):\n${resetUrl}\n\n` +
       `If you didn't request this, you can ignore this email — your password stays unchanged.`;
     const html =
-      `<p>We received a request to reset your BizData password.</p>` +
+      `<p>We received a request to reset your FinData password.</p>` +
       `<p><a href="${resetUrl}">Choose a new password</a> (valid for 1 hour).</p>` +
       `<p style="color:#64748b;font-size:12px">If you didn't request this, you can ignore this email — your password stays unchanged.</p>`;
     await this.send(to, subject, html, text);

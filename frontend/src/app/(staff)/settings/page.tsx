@@ -123,7 +123,7 @@ export default function SettingsPage() {
           <section className="mb-6">
             <h2 className="text-sm font-semibold text-slate-800 mb-1">Integration API keys</h2>
             <p className="text-xs text-slate-500 mb-3">
-              Keys for partner platforms (e.g. a taxpayer portal) that call the BIZDATA taxpayer-integration API.
+              Keys for partner platforms (e.g. a taxpayer portal) that call the FINDATA taxpayer-integration API.
               A key is shown once at creation — copy it then.
             </p>
             <ApiKeysPanel />

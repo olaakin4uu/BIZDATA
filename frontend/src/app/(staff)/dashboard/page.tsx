@@ -96,7 +96,7 @@ export default function StaffDashboardPage() {
         <div className="pointer-events-none absolute -bottom-8 right-24 h-32 w-32 rounded-full bg-indigo-500/10" />
         <div className="relative flex items-start justify-between flex-wrap gap-4">
           <div>
-            <p className="text-xs uppercase tracking-widest text-teal-300 mb-1">BIZDATA — Bank Reports Intelligence System</p>
+            <p className="text-xs uppercase tracking-widest text-teal-300 mb-1">FINDATA — Bank Reports Intelligence System</p>
             <h1 className="text-2xl font-bold text-white">
               Welcome back, {user?.firstName ?? 'Analyst'}
             </h1>

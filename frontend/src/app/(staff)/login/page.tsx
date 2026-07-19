@@ -86,7 +86,7 @@ export default function StaffLoginPage() {
           <p className="text-[10px] uppercase tracking-widest text-teal-300">
             Multi-Source Data Intelligence
           </p>
-          <h1 className="text-4xl font-bold text-white mt-1">BizData</h1>
+          <h1 className="text-4xl font-bold text-white mt-1">FinData</h1>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-slate-200">

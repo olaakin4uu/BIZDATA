@@ -417,7 +417,7 @@ export class AuthService {
     // Compact otpauth URI: authenticator apps assume SHA1/6-digit/30s defaults,
     // so omitting them keeps the QR payload small (fits a low QR version that
     // renders crisply and scans reliably).
-    const otpauth = `otpauth://totp/${encodeURIComponent('BizData')}:${encodeURIComponent(user.email)}?secret=${secret}&issuer=BizData`;
+    const otpauth = `otpauth://totp/${encodeURIComponent('FinData')}:${encodeURIComponent(user.email)}?secret=${secret}&issuer=FinData`;
     return { secret, otpauth };
   }
 
