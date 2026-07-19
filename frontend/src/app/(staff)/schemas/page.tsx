@@ -12,6 +12,7 @@ export default function SchemasPage() {
   const [columnsJson, setColumnsJson] = useState('');
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
+  const [active, setActive] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -30,6 +31,7 @@ export default function SchemasPage() {
     setName(s.name);
     setDescription(s.description ?? '');
     setColumnsJson(JSON.stringify(s.columns, null, 2));
+    setActive(s.isActive);
     setError(null);
   };
 
@@ -43,6 +45,7 @@ export default function SchemasPage() {
         name,
         description: description || null,
         columns: cols,
+        isActive: active,
       });
       setEditing(null);
       load();
@@ -120,6 +123,10 @@ export default function SchemasPage() {
                 <label className="block text-xs font-medium text-slate-700 mb-1">Description</label>
                 <input value={description} onChange={(e) => setDescription(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
               </div>
+              <label className="flex items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} className="rounded border-slate-300" />
+                Active <span className="text-xs text-slate-400">— inactive schemas are not used to validate incoming submissions</span>
+              </label>
               <div>
                 <label className="block text-xs font-medium text-slate-700 mb-1">
                   Columns (JSON array of {`{ name, type, required?, validation? }`})

@@ -29,15 +29,19 @@ export default function FlaggedReviewPage() {
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+  const PAGE_SIZE = 50;
 
   const load = () => {
     setLoading(true); setLoadErr(null);
     Promise.all([
-      dataRecordsApi.list({ flagged: 'true', reviewStatus: 'PENDING_REVIEW', limit: 100 }),
+      dataRecordsApi.list({ flagged: 'true', reviewStatus: 'PENDING_REVIEW', page, limit: PAGE_SIZE }),
       dataRecordsApi.stats(),
     ])
       .then(([r, s]) => {
         setRows(r.records);
+        setTotal(r.total);
         setStats(s);
       })
       .catch((e) => {
@@ -48,7 +52,7 @@ export default function FlaggedReviewPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, []);
+  useEffect(load, [page]);
 
   const submitDecision = async () => {
     if (!confirmAction) return;
@@ -178,6 +182,20 @@ export default function FlaggedReviewPage() {
               </tbody>
             </table>
           </div>
+          {total > PAGE_SIZE && (
+            <div className="flex items-center justify-between px-4 py-3 border-t border-[var(--line)] text-sm">
+              <span className="text-xs text-[var(--ink-3)]">
+                Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, total)} of {total}
+              </span>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--line)] text-[var(--ink-2)] disabled:opacity-40 hover:bg-[var(--surface-2)]">Prev</button>
+                <span className="text-xs text-[var(--ink-3)]">Page {page} of {Math.ceil(total / PAGE_SIZE)}</span>
+                <button onClick={() => setPage((p) => (p * PAGE_SIZE < total ? p + 1 : p))} disabled={page * PAGE_SIZE >= total}
+                  className="px-3 py-1.5 rounded-lg border border-[var(--line)] text-[var(--ink-2)] disabled:opacity-40 hover:bg-[var(--surface-2)]">Next</button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
