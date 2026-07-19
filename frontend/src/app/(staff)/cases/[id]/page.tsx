@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useState, use as usePromise } from 'react';
+import { useEffect, useState, useMemo, use as usePromise } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import { casesApi, caseDisplayName, type UnderdeclarationCase, type CaseStatus, type CaseDocument } from '@/lib/api/cases';
@@ -67,12 +67,35 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         setC(data);
         agentsApi.signals({ taxpayerId: data.taxpayerId, year: data.year }).then(setSignals).catch(() => setSignals([]));
         casesApi.listDocuments(id).then(setDocs).catch(() => setDocs([]));
-        return dataRecordsApi.list({ taxpayerId: data.taxpayerId, periodYear: data.year, limit: 100 });
+        // Pull every record for this identity across ALL providers (no providerId
+        // filter) so the observed-flows ledger is the full cross-provider picture.
+        return dataRecordsApi.list({ taxpayerId: data.taxpayerId, periodYear: data.year, limit: 5000 });
       })
       .then((r) => setRecords(r?.records ?? []))
       .catch((e) => setError(extractErrorMessage(e)));
   };
   useEffect(load, [id]);
+
+  // Group the observed flows by provider (the cross-provider consolidation), each
+  // block sorted as a dated ledger with inflow/outflow subtotals. Providers are
+  // ordered by total inflow so the biggest exposure leads.
+  const providerGroups = useMemo(() => {
+    const txDate = (r: DataRecord) => ((r.payload ?? {}) as { transactionDate?: string }).transactionDate ?? '';
+    const map = new Map<string, { providerId: string; providerName: string; rows: DataRecord[]; inflow: number; outflow: number }>();
+    for (const r of records) {
+      const pid = r.provider?.id ?? r.providerId ?? r.providerType;
+      const name = r.provider?.name ?? r.providerType;
+      if (!map.has(pid)) map.set(pid, { providerId: pid, providerName: name, rows: [], inflow: 0, outflow: 0 });
+      const g = map.get(pid)!;
+      g.rows.push(r);
+      g.inflow += Number(r.totalInflow ?? 0);
+      g.outflow += Number(r.totalOutflow ?? 0);
+    }
+    const groups = [...map.values()];
+    groups.forEach((g) => g.rows.sort((a, b) => txDate(a).localeCompare(txDate(b))));
+    groups.sort((a, b) => b.inflow - a.inflow);
+    return groups;
+  }, [records]);
 
   // Staff list for the reassign control (active users only).
   useEffect(() => {
@@ -194,34 +217,55 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             </p>
           </Card>
 
-          {/* Taxpayer 360 — observed flows by provider */}
-          <Card title={`Observed flows · ${c.year} (${records.length} record${records.length === 1 ? '' : 's'})`}>
+          {/* Taxpayer 360 — observed flows as a dated ledger, grouped by provider.
+              When this identity (BVN/TIN/NIN) matches across providers, each
+              provider's transactions appear as its own block — the cross-provider
+              consolidation. */}
+          <Card title={`Observed flows · ${c.year} (${records.length} transaction${records.length === 1 ? '' : 's'}${providerGroups.length > 1 ? ` · ${providerGroups.length} providers` : ''})`}>
             {records.length === 0 ? (
               <p className="text-xs text-slate-400">No linked records.</p>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
-                      <th className="py-2 font-medium">Provider</th>
-                      <th className="py-2 font-medium text-right">Inflow</th>
-                      <th className="py-2 font-medium text-right">Outflow</th>
-                      <th className="py-2 font-medium text-center">Match</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {records.map((r) => (
-                      <tr key={r.id} className="border-b border-slate-50">
-                        <td className="py-2 text-slate-700">{r.provider?.name ?? r.providerType}</td>
-                        <td className="py-2 text-right text-slate-600">{formatMoney(r.totalInflow)}</td>
-                        <td className="py-2 text-right text-slate-500">{formatMoney(r.totalOutflow)}</td>
-                        <td className="py-2 text-center text-xs text-slate-400">
-                          {(r as unknown as { matchMethod?: string }).matchMethod ?? '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <div className="space-y-5">
+                {providerGroups.length > 1 && (
+                  <p className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
+                    Identity matched across {providerGroups.length} providers — transactions from each are consolidated below.
+                  </p>
+                )}
+                {providerGroups.map((g) => (
+                  <div key={g.providerId} className="overflow-x-auto">
+                    <div className="flex items-baseline justify-between border-b border-slate-200 pb-1 mb-1">
+                      <span className="text-sm font-semibold text-slate-800">{g.providerName}</span>
+                      <span className="text-xs text-slate-500">
+                        {g.rows.length} txn{g.rows.length === 1 ? '' : 's'} · in {formatMoney(g.inflow)} · out {formatMoney(g.outflow)}
+                      </span>
+                    </div>
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                          <th className="py-2 font-medium">Date</th>
+                          <th className="py-2 font-medium">Description</th>
+                          <th className="py-2 font-medium text-right">Inflow</th>
+                          <th className="py-2 font-medium text-right">Outflow</th>
+                          <th className="py-2 font-medium text-center">Type</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {g.rows.map((r) => {
+                          const pl = (r.payload ?? {}) as { transactionDate?: string; description?: string; transactionType?: string };
+                          return (
+                            <tr key={r.id} className="border-b border-slate-50">
+                              <td className="py-2 text-slate-600 whitespace-nowrap tnum">{pl.transactionDate ? formatDate(pl.transactionDate) : '—'}</td>
+                              <td className="py-2 text-slate-500 max-w-[220px] truncate" title={pl.description ?? ''}>{pl.description ?? '—'}</td>
+                              <td className="py-2 text-right text-slate-700 tnum">{formatMoney(r.totalInflow)}</td>
+                              <td className="py-2 text-right text-slate-400 tnum">{formatMoney(r.totalOutflow)}</td>
+                              <td className="py-2 text-center text-xs text-slate-400">{pl.transactionType ?? '—'}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                ))}
               </div>
             )}
           </Card>

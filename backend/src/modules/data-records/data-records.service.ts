@@ -38,7 +38,11 @@ export class DataRecordsService {
 
   async findAll(query: any) {
     const page = Math.max(1, parseInt(query.page || '1', 10));
-    const limit = Math.min(200, Math.max(1, parseInt(query.limit || '50', 10)));
+    // A taxpayer-scoped query (a case's observed flows) is bounded to one
+    // identity, so allow a higher cap to show the full cross-provider ledger;
+    // the general listing stays capped at 200.
+    const maxLimit = query.taxpayerId ? 5000 : 200;
+    const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit || '50', 10)));
     // STATUTORY REPORTING THRESHOLD — records only surface for taxpayers whose
     // aggregated quarterly inflow (summed across ALL their records, however many
     // transactions the provider submitted) meets their type threshold.

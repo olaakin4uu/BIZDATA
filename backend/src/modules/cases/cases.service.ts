@@ -249,8 +249,8 @@ export class CasesService {
  </table>
 
  <h2>Source records (${records.length})</h2>
- <table><tr><th>Provider</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
- ${records.map((r) => `<tr><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`).join('')}
+ <table><tr><th>Date</th><th>Provider</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
+ ${records.map((r) => { const pl = (r.payload ?? {}) as { transactionDate?: string }; return `<tr><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`; }).join('')}
  </table>
 
  <h2>Integrity</h2>
