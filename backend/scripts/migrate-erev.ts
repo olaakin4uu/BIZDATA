@@ -181,10 +181,25 @@ async function migrateTransactions(providerMap: Map<number, string>) {
   async function getOrCreateSubmission(providerId: string, year: number): Promise<string> {
     const key = `${providerId}:${year}`;
     if (submissionCache.has(key)) return submissionCache.get(key)!;
+
+    const periodLabel = defaultPeriodLabel(year);
+    // Idempotent across re-runs: the in-memory cache is empty on a fresh run, so
+    // also look in the DB for an existing submission for this provider+period.
+    // Without this, every re-import created a NEW submission per record batch,
+    // producing hundreds of duplicate 1-record "uploads" for the same quarter.
+    const existing = await prisma.dataSubmission.findFirst({
+      where: { providerId, periodYear: year, periodLabel },
+      select: { id: true },
+    });
+    if (existing) {
+      submissionCache.set(key, existing.id);
+      return existing.id;
+    }
+
     const sub = await prisma.dataSubmission.create({
       data: {
         providerId,
-        periodLabel:  defaultPeriodLabel(year),
+        periodLabel,
         periodYear:   year,
         status:       SubmissionStatus.ACCEPTED,
         recordCount:  0,
@@ -306,6 +321,21 @@ async function migrateTransactions(providerMap: Map<number, string>) {
   console.log(`\nTaxpayers: ${taxpayersCreated} created, ${taxpayersReused} reused`);
   console.log(`Records:   ${recordsCreated} created, ${recordsSkipped} skipped`);
   if (encErrors) console.warn(`Encryption errors (non-fatal): ${encErrors}`);
+
+  // Finalize each submission's counters from the records that actually reference
+  // it, so "Total uploads" and per-submission stats reflect reality (all rows
+  // are ACCEPTED at import, so acceptedCount = recordCount, rejectedCount = 0).
+  // Without this the submissions keep the recordCount:0 they were created with.
+  let finalized = 0;
+  for (const submissionId of submissionCache.values()) {
+    const n = await prisma.dataRecord.count({ where: { submissionId } });
+    await prisma.dataSubmission.update({
+      where: { id: submissionId },
+      data: { recordCount: n, acceptedCount: n, rejectedCount: 0 },
+    });
+    finalized++;
+  }
+  console.log(`Submissions finalized (counts backfilled): ${finalized}`);
 }
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
