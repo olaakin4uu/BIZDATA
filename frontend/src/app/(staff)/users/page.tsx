@@ -26,7 +26,7 @@ export default function UsersListPage() {
   useEffect(load, [page, role]);
 
   const columns: Column<StaffUserRecord>[] = [
-    { key: 'name', header: 'Name', cell: (r) => <span className="font-medium">{r.firstName} {r.lastName}</span> },
+    { key: 'name', header: 'Name', cell: (r) => <Link href={`/users/${r.id}`} className="font-medium text-slate-800 hover:text-teal-700">{r.firstName} {r.lastName}</Link> },
     { key: 'email', header: 'Email', cell: (r) => <span className="text-xs text-slate-600">{r.email}</span> },
     { key: 'role', header: 'Role', cell: (r) => <span className="text-xs">{r.role.replace('_', ' ')}</span> },
     {
