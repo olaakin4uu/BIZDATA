@@ -193,11 +193,11 @@ export default function StaffLoginPage() {
             Powered by
           </span>
           <Image
-            src="/bizsphere-logo.jpeg"
-            alt="Bizsphere"
-            width={120}
-            height={120}
-            className="rounded-xl bg-white p-2 shadow-lg"
+            src="/manam-logo.jpeg"
+            alt="MANAM — Advisory / Tax / Secretarial Services"
+            width={220}
+            height={86}
+            className="rounded-xl bg-white px-4 py-3 shadow-lg"
             priority
           />
         </div>
