@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { providerAuthApi } from '@/lib/api/auth';
@@ -49,13 +50,14 @@ export default function ProviderLoginPage() {
 
       <div className="relative w-full max-w-md rise-in">
         <div className="text-center mb-7">
-          <span className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 ring-1 ring-white/25 shadow-lg backdrop-blur">
-            <svg viewBox="0 0 24 24" width={26} height={26} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="text-white" aria-hidden>
-              <path d="M7 3.5h6l5 5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" />
-              <path d="M13 3.5V9h5" />
-              <path d="m8.5 14 2 2 4-4.5" />
-            </svg>
-          </span>
+          <Image
+            src="/manam-logo.jpeg"
+            alt="MANAM — Advisory / Tax / Secretarial Services"
+            width={220}
+            height={86}
+            priority
+            className="mx-auto mb-4 rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-white/25"
+          />
           <p className="text-[10px] uppercase tracking-[0.22em] text-teal-100/90">Provider Portal</p>
           <h1 className="text-4xl font-bold text-white mt-1 tracking-tight">BizData</h1>
         </div>
@@ -97,6 +99,19 @@ export default function ProviderLoginPage() {
             Are you a regulator?{' '}
             <Link href="/login" className="text-teal-700 hover:text-teal-800 hover:underline font-medium">Use the staff sign-in</Link>
           </p>
+        </div>
+
+        <div className="mt-8 flex flex-col items-center justify-center gap-3">
+          <span className="text-[10px] uppercase tracking-[0.22em] text-teal-100/80">
+            Powered by
+          </span>
+          <Image
+            src="/manam-logo.jpeg"
+            alt="MANAM — Advisory / Tax / Secretarial Services"
+            width={200}
+            height={79}
+            className="rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-white/25"
+          />
         </div>
       </div>
     </div>
