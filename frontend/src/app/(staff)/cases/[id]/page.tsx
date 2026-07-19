@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import { casesApi, caseDisplayName, type UnderdeclarationCase, type CaseStatus, type CaseDocument } from '@/lib/api/cases';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { agentsApi, AGENT_NAMES, type RiskSignal } from '@/lib/api/agents';
+import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { formatMoney, formatDate, formatDateTime, extractErrorMessage } from '@/lib/utils';
 
 // Mirror of the backend lifecycle state machine (cases.service.ts).
@@ -57,6 +58,8 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [notes, setNotes] = useState('');
   const [recovered, setRecovered] = useState('');
   const [busy, setBusy] = useState(false);
+  const [staff, setStaff] = useState<StaffUserRecord[]>([]);
+  const [assigning, setAssigning] = useState(false);
 
   const load = () => {
     casesApi.get(id)
@@ -70,6 +73,25 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       .catch((e) => setError(extractErrorMessage(e)));
   };
   useEffect(load, [id]);
+
+  // Staff list for the reassign control (active users only).
+  useEffect(() => {
+    usersApi.list({ limit: 200 })
+      .then((r) => setStaff(r.users.filter((u) => u.isActive)))
+      .catch(() => setStaff([]));
+  }, []);
+
+  const reassign = async (assignedToId: string | null) => {
+    setAssigning(true); setError(null);
+    try {
+      await casesApi.assign(id, assignedToId);
+      load();
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    } finally {
+      setAssigning(false);
+    }
+  };
 
   const submit = async () => {
     if (!pending) return;
@@ -322,7 +344,23 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
               <Row k="AI corroboration" v={c.agentScore != null ? `${Math.round(Number(c.agentScore) * 100)}%` : '—'} />
               <Row k="Providers" v={String(c.providerCount)} />
               <Row k="Discrepancy %" v={`${Math.round(Number(c.discrepancyPct) * 100)}%`} />
-              <Row k="Assigned to" v={c.assignedTo ? `${c.assignedTo.firstName} ${c.assignedTo.lastName}` : 'Unassigned'} />
+              <div className="flex items-start justify-between gap-3 pt-0.5">
+                <dt className="text-slate-400 shrink-0">Assigned to</dt>
+                <dd className="text-right">
+                  <select
+                    value={c.assignedTo?.id ?? ''}
+                    disabled={assigning}
+                    onChange={(e) => reassign(e.target.value || null)}
+                    className="max-w-[11rem] border border-slate-300 rounded-md text-xs px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50"
+                    title="Reassign this case"
+                  >
+                    <option value="">Unassigned</option>
+                    {staff.map((u) => (
+                      <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                    ))}
+                  </select>
+                </dd>
+              </div>
               <Row k="Detected" v={formatDateTime(c.createdAt)} />
               {c.notes && <Row k="Notes" v={c.notes} />}
             </dl>
