@@ -14,6 +14,7 @@ import { ScanService } from '../src/modules/scan/scan.service';
 import { AuditService } from '../src/common/services/audit.service';
 import { StatutoryService } from '../src/modules/statutory/statutory.service';
 import { PortfoliosService } from '../src/modules/portfolios/portfolios.service';
+import { ReportableService } from '../src/common/services/reportable.service';
 
 async function main() {
   const year = parseInt(process.argv[2] ?? '2026', 10);
@@ -26,7 +27,8 @@ async function main() {
   const audit = new AuditService(prisma);
   const statutory = new StatutoryService(prisma, audit);
   const portfolios = new PortfoliosService(prisma, audit);
-  const scanSvc = new ScanService(prisma, audit, portfolios, statutory);
+  const reportable = new ReportableService(prisma, statutory);
+  const scanSvc = new ScanService(prisma, audit, portfolios, statutory, reportable);
 
   const admin = await prisma.user.findFirst({ where: { role: 'SUPER_ADMIN' }, select: { id: true, email: true } });
   if (!admin) throw new Error('No SUPER_ADMIN user found to attribute the scan to');
