@@ -53,7 +53,7 @@ export interface UploadSubmissionArgs {
 }
 
 export const submissionsApi = {
-  list: (params: { providerId?: string; status?: string; page?: number; limit?: number } = {}) => {
+  list: (params: { providerId?: string; status?: string; periodYear?: number; page?: number; limit?: number } = {}) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== '') qs.set(k, String(v));

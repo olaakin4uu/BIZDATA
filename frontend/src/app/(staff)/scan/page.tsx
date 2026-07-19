@@ -19,17 +19,22 @@ export default function ScanPage() {
   const [loading, setLoading] = useState(false);
   const [running, setRunning] = useState<Scan | null>(null);
   const [runError, setRunError] = useState<string | null>(null);
+  // History-table filters (the API already supports year + status).
+  const [filterYear, setFilterYear] = useState<number | ''>('');
+  const [filterStatus, setFilterStatus] = useState('');
   const limit = 50;
+
+  useEffect(() => { setPage(1); }, [filterYear, filterStatus]);
 
   const load = () => {
     setLoading(true);
-    scanApi.list({ page, limit })
+    scanApi.list({ year: filterYear || undefined, status: filterStatus || undefined, page, limit })
       .then((r) => { setScans(r.scans); setTotal(r.total); })
       .catch((e) => { if ((e as any)?.status !== 401) { setScans([]); setTotal(0); } })
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [page]);
+  useEffect(load, [page, filterYear, filterStatus]);
 
   // Poll running scan
   useEffect(() => {
@@ -81,6 +86,7 @@ export default function ScanPage() {
     { key: 'types', header: 'Types', cell: (r) => <span className="text-xs text-slate-600">{r.providerTypes && r.providerTypes.length > 0 ? r.providerTypes.join(', ') : 'All'}</span> },
     { key: 'scanned', header: 'Scanned', cell: (r) => <span className="text-xs">{r.totalScanned.toLocaleString()}</span> },
     { key: 'flagged', header: 'Flagged', cell: (r) => <span className={`text-xs font-semibold ${r.totalFlagged > 0 ? 'text-red-700' : 'text-slate-500'}`}>{r.totalFlagged.toLocaleString()}</span> },
+    { key: 'esttax', header: 'Est. tax', cell: (r) => <span className="text-xs font-medium text-slate-700">{r.totalEstimatedTax != null ? `₦${Number(r.totalEstimatedTax).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</span> },
     {
       key: 'status', header: 'Status',
       cell: (r) => (
@@ -161,7 +167,23 @@ export default function ScanPage() {
         )}
       </div>
 
-      <h2 className="text-sm font-semibold text-slate-800 mb-3">History</h2>
+      <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+        <h2 className="text-sm font-semibold text-slate-800">History</h2>
+        <div className="flex items-center gap-2">
+          <select value={filterYear} onChange={(e) => setFilterYear(e.target.value ? Number(e.target.value) : '')}
+            className="border border-slate-300 rounded-lg text-xs px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <option value="">All years</option>
+            {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+          </select>
+          <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)}
+            className="border border-slate-300 rounded-lg text-xs px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500">
+            <option value="">All statuses</option>
+            <option value="COMPLETED">Completed</option>
+            <option value="RUNNING">Running</option>
+            <option value="FAILED">Failed</option>
+          </select>
+        </div>
+      </div>
       <DataTable
         columns={columns}
         rows={scans}

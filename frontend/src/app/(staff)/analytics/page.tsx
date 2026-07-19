@@ -6,27 +6,46 @@ import { formatMoneyShort, extractErrorMessage } from '@/lib/utils';
 
 type Tab = 'provider' | 'sector';
 
+const ANALYTICS_YEARS = Array.from({ length: 4 }, (_, i) => new Date().getFullYear() - i);
+
 export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>('provider');
+  const [year, setYear] = useState<number | ''>('');
   const [prov, setProv] = useState<ProviderAnalytics | null>(null);
   const [sect, setSect] = useState<SectorAnalytics | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => { analyticsApi.byProvider().then(setProv).catch((e) => setErr(extractErrorMessage(e))); }, []);
-  useEffect(() => { analyticsApi.bySector().then(setSect).catch((e) => setErr(extractErrorMessage(e))); }, []);
+  useEffect(() => {
+    setProv(null); setErr(null);
+    analyticsApi.byProvider(year || undefined).then(setProv).catch((e) => setErr(extractErrorMessage(e)));
+  }, [year]);
+  useEffect(() => {
+    setSect(null); setErr(null);
+    analyticsApi.bySector(year || undefined).then(setSect).catch((e) => setErr(extractErrorMessage(e)));
+  }, [year]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
       {/* Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-7 py-6 mb-8 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-indigo-500/10" />
-        <div className="relative">
-          <p className="text-xs uppercase tracking-widest text-indigo-300 mb-1">Comparative Analytics</p>
-          <h1 className="text-2xl font-bold text-white">Analysis by provider, and by sector</h1>
-          <p className="text-sm text-slate-300 mt-1 max-w-2xl">
-            Which data sources produce the most actionable intelligence, and which economic sectors carry the
-            widest underdeclaration gaps. Ranked for decision-making, not just display.
-          </p>
+        <div className="relative flex items-start justify-between flex-wrap gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-widest text-indigo-300 mb-1">Comparative Analytics</p>
+            <h1 className="text-2xl font-bold text-white">Analysis by provider, and by sector</h1>
+            <p className="text-sm text-slate-300 mt-1 max-w-2xl">
+              Which data sources produce the most actionable intelligence, and which economic sectors carry the
+              widest underdeclaration gaps. Ranked for decision-making, not just display.
+            </p>
+          </div>
+          <div className="flex items-center gap-2 self-center">
+            <label className="text-xs text-slate-400">Tax year</label>
+            <select value={year} onChange={(e) => setYear(e.target.value ? Number(e.target.value) : '')}
+              className="border border-slate-600 rounded-lg text-sm px-3 py-1.5 bg-slate-800 text-white focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <option value="">All years</option>
+              {ANALYTICS_YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 

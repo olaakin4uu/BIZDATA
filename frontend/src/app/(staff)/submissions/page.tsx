@@ -14,6 +14,7 @@ export default function SubmissionsPage() {
   const [page, setPage] = useState(1);
   const [providerId, setProviderId] = useState('');
   const [status, setStatus] = useState('');
+  const [periodYear, setPeriodYear] = useState<number | ''>('');
   const [loading, setLoading] = useState(false);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showUpload, setShowUpload] = useState(false);
@@ -23,16 +24,18 @@ export default function SubmissionsPage() {
     providersApi.list({ limit: 200 }).then((r) => setProviders(r.providers)).catch(() => setProviders([]));
   }, []);
 
+  useEffect(() => { setPage(1); }, [providerId, status, periodYear]);
+
   const load = () => {
     setLoading(true);
     submissionsApi
-      .list({ providerId: providerId || undefined, status: status || undefined, page, limit })
+      .list({ providerId: providerId || undefined, status: status || undefined, periodYear: periodYear || undefined, page, limit })
       .then((r) => { setRows(r.submissions); setTotal(r.total); })
       .catch(() => { setRows([]); setTotal(0); })
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [page, providerId, status]);
+  useEffect(load, [page, providerId, status, periodYear]);
 
   const activeProvider = providers.find((p) => p.id === providerId);
 
@@ -120,6 +123,11 @@ export default function SubmissionsPage() {
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">All statuses</option>
             {SUBMISSION_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+          </select>
+          <select value={periodYear} onChange={(e) => setPeriodYear(e.target.value ? Number(e.target.value) : '')}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+            <option value="">All years</option>
+            {Array.from({ length: 6 }, (_, i) => new Date().getFullYear() - i).map((y) => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
       </div>

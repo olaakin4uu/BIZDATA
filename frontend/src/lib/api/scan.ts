@@ -7,6 +7,7 @@ export interface Scan {
   providerTypes?: string[] | null;
   totalScanned: number;
   totalFlagged: number;
+  totalEstimatedTax?: string | null; // sum of recoverable tax across flagged cases
   totalRecovered?: string | null;
   status: 'RUNNING' | 'COMPLETED' | 'FAILED';
   errorMessage?: string | null;

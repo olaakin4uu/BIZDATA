@@ -14,6 +14,8 @@ export default function AuditPage() {
   const [actorType, setActorType] = useState('');
   const [entity, setEntity] = useState('');
   const [action, setAction] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<AuditLog | null>(null);
   const limit = 50;
@@ -24,6 +26,8 @@ export default function AuditPage() {
       actorType: actorType || undefined,
       entity: entity || undefined,
       action: action || undefined,
+      dateFrom: dateFrom || undefined,
+      dateTo: dateTo || undefined,
       page,
       limit,
     })
@@ -32,7 +36,7 @@ export default function AuditPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [page, actorType, entity, action]);
+  useEffect(load, [page, actorType, entity, action, dateFrom, dateTo]);
 
   const columns: Column<AuditLog>[] = [
     { key: 'when', header: 'When', cell: (r) => <span className="text-xs text-slate-500 whitespace-nowrap">{formatDateTime(r.createdAt)}</span> },
@@ -81,6 +85,16 @@ export default function AuditPage() {
           <input value={action} onChange={(e) => setAction(e.target.value)}
             onBlur={() => { setPage(1); load(); }}
             placeholder="e.g. LOGIN"
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">From</label>
+          <input type="date" value={dateFrom} onChange={(e) => { setDateFrom(e.target.value); setPage(1); }}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">To</label>
+          <input type="date" value={dateTo} onChange={(e) => { setDateTo(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         </div>
       </div>
