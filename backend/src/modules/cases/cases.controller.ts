@@ -40,6 +40,10 @@ export class CasesController {
 
   @Get(':id/evidence')
   @Header('Content-Type', 'text/html; charset=utf-8')
+  // Confidential document with decrypted PII — never let the browser or any proxy
+  // cache it to disk.
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  @Header('Pragma', 'no-cache')
   evidence(@Param('id') id: string, @CurrentStaff() u: any) {
     return this.service.evidenceBundle(id, { id: u.id, email: u.email });
   }

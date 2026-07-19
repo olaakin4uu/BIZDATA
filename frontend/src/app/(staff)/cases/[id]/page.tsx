@@ -60,6 +60,27 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [busy, setBusy] = useState(false);
   const [staff, setStaff] = useState<StaffUserRecord[]>([]);
   const [assigning, setAssigning] = useState(false);
+  // In-app secured document viewer. The confidential report (evidence bundle /
+  // tax report) is fetched WITH the auth token and rendered inside a sandboxed
+  // same-origin iframe in a modal — it never leaves the authenticated session as
+  // a standalone blob tab. `report` holds the fetched HTML.
+  const [report, setReport] = useState<{ title: string; html: string } | null>(null);
+  const [reportLoading, setReportLoading] = useState<string | null>(null);
+
+  const openReport = async (path: string, title: string) => {
+    setReportLoading(title);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
+      const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
+      const res = await fetch(`${base}/cases/${id}/${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+      setReport({ title, html: await res.text() });
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    } finally {
+      setReportLoading(null);
+    }
+  };
 
   const load = () => {
     casesApi.get(id)
@@ -149,30 +170,18 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         />
         <div className="flex items-center gap-2">
           <button
-            onClick={async () => {
-              const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
-              const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
-              const res = await fetch(`${base}/cases/${id}/tax-report.html`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-              const html = await res.text();
-              const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-              window.open(url, '_blank');
-            }}
-            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white"
+            onClick={() => openReport('tax-report.html', 'AI Tax Report')}
+            disabled={reportLoading !== null}
+            className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white disabled:opacity-50"
           >
-            AI Tax Report
+            {reportLoading === 'AI Tax Report' ? 'Loading…' : 'AI Tax Report'}
           </button>
           <button
-            onClick={async () => {
-              const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
-              const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
-              const res = await fetch(`${base}/cases/${id}/evidence`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-              const html = await res.text();
-              const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-              window.open(url, '_blank');
-            }}
-            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50"
+            onClick={() => openReport('evidence', 'Evidence Bundle')}
+            disabled={reportLoading !== null}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
-            Evidence bundle
+            {reportLoading === 'Evidence Bundle' ? 'Loading…' : 'Evidence bundle'}
           </button>
           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_BADGE[c.status]}`}>
             {c.status.replace(/_/g, ' ')}
@@ -411,6 +420,29 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           </Card>
         </div>
       </div>
+
+      {/* Secured in-app document viewer — the confidential report stays inside the
+          authenticated session, rendered in a sandboxed same-origin iframe. */}
+      {report && (
+        <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/60 backdrop-blur-sm p-3 sm:p-6" onClick={() => setReport(null)}>
+          <div className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex h-2 w-2 rounded-full bg-rose-500" />
+                <span className="text-sm font-semibold text-slate-800">{report.title}</span>
+                <span className="rounded bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Confidential · in secure session</span>
+              </div>
+              <button onClick={() => setReport(null)} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">✕ Close</button>
+            </div>
+            <iframe
+              title={report.title}
+              srcDoc={report.html}
+              sandbox="allow-same-origin allow-modals allow-popups"
+              className="flex-1 w-full bg-slate-100"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

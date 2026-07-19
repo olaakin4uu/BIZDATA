@@ -205,61 +205,125 @@ export class CasesService {
     const ngn = (v: any) => '₦' + Number(v ?? 0).toLocaleString();
     const esc = (s: any) => String(s ?? '').replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]!));
     const now = new Date();
-    const watermark = `${staff.email ?? staff.id} · ${now.toISOString()}`;
 
-    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Evidence Bundle ${esc(c.demandNoticeRef ?? c.id)}</title>
+    const ref = esc(c.demandNoticeRef ?? c.id.slice(0, 8).toUpperCase());
+    const genDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+    const genTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Evidence Bundle ${ref}</title>
 <style>
+ :root{--ink:#0f172a;--soft:#475569;--line:#e2e8f0;--brand:#0f766e;--bad:#b91c1c;--bg:#f8fafc}
  *{box-sizing:border-box}
- body{font-family:Segoe UI,Arial,sans-serif;color:#1e293b;max-width:820px;width:100%;margin:24px auto;padding:0 24px;font-size:13px;word-wrap:break-word}
- h1{font-size:20px;margin:0} h2{font-size:14px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-top:24px}
- .muted{color:#64748b;font-size:11px} .tag{display:inline-block;background:#fee2e2;color:#991b1b;font-size:10px;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.05em}
- table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #f1f5f9;overflow-wrap:anywhere} th{font-size:10px;text-transform:uppercase;color:#64748b}
- .num{text-align:right} .tot{font-weight:700;color:#991b1b}
- .wm{position:fixed;bottom:8px;right:8px;color:#cbd5e1;font-size:9px} .box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:8px}
- @media print{.noprint{display:none}}
+ html,body{margin:0;padding:0}
+ body{font-family:'Segoe UI',Arial,sans-serif;color:var(--ink);font-size:12.5px;line-height:1.5;background:#eef2f6}
+ .sheet{max-width:820px;width:100%;margin:20px auto;background:#fff;padding:44px 52px 64px;position:relative;box-shadow:0 1px 4px rgba(15,23,42,.12)}
+ /* diagonal confidential watermark across the page */
+ .paper-wm{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:0}
+ .paper-wm span{position:absolute;top:42%;left:-8%;width:120%;text-align:center;transform:rotate(-24deg);font-size:64px;font-weight:800;letter-spacing:.12em;color:rgba(185,28,28,.06);text-transform:uppercase}
+ .content{position:relative;z-index:1}
+ /* letterhead */
+ .lh{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:14px}
+ .crest{flex:0 0 54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;letter-spacing:.03em}
+ .lh h1{font-size:17px;margin:0;color:var(--ink)} .lh .sub{font-size:11px;color:var(--soft);margin-top:2px}
+ .class-band{background:var(--bad);color:#fff;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;text-align:center;padding:5px;margin:16px 0 4px;border-radius:3px}
+ .doctitle{text-align:center;margin:20px 0 4px} .doctitle h2{font-size:19px;margin:0;letter-spacing:.02em} .doctitle .ref{font-size:11px;color:var(--soft);margin-top:4px}
+ h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:5px;margin:26px 0 10px}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px}
+ .grid .k{color:var(--soft)} .grid .v{font-weight:600}
+ table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed;font-size:11.5px}
+ th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere;vertical-align:top}
+ th{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--soft);background:var(--bg)}
+ .num{text-align:right;font-variant-numeric:tabular-nums} tr.tot td{font-weight:800;color:var(--bad);border-top:2px solid var(--ink);border-bottom:none;background:#fef2f2}
+ ul{margin:6px 0;padding-left:18px} li{margin:3px 0}
+ .note{font-size:10.5px;color:var(--soft);margin-top:8px}
+ .sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:44px}
+ .sig .line{border-top:1px solid var(--ink);padding-top:5px;font-size:11px;color:var(--soft)}
+ .foot{margin-top:36px;border-top:1px solid var(--line);padding-top:10px;font-size:9.5px;color:var(--soft)}
+ code{font-family:Consolas,monospace;font-size:9.5px;word-break:break-all}
+ .toolbar{position:fixed;top:14px;right:14px;z-index:10;display:flex;gap:8px}
+ .btn{background:var(--brand);color:#fff;border:none;border-radius:7px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.2)}
+ .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+ @media print{
+   @page{size:A4;margin:14mm}
+   body{background:#fff} .sheet{box-shadow:none;margin:0;max-width:none;padding:0}
+   .toolbar,.noprint{display:none!important}
+   .paper-wm span{color:rgba(185,28,28,.08)}
+ }
 </style></head><body>
- <div class="tag">Confidential · NTAA 2025 §139</div>
- <h1>Bank Reports Intelligence System — Evidence Bundle</h1>
- <p class="muted">Demand notice ${esc(c.demandNoticeRef ?? '—')} · generated ${esc(now.toISOString())} · by ${esc(staff.email ?? staff.id)}</p>
-
- <h2>Taxpayer</h2>
- <div class="box">
-  <strong>${esc(name)}</strong> (${esc(tp.type)})<br>
-  TIN: ${esc(tin ?? '—')} · BVN: ${esc(bvn ?? '—')} · NIN: ${esc(nin ?? '—')}<br>
-  State: ${esc(tp.stateOfResidence ?? '—')} · Sector: ${esc(tp.sector ?? '—')} · Tax year: ${c.year}
+ <div class="toolbar noprint">
+   <button class="btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+   <button class="btn ghost" onclick="window.close()">Close</button>
  </div>
+ <div class="sheet">
+  <div class="paper-wm"><span>Confidential — KIRS</span></div>
+  <div class="content">
+   <div class="lh">
+     <div class="crest">KIRS</div>
+     <div>
+       <h1>Kano State Internal Revenue Service</h1>
+       <div class="sub">Bank Reports Intelligence System · Enforcement &amp; Assessment</div>
+     </div>
+   </div>
+   <div class="class-band">Confidential — for official use only · NTAA 2025 §139</div>
 
- <h2>Assessment — NTAA 2025 §35 (Best of Judgement)</h2>
- <table>
-  <tr><td>Observed income (bank-reported)</td><td class="num">${ngn(c.observedIncome)}</td></tr>
-  <tr><td>Declared income</td><td class="num">${ngn(c.declaredIncome)}</td></tr>
-  <tr><td>Discrepancy</td><td class="num">${ngn(c.discrepancyAmount)}</td></tr>
-  <tr><td>Assessed tax</td><td class="num">${ngn(c.assessedTax)}</td></tr>
-  <tr><td>Late-payment penalty (10%)</td><td class="num">${ngn(c.penaltyAmount)}</td></tr>
-  <tr><td class="tot">Total demand</td><td class="num tot">${ngn(c.assessedTotal)}</td></tr>
- </table>
- <p class="muted">Detection confidence ${Math.round(Number(c.confidence) * 100)}%${c.agentScore != null ? ` · AI corroboration ${Math.round(Number(c.agentScore) * 100)}%` : ''} · engine ${esc(c.scan?.engineVersion ?? c.engineVersion ?? '—')} · status ${esc(c.status)}.
- Objection due ${c.objectionDueAt ? esc(new Date(c.objectionDueAt).toDateString()) : '—'} (§41); authority response due ${c.authorityResponseDueAt ? esc(new Date(c.authorityResponseDueAt).toDateString()) : '—'} (§41(6)).</p>
+   <div class="doctitle">
+     <h2>Under-Declaration Evidence Bundle</h2>
+     <div class="ref">Ref: <strong>${ref}</strong> · Tax year ${c.year} · Generated ${genDate} ${genTime}</div>
+   </div>
 
- <h2>Basis — why flagged</h2>
- <ul>${reasons.map((r) => `<li>${esc(r.label)} <span class="muted">(${esc(r.code)})</span></li>`).join('') || '<li class="muted">No reason codes.</li>'}</ul>
+   <h3>Taxpayer</h3>
+   <div class="grid">
+     <div><span class="k">Name:</span> <span class="v">${esc(name)}</span></div>
+     <div><span class="k">Type:</span> <span class="v">${esc(tp.type)}</span></div>
+     <div><span class="k">TIN:</span> <span class="v">${esc(tin ?? '—')}</span></div>
+     <div><span class="k">BVN:</span> <span class="v">${esc(bvn ?? '—')}</span></div>
+     <div><span class="k">NIN:</span> <span class="v">${esc(nin ?? '—')}</span></div>
+     <div><span class="k">State:</span> <span class="v">${esc(tp.stateOfResidence ?? '—')}</span></div>
+     <div><span class="k">Sector:</span> <span class="v">${esc(tp.sector ?? '—')}</span></div>
+     <div><span class="k">Case status:</span> <span class="v">${esc(c.status)}</span></div>
+   </div>
 
- <h2>AI analytics signals</h2>
- <table><tr><th>Agent</th><th>Severity</th><th class="num">Score</th><th>Summary</th></tr>
- ${signals.map((s) => `<tr><td>${esc(s.agentKey)}</td><td>${esc(s.severity)}</td><td class="num">${Math.round(Number(s.score) * 100)}%</td><td>${esc(s.summary)}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">No agent signals.</td></tr>'}
- </table>
+   <h3>Assessment — NTAA 2025 §35 (Best of Judgement)</h3>
+   <table>
+    <tr><td>Observed income (bank-reported)</td><td class="num">${ngn(c.observedIncome)}</td></tr>
+    <tr><td>Declared income</td><td class="num">${ngn(c.declaredIncome)}</td></tr>
+    <tr><td>Discrepancy</td><td class="num">${ngn(c.discrepancyAmount)}</td></tr>
+    <tr><td>Assessed tax</td><td class="num">${ngn(c.assessedTax)}</td></tr>
+    <tr><td>Late-payment penalty (10%)</td><td class="num">${ngn(c.penaltyAmount)}</td></tr>
+    <tr class="tot"><td>Total demand</td><td class="num">${ngn(c.assessedTotal)}</td></tr>
+   </table>
+   <p class="note">Detection confidence ${Math.round(Number(c.confidence) * 100)}%${c.agentScore != null ? ` · AI corroboration ${Math.round(Number(c.agentScore) * 100)}%` : ''} · engine ${esc(c.scan?.engineVersion ?? c.engineVersion ?? '—')}.
+   Objection due ${c.objectionDueAt ? esc(new Date(c.objectionDueAt).toDateString()) : '—'} (§41); authority response due ${c.authorityResponseDueAt ? esc(new Date(c.authorityResponseDueAt).toDateString()) : '—'} (§41(6)).</p>
 
- <h2>Source records (${records.length})</h2>
- <table><tr><th>Date</th><th>Provider</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
- ${records.map((r) => { const pl = (r.payload ?? {}) as { transactionDate?: string }; return `<tr><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`; }).join('')}
- </table>
+   <h3>Basis — why flagged</h3>
+   <ul>${reasons.map((r) => `<li>${esc(r.label)} <span class="note">(${esc(r.code)})</span></li>`).join('') || '<li class="note">No reason codes.</li>'}</ul>
 
- <h2>Integrity</h2>
- <p class="muted">This bundle and its export are recorded in the tamper-evident, SHA-256 hash-chained audit trail.<br>
- Chain anchor: <code>${esc(anchor?.hashChainCurr ?? 'n/a')}</code></p>
+   <h3>AI analytics signals</h3>
+   <table><colgroup><col style="width:22%"><col style="width:16%"><col style="width:12%"><col style="width:50%"></colgroup>
+   <tr><th>Agent</th><th>Severity</th><th class="num">Score</th><th>Summary</th></tr>
+   ${signals.map((s) => `<tr><td>${esc(s.agentKey)}</td><td>${esc(s.severity)}</td><td class="num">${Math.round(Number(s.score) * 100)}%</td><td>${esc(s.summary)}</td></tr>`).join('') || '<tr><td colspan="4" class="note">No agent signals.</td></tr>'}
+   </table>
 
- <p class="muted noprint" style="margin-top:24px">Tip: use your browser's Print → Save as PDF to file this bundle.</p>
- <div class="wm">${esc(watermark)}</div>
+   <h3>Source records (${records.length})</h3>
+   <table><colgroup><col style="width:14%"><col style="width:26%"><col style="width:12%"><col style="width:18%"><col style="width:18%"><col style="width:12%"></colgroup>
+   <tr><th>Date</th><th>Provider</th><th>Period</th><th class="num">Inflow</th><th class="num">Outflow</th><th>Match</th></tr>
+   ${records.map((r) => { const pl = (r.payload ?? {}) as { transactionDate?: string }; return `<tr><td>${esc(pl.transactionDate ?? '—')}</td><td>${esc(r.provider?.name ?? r.providerType)}</td><td>${esc(r.periodLabel)}</td><td class="num">${ngn(r.totalInflow)}</td><td class="num">${ngn(r.totalOutflow)}</td><td>${esc(r.matchMethod ?? '—')}</td></tr>`; }).join('')}
+   </table>
+
+   <div class="sig">
+     <div class="line">Prepared by — Assessing Officer</div>
+     <div class="line">Approved by — Head of Enforcement</div>
+   </div>
+
+   <h3>Integrity &amp; chain of custody</h3>
+   <p class="note">This bundle and its export are recorded in the tamper-evident, SHA-256 hash-chained audit trail. Exported by <strong>${esc(staff.email ?? staff.id)}</strong> on ${genDate} ${genTime}.<br>
+   Chain anchor: <code>${esc(anchor?.hashChainCurr ?? 'n/a')}</code></p>
+
+   <div class="foot">
+     CONFIDENTIAL — Generated by ${esc(staff.email ?? staff.id)} · ${esc(now.toISOString())}. Unauthorised disclosure is an offence under the NTAA 2025 confidentiality provisions.
+   </div>
+  </div>
+ </div>
 </body></html>`;
     return html;
   }
