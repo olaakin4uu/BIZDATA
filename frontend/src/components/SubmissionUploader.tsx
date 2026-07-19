@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import Icon from '@/components/Icon';
 import { formatBytes, extractErrorMessage } from '@/lib/utils';
@@ -49,6 +49,29 @@ export default function SubmissionUploader({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const freq = (reportingFrequency || 'QUARTERLY').toUpperCase();
+
+  // A reporting period can only be submitted after it has fully ended — you
+  // cannot report a quarter/month that is still in progress or in the future.
+  // Offer only ended periods so the picker matches the server-side rule.
+  const now = new Date();
+  const quarterEnded = (q: number) =>
+    now >= new Date(Date.UTC(year, q * 3, 1)); // first day AFTER the quarter's last month
+  const monthEnded = (m: number) =>
+    now >= new Date(Date.UTC(year, m, 1)); // first day of the NEXT month
+  const availableQuarters = QUARTERS.filter(quarterEnded);
+  const availableMonths = MONTHS.filter((m) => monthEnded(m.num));
+
+  // Keep the current selection valid: if the selected period isn't available for
+  // the chosen year, snap to the latest ended one.
+  useEffect(() => {
+    if (freq === 'QUARTERLY' && availableQuarters.length && !availableQuarters.includes(quarter)) {
+      setQuarter(availableQuarters[availableQuarters.length - 1]);
+    }
+    if (freq === 'MONTHLY' && availableMonths.length && !availableMonths.some((m) => m.num === month)) {
+      setMonth(availableMonths[availableMonths.length - 1].num);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [year, freq]);
 
   const periodLabel = useMemo(() => {
     if (freq === 'MONTHLY') return `${year}-${String(month).padStart(2, '0')}`;
@@ -118,7 +141,7 @@ export default function SubmissionUploader({
             <div>
               <label className="block text-xs font-medium text-[var(--ink-2)] mb-1">Quarter</label>
               <select value={quarter} onChange={(e) => setQuarter(Number(e.target.value))} className={selectCls}>
-                {QUARTERS.map((q) => <option key={q} value={q}>Q{q}</option>)}
+                {availableQuarters.map((q) => <option key={q} value={q}>Q{q}</option>)}
               </select>
             </div>
           )}
@@ -126,7 +149,7 @@ export default function SubmissionUploader({
             <div>
               <label className="block text-xs font-medium text-[var(--ink-2)] mb-1">Month</label>
               <select value={month} onChange={(e) => setMonth(Number(e.target.value))} className={selectCls}>
-                {MONTHS.map((m) => <option key={m.num} value={m.num}>{m.label}</option>)}
+                {availableMonths.map((m) => <option key={m.num} value={m.num}>{m.label}</option>)}
               </select>
             </div>
           )}

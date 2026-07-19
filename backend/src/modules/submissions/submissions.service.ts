@@ -10,6 +10,7 @@ import {
   validateRow,
   missingRequiredColumns,
   parsePeriod,
+  periodHasEnded,
   normalizePeriodLabel,
   toDecimal,
   toInt,
@@ -73,6 +74,17 @@ export class SubmissionsService {
 
     const periodInfo = parsePeriod(opts.periodLabel);
     if (!periodInfo) throw new BadRequestException('Invalid periodLabel — use YYYY, YYYY-Qn, or YYYY-MM');
+
+    // ── NO FUTURE PERIODS ──
+    // A reporting period can only be submitted once it has fully ended. You
+    // cannot report a quarter that is still in progress or has not started
+    // (e.g. filing 2026-Q3 before 30 Sep). Applies to everyone, staff included.
+    if (!periodHasEnded(periodInfo)) {
+      throw new BadRequestException(
+        `${opts.periodLabel} has not ended yet — a reporting period can only be submitted after it closes. ` +
+        `Please submit once the period is over.`,
+      );
+    }
 
     // ── ONE SUBMISSION PER PERIOD ──
     // A provider may submit once per reporting period (quarter). A second/repeat
@@ -164,6 +176,13 @@ export class SubmissionsService {
     }
     const periodInfo = parsePeriod(opts.periodQuarter);
     if (!periodInfo) throw new BadRequestException('Invalid periodQuarter — use YYYY, YYYY-Qn, or YYYY-MM');
+
+    // No future periods — a period can only be ingested once it has ended.
+    if (!periodHasEnded(periodInfo)) {
+      throw new BadRequestException(
+        `${opts.periodQuarter} has not ended yet — a reporting period can only be submitted after it closes.`,
+      );
+    }
 
     // §6.4 checksum over the canonical records payload.
     if (opts.checksum) {

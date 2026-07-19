@@ -240,6 +240,8 @@ function exampleValue(c: FieldDef): string {
   if (n === 'residentialstate') return 'Kano';
   if (n === 'accounttype') return 'CURRENT';
   if (n === 'accountopeneddate') return '2021-03-15';
+  if (n === 'transactiondate') return '2026-03-15';
+  if (c.validation?.format === 'date') return '2026-03-15';
   if (n === 'reportingbranch') return 'Kano Main';
   if (c.type === 'decimal') {
     if (n.includes('opening')) return '10000';

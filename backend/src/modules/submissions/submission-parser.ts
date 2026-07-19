@@ -53,6 +53,11 @@ export const COMPULSORY_FIELD_ENFORCE_FROM = '2027-01-01';
 const COMMON_COLUMNS: FieldDef[] = [
   // Hard-required now, every provider type (user decision 2026-07-06).
   { name: 'nin', required: true, type: 'string', validation: { length: 11 } }, // National Identity Number (11 digits)
+  // Hard-required now: every transaction must carry the date it occurred, so it
+  // can be placed in the correct reporting period. Rows with a missing/blank
+  // transactionDate are rejected (user decision 2026-07-19 — the erev import
+  // left 72% of rows undated, which is what this prevents recurring).
+  { name: 'transactionDate', required: true, type: 'string', validation: { format: 'date' } }, // YYYY-MM-DD
   // Soft-required: warn now, hard-required from COMPULSORY_FIELD_ENFORCE_FROM.
   { name: 'sector', required: true, type: 'string', validation: { enforceFrom: COMPULSORY_FIELD_ENFORCE_FROM } },
   { name: 'businessType', required: true, type: 'string', validation: { enforceFrom: COMPULSORY_FIELD_ENFORCE_FROM } },
@@ -63,7 +68,6 @@ const COMMON_COLUMNS: FieldDef[] = [
   { name: 'phoneNumber', required: false, type: 'string' },     // contact MSISDN, e.g. 0803...
   { name: 'customerAddress', required: false, type: 'string' }, // account holder / customer address
   { name: 'customerEmail', required: false, type: 'string', validation: { format: 'email' } },
-  { name: 'transactionDate', required: false, type: 'string', validation: { format: 'date' } }, // YYYY-MM-DD
   { name: 'transactionDescription', required: false, type: 'string' }, // narrative / notes
   { name: 'currency', required: false, type: 'string', validation: { format: 'currency' } }, // ISO 4217, defaults NGN
   { name: 'conversionRate', required: false, type: 'decimal', validation: { min: 0 } }, // rate to NGN if currency ≠ NGN
@@ -543,6 +547,35 @@ export function normalizePeriodLabel(label: string): string | null {
   if (p.quarter) return `${p.year}-Q${p.quarter}`;
   if (p.month) return `${p.year}-${String(p.month).padStart(2, '0')}`;
   return `${p.year}`;
+}
+
+/**
+ * The last calendar day (UTC, end-of-day) of a parsed reporting period.
+ *  - quarter → 31 Mar / 30 Jun / 30 Sep / 31 Dec
+ *  - month   → last day of that month
+ *  - year    → 31 Dec
+ */
+export function periodEndDate(p: { year: number; quarter?: number; month?: number }): Date {
+  if (p.quarter) {
+    const endMonthExclusive = p.quarter * 3; // Q1→3, Q2→6, Q3→9, Q4→12
+    return new Date(Date.UTC(p.year, endMonthExclusive, 0, 23, 59, 59, 999));
+  }
+  if (p.month) {
+    return new Date(Date.UTC(p.year, p.month, 0, 23, 59, 59, 999));
+  }
+  return new Date(Date.UTC(p.year, 12, 0, 23, 59, 59, 999)); // 31 Dec
+}
+
+/**
+ * True if the reporting period has fully ended as of `now`. A provider may only
+ * submit for a period that is already closed — you cannot report a quarter that
+ * has not finished. (now defaults to the current time.)
+ */
+export function periodHasEnded(
+  p: { year: number; quarter?: number; month?: number },
+  now: Date = new Date(),
+): boolean {
+  return periodEndDate(p).getTime() <= now.getTime();
 }
 
 export function toDecimal(v: string | undefined): Prisma.Decimal | null {

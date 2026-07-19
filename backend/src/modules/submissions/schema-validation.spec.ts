@@ -3,10 +3,30 @@ import {
   missingRequiredColumns,
   parseFlexibleDate,
   parsePeriod,
+  periodHasEnded,
   normalizePeriodLabel,
   DEFAULT_SCHEMAS,
   type SchemaTemplate,
 } from './submission-parser';
+
+describe('periodHasEnded — no future-period submissions', () => {
+  const NOW = new Date('2026-07-19T00:00:00Z'); // mid-Q3 2026
+  const ended = (label: string) => periodHasEnded(parsePeriod(label)!, NOW);
+
+  it('allows periods that have fully ended', () => {
+    expect(ended('2026-Q1')).toBe(true);  // ended 31 Mar
+    expect(ended('2026-Q2')).toBe(true);  // ended 30 Jun
+    expect(ended('2026-01')).toBe(true);  // month, ended
+    expect(ended('2025')).toBe(true);     // prior year
+  });
+
+  it('blocks the current in-progress and future quarters', () => {
+    expect(ended('2026-Q3')).toBe(false); // ends 30 Sep — not over
+    expect(ended('2026-Q4')).toBe(false); // ends 31 Dec
+    expect(ended('2026-07')).toBe(false); // current month
+    expect(ended('2027')).toBe(false);    // future year
+  });
+});
 
 describe('parsePeriod / normalizePeriodLabel', () => {
   it.each([
@@ -67,6 +87,7 @@ function validBankRow(overrides: Record<string, string> = {}): Record<string, st
     customerType: 'CORPORATE',
     sector: 'TRADING',
     businessType: 'Retail shop',
+    transactionDate: '2026-01-15',
     periodLabel: '2026-Q1',
     totalInflow: '100000',
     openingBalance: '10000',
@@ -83,7 +104,7 @@ describe('validateRow — required fields (compulsory columns)', () => {
   });
 
   // Hard-required fields (no grace period) reject immediately when blank.
-  it.each(['nin', 'accountName', 'bvn', 'periodLabel'])(
+  it.each(['nin', 'accountName', 'bvn', 'periodLabel', 'transactionDate'])(
     'rejects a row missing the hard-required field "%s"',
     (field) => {
       const { ok, errors } = validateRow(validBankRow({ [field]: '' }), BANK);
@@ -177,13 +198,17 @@ describe('validateRow — format checks', () => {
     }
   });
 
-  it('does NOT reject an unparseable OPTIONAL date — warns and leaves it as-is', () => {
+  it('rejects an unparseable transactionDate (now hard-required)', () => {
     const row = validBankRow({ transactionDate: 'sometime in March' });
-    const { ok, errors, warnings } = validateRow(row, BANK);
-    expect(ok).toBe(true); // optional metadata → not a file-killer
-    expect(errors).toEqual([]);
-    expect(warnings.some((w) => w.includes('transactionDate'))).toBe(true);
-    expect(row.transactionDate).toBe('sometime in March'); // left untouched
+    const { ok, errors } = validateRow(row, BANK);
+    expect(ok).toBe(false); // required + unparseable → file-killer
+    expect(errors.some((e) => e.includes('transactionDate') && e.includes('valid date'))).toBe(true);
+  });
+
+  it('rejects a blank transactionDate (now hard-required)', () => {
+    const { ok, errors } = validateRow(validBankRow({ transactionDate: '' }), BANK);
+    expect(ok).toBe(false);
+    expect(errors).toContain('transactionDate is required');
   });
 
   it('rejects non-numeric amounts and enforces min', () => {
