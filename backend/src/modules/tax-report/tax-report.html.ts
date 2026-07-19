@@ -31,7 +31,7 @@ export function renderTaxReportHtml(r: any): string {
     `<tr><td>${c.year}</td><td>${esc(c.status)}</td><td>${esc(c.riskLevel)}</td><td class="num">${ngn(c.observedIncome)}</td><td class="num">${ngn(c.declaredIncome)}</td><td class="num warn">${ngn(c.estimatedTaxDue)}</td></tr>`).join('')
     || '<tr><td colspan="6" class="muted">No cases.</td></tr>';
 
-  return `<!doctype html><html><head><meta charset="utf-8"><title>Tax Report — ${esc(t.name)}</title>
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Tax Report — ${esc(t.name)}</title>
 <style>
   body{font:13px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;color:#0f172a;max-width:900px;margin:24px auto;padding:0 20px}
   h1{font-size:20px;margin:0 0 2px} h2{font-size:14px;margin:22px 0 8px;border-bottom:2px solid #0ea5e9;padding-bottom:4px;color:#0369a1}

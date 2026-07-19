@@ -207,12 +207,13 @@ export class CasesService {
     const now = new Date();
     const watermark = `${staff.email ?? staff.id} · ${now.toISOString()}`;
 
-    const html = `<!doctype html><html><head><meta charset="utf-8"><title>Evidence Bundle ${esc(c.demandNoticeRef ?? c.id)}</title>
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Evidence Bundle ${esc(c.demandNoticeRef ?? c.id)}</title>
 <style>
- body{font-family:Segoe UI,Arial,sans-serif;color:#1e293b;max-width:820px;margin:24px auto;padding:0 24px;font-size:13px}
+ *{box-sizing:border-box}
+ body{font-family:Segoe UI,Arial,sans-serif;color:#1e293b;max-width:820px;width:100%;margin:24px auto;padding:0 24px;font-size:13px;word-wrap:break-word}
  h1{font-size:20px;margin:0} h2{font-size:14px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;margin-top:24px}
  .muted{color:#64748b;font-size:11px} .tag{display:inline-block;background:#fee2e2;color:#991b1b;font-size:10px;padding:2px 8px;border-radius:10px;text-transform:uppercase;letter-spacing:.05em}
- table{width:100%;border-collapse:collapse;margin-top:8px} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #f1f5f9} th{font-size:10px;text-transform:uppercase;color:#64748b}
+ table{width:100%;border-collapse:collapse;margin-top:8px;table-layout:fixed} th,td{text-align:left;padding:6px 8px;border-bottom:1px solid #f1f5f9;overflow-wrap:anywhere} th{font-size:10px;text-transform:uppercase;color:#64748b}
  .num{text-align:right} .tot{font-weight:700;color:#991b1b}
  .wm{position:fixed;bottom:8px;right:8px;color:#cbd5e1;font-size:9px} .box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:12px;margin-top:8px}
  @media print{.noprint{display:none}}
