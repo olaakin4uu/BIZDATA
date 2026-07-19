@@ -10,6 +10,7 @@ import {
   type FairnessResult,
   type SectorOverride,
 } from '@/lib/api/modelFeedback';
+import { extractErrorMessage } from '@/lib/utils';
 
 const YEARS = [2026, 2025, 2024];
 
@@ -75,12 +76,13 @@ function FeedbackLoop({ year }: { year: number }) {
   const [fb, setFb] = useState<FeedbackReport | null>(null);
   const [overrides, setOverrides] = useState<SectorOverride[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const reload = useCallback(() => {
-    setLoading(true);
+    setLoading(true); setLoadErr(null);
     Promise.all([modelFeedbackApi.feedback(year), modelFeedbackApi.overrides()])
       .then(([f, o]) => { setFb(f); setOverrides(o); })
-      .catch(() => { setFb(null); setOverrides([]); })
+      .catch((e) => { setFb(null); setOverrides([]); setLoadErr(extractErrorMessage(e)); })
       .finally(() => setLoading(false));
   }, [year]);
 
@@ -108,6 +110,11 @@ function FeedbackLoop({ year }: { year: number }) {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {loading ? (
           <p className="text-xs text-slate-400 p-6">Loading feedback…</p>
+        ) : loadErr ? (
+          <div className="p-6">
+            <p className="text-sm text-rose-600">Couldn’t load the feedback loop: {loadErr}</p>
+            <button onClick={reload} className="text-xs text-teal-700 hover:underline font-medium mt-1">Retry</button>
+          </div>
         ) : !fb || fb.sectors.length === 0 ? (
           <p className="text-sm text-slate-500 p-6">No analyst decisions recorded for {year} yet. Clear or confirm flagged cases to start training the model.</p>
         ) : (

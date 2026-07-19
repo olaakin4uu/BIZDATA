@@ -24,8 +24,11 @@ export default function TwoFactorPanel() {
 
   const refresh = () => {
     authApi.staffMe()
-      .then((u) => { setEnabled(!!u.mfaEnabled); setRemaining(u.recoveryCodesRemaining ?? 0); })
-      .catch(() => setEnabled(false));
+      .then((u) => { setEnabled(!!u.mfaEnabled); setRemaining(u.recoveryCodesRemaining ?? 0); setErr(null); })
+      // Don't silently claim 2FA is OFF on a fetch failure — that misrepresents
+      // the real state and could invite a bogus re-enrolment. Keep it unknown
+      // (null) and surface the error.
+      .catch((e) => { setEnabled(null); setErr(extractErrorMessage(e)); });
   };
   useEffect(refresh, []);
 

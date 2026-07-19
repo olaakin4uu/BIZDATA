@@ -5,7 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import type { Submission } from '@/lib/api/submissions';
-import { SUBMISSION_STATUSES, formatDate, formatBytes, statusBadge } from '@/lib/utils';
+import { SUBMISSION_STATUSES, formatDate, formatBytes, statusBadge, extractErrorMessage } from '@/lib/utils';
 
 export default function ProviderSubmissionsPage() {
   const [rows, setRows] = useState<Submission[]>([]);
@@ -13,14 +13,15 @@ export default function ProviderSubmissionsPage() {
   const [page, setPage] = useState(1);
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const limit = 25;
 
   const load = () => {
-    setLoading(true);
+    setLoading(true); setErr(null);
     providerPortalApi
       .listSubmissions({ status: status || undefined, page, limit })
       .then((r) => { setRows(r.submissions); setTotal(r.total); })
-      .catch(() => { setRows([]); setTotal(0); })
+      .catch((e) => { setRows([]); setTotal(0); setErr(extractErrorMessage(e)); })
       .finally(() => setLoading(false));
   };
 
@@ -74,12 +75,19 @@ export default function ProviderSubmissionsPage() {
         </div>
       </div>
 
+      {err && (
+        <div className="mb-3 px-4 py-3 bg-[var(--bad-soft)] border border-rose-200 rounded-lg text-sm text-rose-700 flex items-center justify-between">
+          <span>Couldn’t load your submissions: {err}</span>
+          <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium">Retry</button>
+        </div>
+      )}
+
       <DataTable
         columns={columns}
         rows={rows}
         rowKey={(r) => r.id}
         loading={loading}
-        emptyText="No submissions yet."
+        emptyText={err ? 'Unable to load submissions.' : 'No submissions yet.'}
         total={total}
         page={page}
         limit={limit}
