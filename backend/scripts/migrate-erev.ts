@@ -304,6 +304,20 @@ async function migrateTransactions(providerMap: Map<number, string>) {
     }
   }
 
+  // Pre-create every needed (provider, period) submission SERIALLY, before the
+  // parallel record loop. The record loop below runs rows concurrently, and a
+  // find-then-create inside getOrCreateSubmission would race — many concurrent
+  // rows for the same (provider, period) all miss and each create a duplicate
+  // submission (the "358 duplicate uploads" bug). Doing it serially here makes
+  // every subsequent getOrCreateSubmission a guaranteed cache hit.
+  for (const row of rows) {
+    const providerId = providerMap.get(row.kirs_institution_id);
+    if (!providerId) continue;
+    const fallbackYear = row.transaction_year ?? new Date(row.created_at).getFullYear();
+    const period = periodFromRow(row, fallbackYear, now);
+    await getOrCreateSubmission(providerId, period.label, period.year);
+  }
+
   // Process in batches to avoid overwhelming the DB
   const BATCH = 200;
   for (let i = 0; i < rows.length; i += BATCH) {
@@ -317,6 +331,7 @@ async function migrateTransactions(providerMap: Map<number, string>) {
         // Reporting period from the transaction date: ended quarter → real quarter;
         // future/not-ended quarter or undated → fallback period (2026-Q2), flagged.
         const period = periodFromRow(row, fallbackYear, now);
+        // Guaranteed cache hit — submissions were pre-created serially above.
         const submissionId = await getOrCreateSubmission(providerId, period.label, period.year);
         const taxpayerId   = await findOrCreateTaxpayer(row);
 
