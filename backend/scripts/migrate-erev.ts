@@ -50,6 +50,27 @@ function defaultPeriodLabel(year: number): string {
   return `${year}-Q${q}`;
 }
 
+// Derive the TRUE reporting period for a record from its erev transaction_date.
+// A dated row lands in its real quarter (YYYY-Qn); an undated row (transaction_date
+// NULL — ~72% of the erev dataset) goes to an annual "undated" bucket for its year
+// (YYYY), so it never falsely claims a specific quarter. Override the undated
+// bucket with UNDATED_PERIOD_LABEL if desired.
+function periodFromRow(row: any, fallbackYear: number): { label: string; year: number } {
+  const raw = row.transaction_date;
+  if (raw) {
+    const d = raw instanceof Date ? raw : new Date(String(raw));
+    if (!isNaN(d.getTime())) {
+      const y = d.getUTCFullYear();
+      const q = Math.floor(d.getUTCMonth() / 3) + 1;
+      return { label: `${y}-Q${q}`, year: y };
+    }
+  }
+  // Undated: annual bucket for the row's year (transaction_year, else created_at year).
+  const y = row.transaction_year ?? fallbackYear;
+  const undatedLabel = process.env.UNDATED_PERIOD_LABEL?.trim() || `${y}`;
+  return { label: undatedLabel, year: y };
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 function toProviderType(type: string): ProviderType {
   switch (type) {
@@ -175,20 +196,20 @@ async function migrateTransactions(providerMap: Map<number, string>) {
   let recordsCreated   = 0;
   let recordsSkipped   = 0;
 
-  // Build a submission per (institution, year) so records group logically
-  const submissionCache = new Map<string, string>(); // `${providerId}:${year}` → submissionId
+  // One submission per (institution, PERIOD) so records group into their true
+  // reporting quarter (or the undated annual bucket), not one blanket period.
+  const submissionCache = new Map<string, string>(); // `${providerId}:${periodLabel}` → submissionId
 
-  async function getOrCreateSubmission(providerId: string, year: number): Promise<string> {
-    const key = `${providerId}:${year}`;
+  async function getOrCreateSubmission(providerId: string, periodLabel: string, year: number): Promise<string> {
+    const key = `${providerId}:${periodLabel}`;
     if (submissionCache.has(key)) return submissionCache.get(key)!;
 
-    const periodLabel = defaultPeriodLabel(year);
     // Idempotent across re-runs: the in-memory cache is empty on a fresh run, so
     // also look in the DB for an existing submission for this provider+period.
     // Without this, every re-import created a NEW submission per record batch,
     // producing hundreds of duplicate 1-record "uploads" for the same quarter.
     const existing = await prisma.dataSubmission.findFirst({
-      where: { providerId, periodYear: year, periodLabel },
+      where: { providerId, periodLabel },
       select: { id: true },
     });
     if (existing) {
@@ -277,8 +298,10 @@ async function migrateTransactions(providerMap: Map<number, string>) {
         const providerId = providerMap.get(row.kirs_institution_id);
         if (!providerId) { recordsSkipped++; return; }
 
-        const year = row.transaction_year ?? new Date(row.created_at).getFullYear();
-        const submissionId = await getOrCreateSubmission(providerId, year);
+        const fallbackYear = row.transaction_year ?? new Date(row.created_at).getFullYear();
+        // True reporting period from the transaction date (undated → annual bucket).
+        const period = periodFromRow(row, fallbackYear);
+        const submissionId = await getOrCreateSubmission(providerId, period.label, period.year);
         const taxpayerId   = await findOrCreateTaxpayer(row);
 
         // Blind index for account number dedup
@@ -297,8 +320,8 @@ async function migrateTransactions(providerMap: Map<number, string>) {
             bvn:            row.bvn ?? undefined,
             nin:            row.nin ?? undefined,
             phoneNumber:    row.phone ?? undefined,
-            periodLabel:    defaultPeriodLabel(year),
-            periodYear:     year,
+            periodLabel:    period.label,
+            periodYear:     period.year,
             matchMethod:    taxpayerId ? (row.bvn ? 'BVN' : row.tin ? 'TIN' : 'NAME') : 'UNMATCHED',
             matchConfidence: taxpayerId ? 0.9 : 0.0,
             accountIndex:   acctIdx ?? undefined,
