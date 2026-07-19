@@ -4,10 +4,37 @@ import {
   parseFlexibleDate,
   parsePeriod,
   periodHasEnded,
+  dateInPeriod,
   normalizePeriodLabel,
   DEFAULT_SCHEMAS,
   type SchemaTemplate,
 } from './submission-parser';
+
+describe('dateInPeriod — transaction date must match the reported period', () => {
+  it('accepts dates inside the quarter being reported', () => {
+    expect(dateInPeriod('2026-04-01', '2026-Q2')).toBe(true); // first day of Q2
+    expect(dateInPeriod('2026-06-30', '2026-Q2')).toBe(true); // last day of Q2
+    expect(dateInPeriod('15/05/2026', '2026-Q2')).toBe(true); // DD/MM/YYYY inside Q2
+  });
+
+  it('rejects dates from a different or future quarter', () => {
+    expect(dateInPeriod('2026-03-31', '2026-Q2')).toBe(false); // Q1 date in a Q2 file
+    expect(dateInPeriod('2026-07-01', '2026-Q2')).toBe(false); // Q3 (future) date in a Q2 file
+    expect(dateInPeriod('2026-10-15', '2026-Q2')).toBe(false); // Q4 date in a Q2 file
+    expect(dateInPeriod('2025-06-15', '2026-Q2')).toBe(false); // right quarter, wrong year
+  });
+
+  it('respects month and year periods', () => {
+    expect(dateInPeriod('2026-01-15', '2026-01')).toBe(true);
+    expect(dateInPeriod('2026-02-01', '2026-01')).toBe(false);
+    expect(dateInPeriod('2026-11-11', '2026')).toBe(true); // annual bucket
+  });
+
+  it('returns null when the date or period is unparseable', () => {
+    expect(dateInPeriod('not a date', '2026-Q2')).toBeNull();
+    expect(dateInPeriod('2026-05-01', 'garbage')).toBeNull();
+  });
+});
 
 describe('periodHasEnded — no future-period submissions', () => {
   const NOW = new Date('2026-07-19T00:00:00Z'); // mid-Q3 2026

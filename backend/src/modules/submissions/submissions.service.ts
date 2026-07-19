@@ -11,6 +11,7 @@ import {
   missingRequiredColumns,
   parsePeriod,
   periodHasEnded,
+  dateInPeriod,
   normalizePeriodLabel,
   toDecimal,
   toInt,
@@ -485,6 +486,15 @@ export class SubmissionsService {
         const { errors: errs, warnings: warns } = validateRow(row, schema, validationCtx);
         msgs.push(...errs);
         if (!parsePeriod(row.periodLabel)) msgs.push('Invalid periodLabel');
+        // The transaction date must fall inside the period being reported — a
+        // provider cannot file (say) 2026-Q2 with rows dated in a different or
+        // future quarter. transactionDate is already required + parsed above.
+        if (row.transactionDate) {
+          const inPeriod = dateInPeriod(row.transactionDate, row.periodLabel);
+          if (inPeriod === false) {
+            msgs.push(`transactionDate ${row.transactionDate} is outside the reporting period ${row.periodLabel}`);
+          }
+        }
         const integrity = validateIngestionRow(row as any, providerType, row.bankCode || providerCode);
         if (enforceBvnCheckDigit && row.bvn && !isValidBvnModulo11(row.bvn)) {
           integrity.push('BVN fails modulo-11 check digit');

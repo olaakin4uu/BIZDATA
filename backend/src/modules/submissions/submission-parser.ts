@@ -566,6 +566,34 @@ export function periodEndDate(p: { year: number; quarter?: number; month?: numbe
   return new Date(Date.UTC(p.year, 12, 0, 23, 59, 59, 999)); // 31 Dec
 }
 
+/** The first calendar day (UTC, start-of-day) of a parsed reporting period. */
+export function periodStartDate(p: { year: number; quarter?: number; month?: number }): Date {
+  if (p.quarter) {
+    const startMonth = (p.quarter - 1) * 3; // Q1→0(Jan), Q2→3(Apr), Q3→6(Jul), Q4→9(Oct)
+    return new Date(Date.UTC(p.year, startMonth, 1, 0, 0, 0, 0));
+  }
+  if (p.month) {
+    return new Date(Date.UTC(p.year, p.month - 1, 1, 0, 0, 0, 0));
+  }
+  return new Date(Date.UTC(p.year, 0, 1, 0, 0, 0, 0)); // 1 Jan
+}
+
+/**
+ * True if a transaction date (any parseable form) falls WITHIN the reporting
+ * period being submitted. Used to reject rows whose date belongs to a different
+ * (e.g. future) quarter than the return — you cannot file Q2 with Q3/Q4 rows.
+ * Returns null when either the date or the period can't be parsed (caller
+ * decides — usually a separate "invalid date/period" error already fired).
+ */
+export function dateInPeriod(dateStr: string, periodLabel: string): boolean | null {
+  const iso = parseFlexibleDate(dateStr);
+  const period = parsePeriod(periodLabel);
+  if (!iso || !period) return null;
+  const t = new Date(`${iso}T00:00:00.000Z`).getTime();
+  if (Number.isNaN(t)) return null;
+  return t >= periodStartDate(period).getTime() && t <= periodEndDate(period).getTime();
+}
+
 /**
  * True if the reporting period has fully ended as of `now`. A provider may only
  * submit for a period that is already closed — you cannot report a quarter that
