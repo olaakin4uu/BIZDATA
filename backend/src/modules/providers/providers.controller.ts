@@ -27,6 +27,12 @@ export class ProvidersController {
     return this.service.create(dto, u.id);
   }
 
+  @Post(':id/grant-resubmit')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  grantResubmit(@Param('id') id: string, @Body() dto: { periodLabel: string; reason?: string }, @CurrentStaff() u: any) {
+    return this.service.grantResubmit(id, dto?.periodLabel, dto?.reason, u.id);
+  }
+
   @Get('stats')
   stats() {
     return this.service.stats();

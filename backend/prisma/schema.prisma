@@ -343,6 +343,23 @@ model TaxPayment {
 
 // ─── SUBMISSIONS ─────────────────────────────────────────────────────────────
 
+/// A tax-authority admin's one-time grant allowing a provider to (re)submit for a
+/// specific quarter that is otherwise locked (one-submission-per-period rule).
+/// Consumed when the provider next submits for that period.
+model ResubmitPermission {
+  id          String   @id @default(uuid())
+  providerId  String
+  periodLabel String   // the quarter unlocked, e.g. "2026-Q2"
+  reason      String?
+  grantedById String   // staff (SUPER_ADMIN/ADMIN) who granted it
+  consumed    Boolean  @default(false)
+  consumedAt  DateTime?
+  createdAt   DateTime @default(now())
+
+  @@index([providerId, periodLabel, consumed])
+  @@map("resubmit_permissions")
+}
+
 model DataSubmission {
   id              String           @id @default(uuid())
   providerId      String
@@ -745,11 +762,13 @@ model Notification {
   entityId   String?
   targetRole String?  // null = all staff
   targetUserId String? // when set, this notification is for one specific staff member
+  targetProviderId String? // when set, this notification is for a data provider (portal)
   read       Boolean  @default(false)
   createdAt  DateTime @default(now())
 
   @@index([read, createdAt])
   @@index([targetUserId, read])
+  @@index([targetProviderId, read])
   @@map("notifications")
 }
 

@@ -131,7 +131,20 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
         </section>
       )}
 
-      {sub.records && sub.records.length > 0 && (
+      {sub.accessLocked && (
+        <section>
+          <div className="rounded-xl border border-slate-300 bg-slate-50 px-4 py-4">
+            <p className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+              <Icon name="shield" width={16} height={16} /> 🔒 Submission sealed
+            </p>
+            <p className="mt-1 text-xs leading-relaxed text-slate-600">
+              {sub.lockedMessage ?? 'The 1-hour review window after submission has elapsed, so the uploaded records are no longer accessible from the portal.'}
+            </p>
+          </div>
+        </section>
+      )}
+
+      {!sub.accessLocked && sub.records && sub.records.length > 0 && (
         <section>
           <div className="mb-3 flex items-baseline justify-between gap-3">
             <h2 className="flex items-center gap-2 text-sm font-semibold text-[var(--ink)]">

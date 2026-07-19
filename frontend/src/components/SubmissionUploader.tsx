@@ -223,6 +223,22 @@ export default function SubmissionUploader({
               Every row must be valid for the file to be accepted. Fix the rows listed below and re-upload.
             </p>
           )}
+          {!rejected && (
+            <div className="mt-3 rounded-lg border border-emerald-300 bg-emerald-50/70 px-3 py-2.5">
+              <p className="flex items-center gap-2 text-xs font-semibold text-emerald-800">
+                <Icon name="shield" width={14} height={14} /> 🔒 Encrypted & secured
+              </p>
+              <p className="mt-1 text-[11px] leading-relaxed text-emerald-700">
+                Your data was transmitted over TLS and every sensitive field (BVN, NIN, account numbers) is encrypted
+                at rest with AES-256 and stored under strict access controls. A tamper-evident receipt has been issued
+                as your proof of filing{result.receiptHash ? <> — <span className="font-mono">{String(result.receiptHash).slice(0, 16)}…</span></> : null}.
+              </p>
+              <p className="mt-1.5 text-[11px] leading-relaxed text-slate-600">
+                ⏱ You can review this submission for <b>1 hour</b>; after that the records are sealed (your receipt stays as proof).
+                &nbsp;📌 Data may be submitted <b>once per reporting period</b> — a resubmission requires authorisation from the Tax Authority (KIRS).
+              </p>
+            </div>
+          )}
           <Link
             href={`${submissionLinkPrefix}/${result.id}`}
             className={`mt-3 inline-block text-xs font-medium underline ${tone.head}`}

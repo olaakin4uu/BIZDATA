@@ -304,4 +304,31 @@ export class ProvidersService {
     const safeName = (submission.provider?.name ?? 'provider').replace(/[^a-z0-9]+/gi, '_');
     return { filename: `${safeName}_${submission.periodLabel}.csv`, csv: lines.join('\n') };
   }
+
+  // ── Grant a one-time resubmission permission for a provider + period ──
+  // Only SUPER_ADMIN/ADMIN. Creates the grant (consumed on the provider's next
+  // submission for that period) and posts a portal notice to the provider.
+  async grantResubmit(providerId: string, periodLabel: string, reason: string | undefined, staffId: string) {
+    const provider = await this.prisma.dataProvider.findUnique({ where: { id: providerId }, select: { id: true, name: true } });
+    if (!provider) throw new NotFoundException('Provider not found');
+    if (!/^\d{4}(-Q[1-4]|-\d{2})?$/.test(periodLabel)) throw new BadRequestException('Invalid periodLabel');
+
+    const grant = await this.prisma.resubmitPermission.create({
+      data: { providerId, periodLabel, reason: reason ?? null, grantedById: staffId },
+    });
+    await this.prisma.notification.create({
+      data: {
+        type: 'RESUBMIT_PERMISSION', severity: 'INFO',
+        title: `Resubmission authorised for ${periodLabel}`,
+        message: `The Tax Authority has authorised a one-time resubmission for ${periodLabel}. You may now upload a replacement submission for this period. This authorisation is consumed once used.`,
+        entity: 'ResubmitPermission', entityId: grant.id, targetProviderId: providerId,
+      },
+    });
+    await this.audit.log({
+      actorType: 'STAFF', actorId: staffId, staffId,
+      action: 'GRANT_RESUBMIT_PERMISSION', entity: 'ResubmitPermission', entityId: grant.id,
+      afterJson: { providerId, periodLabel, reason: reason ?? null },
+    });
+    return grant;
+  }
 }

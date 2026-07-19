@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -73,6 +73,32 @@ export class SubmissionsService {
 
     const periodInfo = parsePeriod(opts.periodLabel);
     if (!periodInfo) throw new BadRequestException('Invalid periodLabel — use YYYY, YYYY-Qn, or YYYY-MM');
+
+    // ── ONE SUBMISSION PER PERIOD ──
+    // A provider may submit once per reporting period (quarter). A second/repeat
+    // submission is blocked unless a tax-authority admin has granted a one-time
+    // resubmit permission for that provider+period (which is then consumed).
+    // Staff uploads (submittedByStaffId) bypass this — the authority is in control.
+    if (!opts.submittedByStaffId) {
+      const priorForPeriod = await this.prisma.dataSubmission.findFirst({
+        where: { providerId: opts.providerId, periodLabel: opts.periodLabel, status: { not: 'REJECTED' } },
+        select: { id: true },
+      });
+      if (priorForPeriod) {
+        const grant = await this.prisma.resubmitPermission.findFirst({
+          where: { providerId: opts.providerId, periodLabel: opts.periodLabel, consumed: false },
+          orderBy: { createdAt: 'desc' }, select: { id: true },
+        });
+        if (!grant) {
+          throw new ForbiddenException(
+            `A submission for ${opts.periodLabel} already exists. Data can only be submitted once per reporting period. ` +
+            `To submit again for this period you need authorisation from the ${'Tax Authority'} — please request a resubmission permission from KIRS.`,
+          );
+        }
+        // Consume the one-time grant.
+        await this.prisma.resubmitPermission.update({ where: { id: grant.id }, data: { consumed: true, consumedAt: new Date() } });
+      }
+    }
 
     const submission = await this.prisma.dataSubmission.create({
       data: {

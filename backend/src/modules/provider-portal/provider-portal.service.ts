@@ -179,11 +179,31 @@ export class ProviderPortalService {
       },
     });
     if (!submission) throw new NotFoundException('Submission not found');
+
+    // ── 1-HOUR ACCESS WINDOW ──
+    // A provider can review its submitted data for one hour after submission;
+    // after that the data is sealed (the provider holds the source on their side).
+    // The receipt/proof of submission remains visible — only the records lock.
+    const ONE_HOUR = 60 * 60 * 1000;
+    const locked = Date.now() - new Date(submission.receivedAt).getTime() > ONE_HOUR;
+    if (locked) {
+      const { records: _r, ...meta } = submission;
+      return {
+        ...meta,
+        records: [],
+        accessLocked: true,
+        lockedMessage:
+          'This submission is now sealed. The 1-hour review window after submission has elapsed, so the uploaded records are no longer accessible from the provider portal. Your encrypted submission receipt below is your proof of filing.',
+        receiptHash: submission.receiptHash,
+      };
+    }
+
     // Providers only ever see MASKED PII in the portal — even for their own
     // submitted data (they hold the source on their side). No reveal path, so no
     // step-up needed. Decrypt-then-mask so the cleartext never leaves the server.
     return {
       ...submission,
+      accessLocked: false,
       records: submission.records.map((r) => ({
         ...r,
         accountNumber: this.pii.mask(this.crypto.decrypt(r.accountNumber), 'account'),

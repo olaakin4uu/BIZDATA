@@ -20,6 +20,8 @@ export interface Submission {
   status: string;
   receiptHash?: string | null;       // §6.5 acknowledgment receipt
   resubmitDueAt?: string | null;     // §6.5 deadline to resubmit a rejected/partial file
+  accessLocked?: boolean;            // true once the 1-hour provider review window elapsed
+  lockedMessage?: string | null;
   receivedAt: string;
   processedAt?: string | null;
   createdAt: string;

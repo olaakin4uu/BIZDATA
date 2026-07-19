@@ -4,9 +4,10 @@ import { SchedulerController } from './scheduler.controller';
 import { ScanModule } from '../scan/scan.module';
 import { AgentsModule } from '../agents/agents.module';
 import { CasesModule } from '../cases/cases.module';
+import { ProvidersModule } from '../providers/providers.module';
 
 @Module({
-  imports: [ScanModule, AgentsModule, CasesModule],
+  imports: [ScanModule, AgentsModule, CasesModule, ProvidersModule],
   controllers: [SchedulerController],
   providers: [SchedulerService],
 })
