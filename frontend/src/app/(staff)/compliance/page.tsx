@@ -8,6 +8,7 @@ import {
   type ProviderCompliance,
   type PeriodStatus,
 } from '@/lib/api/compliance';
+import { extractErrorMessage } from '@/lib/utils';
 
 const YEARS = [2026, 2025, 2024];
 
@@ -19,16 +20,19 @@ const STATUS_DOT: Record<PeriodStatus, string> = {
 };
 
 export default function CompliancePage() {
-  const [year, setYear] = useState(2025);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
   const [rows, setRows] = useState<ProviderCompliance[] | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => {
-    setSummary(null);
-    setRows(null);
+  const load = () => {
+    setSummary(null); setRows(null); setErr(null);
     complianceApi.summary(year).then(setSummary).catch(() => setSummary(null));
-    complianceApi.list(year).then(setRows).catch(() => setRows([]));
-  }, [year]);
+    complianceApi.list(year)
+      .then((r) => setRows(r))
+      .catch((e) => { setRows([]); setErr(extractErrorMessage(e)); });
+  };
+  useEffect(load, [year]);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -54,9 +58,14 @@ export default function CompliancePage() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {rows === null ? (
+        {rows === null && !err ? (
           <p className="text-xs text-slate-400 p-6">Loading…</p>
-        ) : rows.length === 0 ? (
+        ) : err ? (
+          <div className="p-6 text-center">
+            <p className="text-sm text-rose-600">Couldn’t load compliance data: {err}</p>
+            <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium mt-1">Retry</button>
+          </div>
+        ) : rows!.length === 0 ? (
           <p className="text-xs text-slate-400 p-6">No active providers.</p>
         ) : (
           <div className="overflow-x-auto">
@@ -74,7 +83,7 @@ export default function CompliancePage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r) => (
+                {rows!.map((r) => (
                   <tr key={r.provider.id} className="border-b border-slate-50 hover:bg-slate-50">
                     <td className="py-2.5 px-4 font-medium text-slate-800">{r.provider.name}</td>
                     <td className="py-2.5 px-4 text-xs text-slate-500">{r.provider.reportingFrequency}</td>

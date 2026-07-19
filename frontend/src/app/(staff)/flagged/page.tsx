@@ -24,13 +24,14 @@ export default function FlaggedReviewPage() {
   const [rows, setRows] = useState<DataRecord[]>([]);
   const [stats, setStats] = useState<DataRecordStats | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
   const [confirmAction, setConfirmAction] = useState<ConfirmAction>(null);
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = () => {
-    setLoading(true);
+    setLoading(true); setLoadErr(null);
     Promise.all([
       dataRecordsApi.list({ flagged: 'true', reviewStatus: 'PENDING_REVIEW', limit: 100 }),
       dataRecordsApi.stats(),
@@ -39,9 +40,10 @@ export default function FlaggedReviewPage() {
         setRows(r.records);
         setStats(s);
       })
-      .catch(() => {
+      .catch((e) => {
         setRows([]);
         setStats(null);
+        setLoadErr(extractErrorMessage(e));
       })
       .finally(() => setLoading(false));
   };
@@ -97,6 +99,12 @@ export default function FlaggedReviewPage() {
 
       {loading ? (
         <LoadingSpinner />
+      ) : loadErr ? (
+        <div className="rounded-xl border border-rose-200 bg-rose-50 py-16 text-center">
+          <p className="text-sm font-medium text-rose-700">Couldn’t load flagged records</p>
+          <p className="mt-1 text-xs text-rose-600">{loadErr}</p>
+          <button onClick={load} className="mt-2 text-xs font-medium text-teal-700 hover:underline">Retry</button>
+        </div>
       ) : rows.length === 0 ? (
         <div className="rounded-xl border border-[var(--line)] bg-[var(--surface)] py-16 text-center">
           <span className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-[var(--ok-soft)] text-[var(--ok)]">

@@ -12,15 +12,17 @@ const STATUS: Record<string, string> = {
 };
 
 export default function CrossStatePage() {
-  const [year, setYear] = useState(2025);
+  const [year, setYear] = useState(new Date().getFullYear());
   const [candidates, setCandidates] = useState<ReferralCandidate[] | null>(null);
   const [refs, setRefs] = useState<Referral[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
   const load = () => {
-    crossStateApi.candidates(year).then(setCandidates).catch(() => setCandidates([]));
-    crossStateApi.list().then(setRefs).catch(() => setRefs([]));
+    setErr(null);
+    crossStateApi.candidates(year).then(setCandidates).catch((e) => { setCandidates([]); setErr(extractErrorMessage(e)); });
+    crossStateApi.list().then(setRefs).catch((e) => { setRefs([]); setErr(extractErrorMessage(e)); });
   };
   useEffect(load, [year]);
 
@@ -45,6 +47,12 @@ export default function CrossStatePage() {
         </div>
       </div>
       {msg && <p className="text-xs text-teal-700 mt-2">{msg}</p>}
+      {err && (
+        <div className="mt-3 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 flex items-center justify-between">
+          <span>Couldn’t load referral data: {err}</span>
+          <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium">Retry</button>
+        </div>
+      )}
 
       <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mt-6 mb-3">Candidates — non-FCT residents with flagged cases</h2>
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">

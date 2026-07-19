@@ -18,10 +18,12 @@ export default function PortfoliosPage() {
   const [portfolios, setPortfolios] = useState<Portfolio[] | null>(null);
   const [showAssign, setShowAssign] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
+  const [loadErr, setLoadErr] = useState<string | null>(null);
 
   const load = () => {
-    portfoliosApi.workload().then(setWorkload).catch(() => setWorkload([]));
-    portfoliosApi.list().then(setPortfolios).catch(() => setPortfolios([]));
+    setLoadErr(null);
+    portfoliosApi.workload().then(setWorkload).catch((e) => { setWorkload([]); setLoadErr(extractErrorMessage(e)); });
+    portfoliosApi.list().then(setPortfolios).catch((e) => { setPortfolios([]); setLoadErr(extractErrorMessage(e)); });
   };
   useEffect(load, []);
 
@@ -53,6 +55,12 @@ export default function PortfoliosPage() {
       </div>
 
       {msg && <div className="mb-4 text-sm bg-purple-50 border border-purple-200 text-purple-800 rounded-lg px-4 py-2">{msg}</div>}
+      {loadErr && (
+        <div className="mb-4 text-sm bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-2 flex items-center justify-between">
+          <span>Couldn’t load assignments: {loadErr}</span>
+          <button onClick={load} className="text-xs text-teal-700 hover:underline font-medium">Retry</button>
+        </div>
+      )}
 
       {/* Workload */}
       <SectionTitle>Analyst workload</SectionTitle>

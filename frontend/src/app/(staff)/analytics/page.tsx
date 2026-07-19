@@ -2,7 +2,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { analyticsApi, type ProviderAnalytics, type SectorAnalytics } from '@/lib/api/analytics';
-import { formatMoneyShort } from '@/lib/utils';
+import { formatMoneyShort, extractErrorMessage } from '@/lib/utils';
 
 type Tab = 'provider' | 'sector';
 
@@ -10,9 +10,10 @@ export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>('provider');
   const [prov, setProv] = useState<ProviderAnalytics | null>(null);
   const [sect, setSect] = useState<SectorAnalytics | null>(null);
+  const [err, setErr] = useState<string | null>(null);
 
-  useEffect(() => { analyticsApi.byProvider().then(setProv).catch(() => setProv(null)); }, []);
-  useEffect(() => { analyticsApi.bySector().then(setSect).catch(() => setSect(null)); }, []);
+  useEffect(() => { analyticsApi.byProvider().then(setProv).catch((e) => setErr(extractErrorMessage(e))); }, []);
+  useEffect(() => { analyticsApi.bySector().then(setSect).catch((e) => setErr(extractErrorMessage(e))); }, []);
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -28,6 +29,12 @@ export default function AnalyticsPage() {
           </p>
         </div>
       </div>
+
+      {err && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          Couldn’t load analytics: {err}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex items-center gap-2 mb-6">
