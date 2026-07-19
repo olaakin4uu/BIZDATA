@@ -111,6 +111,9 @@ model Tenant {
 model User {
   id             String    @id @default(uuid())
   email          String    @unique
+  // DB CHECK constraint `users_passwordHash_not_blank` (migration
+  // 20260719090000) enforces char_length >= 60 so an empty/blank hash can never
+  // be persisted (which silently locks the account out of login).
   passwordHash   String
   firstName      String
   lastName       String
@@ -201,6 +204,8 @@ model DataProviderUser {
   id           String           @id @default(uuid())
   providerId   String
   email        String           @unique
+  // DB CHECK constraint `provider_users_passwordHash_not_blank` (migration
+  // 20260719090000) enforces char_length >= 60 — a blank hash can never persist.
   passwordHash String
   firstName    String
   lastName     String
