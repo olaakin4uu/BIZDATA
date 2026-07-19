@@ -78,7 +78,7 @@ export default function ProviderDashboardPage() {
           <div className="mb-3 flex items-baseline justify-between">
             <SectionTitle icon="calendar">{YEAR} filing calendar</SectionTitle>
             <span className="text-xs text-[var(--ink-3)]">
-              {compliance.provider.reportingFrequency.toLowerCase()} · {compliance.provider.providerType.replace('_', ' ').toLowerCase()}
+              {compliance.provider.reportingFrequency.toLowerCase()} · {compliance.provider.providerType.replace(/_/g, ' ').toLowerCase()}
             </span>
           </div>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
@@ -118,7 +118,7 @@ export default function ProviderDashboardPage() {
                     <div className="flex shrink-0 items-center gap-3">
                       <span className="tnum text-xs text-[var(--ink-2)]">{s.acceptedCount}/{s.recordCount}</span>
                       <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(s.status)}`}>
-                        {s.status.replace('_', ' ')}
+                        {s.status.replace(/_/g, ' ')}
                       </span>
                       <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.6} className="text-[var(--ink-3)] transition-transform group-hover:translate-x-0.5" aria-hidden><path d="m9 6 6 6-6 6" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     </div>

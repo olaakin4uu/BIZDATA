@@ -11,7 +11,7 @@ import { extractErrorMessage } from '@/lib/utils';
 export default function NewProviderSubmissionPage() {
   const user = useProviderAuthStore((s) => s.user);
   const freq = user?.provider?.reportingFrequency ?? 'QUARTERLY';
-  const providerType = (user?.provider?.providerType ?? '').replace('_', ' ').toLowerCase();
+  const providerType = (user?.provider?.providerType ?? '').replace(/_/g, ' ').toLowerCase();
   const [dlErr, setDlErr] = useState<string | null>(null);
 
   const downloadTemplate = async () => {

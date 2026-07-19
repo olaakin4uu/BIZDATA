@@ -44,7 +44,7 @@ export default function GovernancePage() {
           <div className="flex flex-wrap gap-2">
             {Object.entries(report.casesByStatus).map(([s, n]) => (
               <span key={s} className="px-3 py-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs text-slate-600">
-                {s.replace('_', ' ')} · <span className="font-semibold text-slate-800">{n}</span>
+                {s.replace(/_/g, ' ')} · <span className="font-semibold text-slate-800">{n}</span>
               </span>
             ))}
           </div>

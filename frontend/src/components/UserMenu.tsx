@@ -48,7 +48,7 @@ export default function UserMenu({ user, onSignOut, onUploadAvatar, variant = 'l
       .filter(Boolean)
       .map((n) => n![0]?.toUpperCase())
       .join('') || 'U';
-  const role = user?.role?.replace('_', ' ') ?? '';
+  const role = user?.role?.replace(/_/g, ' ') ?? '';
 
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];

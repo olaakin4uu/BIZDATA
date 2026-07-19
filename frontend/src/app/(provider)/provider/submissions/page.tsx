@@ -41,7 +41,7 @@ export default function ProviderSubmissionsPage() {
       key: 'status', header: 'Status',
       cell: (r) => (
         <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(r.status)}`}>
-          {r.status.replace('_', ' ')}
+          {r.status.replace(/_/g, ' ')}
         </span>
       ),
     },
@@ -70,7 +70,7 @@ export default function ProviderSubmissionsPage() {
           <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}
             className="rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 py-2 text-sm transition-colors focus:border-teal-400 focus:outline-none focus:ring-2 focus:ring-teal-500/50">
             <option value="">All statuses</option>
-            {SUBMISSION_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            {SUBMISSION_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
       </div>

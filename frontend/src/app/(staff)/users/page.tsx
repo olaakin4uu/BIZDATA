@@ -28,7 +28,7 @@ export default function UsersListPage() {
   const columns: Column<StaffUserRecord>[] = [
     { key: 'name', header: 'Name', cell: (r) => <Link href={`/users/${r.id}`} className="font-medium text-slate-800 hover:text-teal-700">{r.firstName} {r.lastName}</Link> },
     { key: 'email', header: 'Email', cell: (r) => <span className="text-xs text-slate-600">{r.email}</span> },
-    { key: 'role', header: 'Role', cell: (r) => <span className="text-xs">{r.role.replace('_', ' ')}</span> },
+    { key: 'role', header: 'Role', cell: (r) => <span className="text-xs">{r.role.replace(/_/g, ' ')}</span> },
     {
       key: 'status', header: 'Status',
       cell: (r) => (
@@ -67,7 +67,7 @@ export default function UsersListPage() {
           <select value={role} onChange={(e) => { setRole(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">All roles</option>
-            {STAFF_ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+            {STAFF_ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
       </div>

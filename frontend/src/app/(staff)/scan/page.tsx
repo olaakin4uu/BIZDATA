@@ -141,7 +141,7 @@ export default function ScanPage() {
                     active ? 'bg-teal-600 border-teal-600 text-white' : 'bg-white border-slate-300 text-slate-700 hover:border-teal-400'
                   }`}
                 >
-                  {t.replace('_', ' ')}
+                  {t.replace(/_/g, ' ')}
                 </button>
               );
             })}

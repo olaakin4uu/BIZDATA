@@ -143,7 +143,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
                     <td className="px-4 py-3">
                       {r.reviewStatus ? (
                         <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(r.reviewStatus)}`}>
-                          {r.reviewStatus.replace('_', ' ')}
+                          {r.reviewStatus.replace(/_/g, ' ')}
                         </span>
                       ) : (<span className="text-xs text-slate-400">—</span>)}
                     </td>

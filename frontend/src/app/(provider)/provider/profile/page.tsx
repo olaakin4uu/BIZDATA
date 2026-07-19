@@ -63,7 +63,7 @@ export default function ProviderProfilePage() {
         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Info label="Name" value={`${me.firstName} ${me.lastName}`} />
           <Info label="Email" value={me.email} />
-          <Info label="Role" value={me.role.replace('_', ' ')} />
+          <Info label="Role" value={me.role.replace(/_/g, ' ')} />
           <Info label="Last login" value={formatDateTime(me.lastLoginAt)} />
         </div>
       </section>
@@ -73,12 +73,12 @@ export default function ProviderProfilePage() {
         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">
           <Info label="Provider" value={providerName} />
           <Info label="Code" value={me.provider?.providerCode ?? '—'} />
-          <Info label="Type" value={me.provider?.providerType?.replace('_', ' ') ?? '—'} />
+          <Info label="Type" value={me.provider?.providerType?.replace(/_/g, ' ') ?? '—'} />
           <Info label="Reporting frequency" value={me.provider?.reportingFrequency ?? '—'} />
           {me.provider && (
             <Info label="Status" value={
               <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(me.provider.status)}`}>
-                {me.provider.status.replace('_', ' ')}
+                {me.provider.status.replace(/_/g, ' ')}
               </span>
             } />
           )}

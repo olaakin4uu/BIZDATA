@@ -54,7 +54,7 @@ export default function SubmissionsPage() {
       key: 'status', header: 'Status',
       cell: (r) => (
         <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(r.status)}`}>
-          {r.status.replace('_', ' ')}
+          {r.status.replace(/_/g, ' ')}
         </span>
       ),
     },
@@ -122,7 +122,7 @@ export default function SubmissionsPage() {
           <select value={status} onChange={(e) => { setStatus(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">All statuses</option>
-            {SUBMISSION_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            {SUBMISSION_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
           </select>
           <select value={periodYear} onChange={(e) => setPeriodYear(e.target.value ? Number(e.target.value) : '')}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">

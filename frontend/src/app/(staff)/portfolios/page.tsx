@@ -76,7 +76,7 @@ export default function PortfoliosPage() {
                 <p className="font-semibold text-slate-800 truncate">{w.staff.firstName} {w.staff.lastName}</p>
                 <p className="text-xs text-slate-400 truncate">{w.staff.email}</p>
               </div>
-              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{w.staff.role.replace('_', ' ')}</span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">{w.staff.role.replace(/_/g, ' ')}</span>
             </div>
             <div className="grid grid-cols-4 gap-2 text-center">
               <Stat n={w.openCases} l="open" color="text-slate-800" />
@@ -166,7 +166,7 @@ function AssignModal({ onClose, onDone }: { onClose: () => void; onDone: (msg: s
 
   const targetOptions = useMemo(() => {
     if (scope === 'PROVIDER') return providers.map((p) => ({ value: p.id, label: p.name }));
-    if (scope === 'PROVIDER_TYPE') return PROVIDER_TYPES.map((t) => ({ value: t, label: t.replace('_', ' ') }));
+    if (scope === 'PROVIDER_TYPE') return PROVIDER_TYPES.map((t) => ({ value: t, label: t.replace(/_/g, ' ') }));
     return SECTORS.map((s) => ({ value: s, label: s.replace(/_/g, ' ') }));
   }, [scope, providers]);
 

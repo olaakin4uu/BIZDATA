@@ -73,9 +73,9 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
             <Link href="/providers" className="text-xs text-sky-300 hover:text-sky-200">← All providers</Link>
             <h1 className="text-2xl font-bold text-white mt-1">{provider.name}</h1>
             <p className="text-sm text-slate-300 mt-1">
-              {provider.providerType.replace('_', ' ')} · <span className="font-mono">{provider.providerCode}</span>
+              {provider.providerType.replace(/_/g, ' ')} · <span className="font-mono">{provider.providerCode}</span>
               <span className={`ml-2 inline-flex px-2 py-0.5 text-[10px] font-medium rounded-full ${statusBadge(provider.status)}`}>
-                {provider.status.replace('_', ' ')}
+                {provider.status.replace(/_/g, ' ')}
               </span>
             </p>
           </div>
@@ -208,7 +208,7 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
                   <tr key={u.id} className="hover:bg-slate-50">
                     <td className="px-4 py-3 font-medium">{u.firstName} {u.lastName}</td>
                     <td className="px-4 py-3 text-xs text-slate-600">{u.email}</td>
-                    <td className="px-4 py-3 text-xs">{u.role.replace('_', ' ')}</td>
+                    <td className="px-4 py-3 text-xs">{u.role.replace(/_/g, ' ')}</td>
                     <td className="px-4 py-3 text-xs text-slate-500">{u.lastLoginAt ? formatDateTime(u.lastLoginAt) : 'never'}</td>
                     <td className="px-4 py-3">
                       <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${u.isActive ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>
@@ -309,7 +309,7 @@ function EditProviderForm({ provider, onSaved, onCancel }: { provider: Provider;
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
         <div><label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-            {PROVIDER_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}</select></div>
+            {PROVIDER_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}</select></div>
         <div><label className="block text-xs font-medium text-slate-700 mb-1">Contact email</label>
           <input value={form.contactEmail} onChange={(e) => setForm({ ...form, contactEmail: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
         <div><label className="block text-xs font-medium text-slate-700 mb-1">Contact phone</label>
@@ -346,7 +346,7 @@ function NewUserForm({ providerId, onCreated, onCancel }: { providerId: string; 
         <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm col-span-2" />
         <PasswordInput required placeholder="Password (min 8 chars)" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" wrapperClassName="col-span-2" />
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-          {PROVIDER_USER_ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}</select>
+          {PROVIDER_USER_ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select>
         <input placeholder="Phone (optional)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
       </div>
       <div className="flex gap-2">

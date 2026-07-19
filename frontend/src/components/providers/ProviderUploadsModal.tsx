@@ -125,7 +125,7 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-slate-800">{s.periodLabel}</span>
                       <span className={`text-[10px] px-2 py-0.5 rounded-full ring-1 ${SUB_BADGE[s.status] ?? 'bg-slate-50 text-slate-600 ring-slate-200'}`}>
-                        {s.status.replace('_', ' ')}
+                        {s.status.replace(/_/g, ' ')}
                       </span>
                     </div>
                     <p className="text-xs text-slate-500 mt-0.5 truncate">

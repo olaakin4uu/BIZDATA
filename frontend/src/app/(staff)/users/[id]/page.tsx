@@ -94,7 +94,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
       <Link href="/users" className="text-sm text-teal-700 hover:underline">← All users</Link>
       <PageHeader
         title={`${user.firstName} ${user.lastName}`}
-        subtitle={`${user.email} · ${user.role.replace('_', ' ')} · last login ${formatDateTime(user.lastLoginAt)}`}
+        subtitle={`${user.email} · ${user.role.replace(/_/g, ' ')} · last login ${formatDateTime(user.lastLoginAt)}`}
       />
 
       <div className="flex items-center gap-3 mb-6">
@@ -119,7 +119,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
             <Field label="Phone"><input value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></Field>
             <Field label="Role">
               <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-                {STAFF_ROLES.map((r) => <option key={r} value={r}>{r.replace('_', ' ')}</option>)}
+                {STAFF_ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
               </select>
             </Field>
           </div>

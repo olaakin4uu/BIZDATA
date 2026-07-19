@@ -70,7 +70,7 @@ export default function NewProviderPage() {
               onChange={(e) => update('providerType', e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
             >
-              {SECTION_29_PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+              {SECTION_29_PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
             </select>
             <p className="text-xs text-slate-400 mt-1">Only NTAA §29 financial institutions can be onboarded.</p>
           </Field>
@@ -117,7 +117,7 @@ export default function NewProviderPage() {
               onChange={(e) => update('status', e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
             >
-              {PROVIDER_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+              {PROVIDER_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
             </select>
           </Field>
         </div>

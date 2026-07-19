@@ -73,7 +73,7 @@ export default function DataRecordsPage() {
       key: 'review', header: 'Review',
       cell: (r) => r.reviewStatus ? (
         <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(r.reviewStatus)}`}>
-          {r.reviewStatus.replace('_', ' ')}
+          {r.reviewStatus.replace(/_/g, ' ')}
         </span>
       ) : <span className="text-xs text-slate-400">—</span>,
     },
@@ -107,7 +107,7 @@ export default function DataRecordsPage() {
           <select value={providerType} onChange={(e) => { setProviderType(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">All</option>
-            {SECTION_29_PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+            {SECTION_29_PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
         <div>
@@ -132,7 +132,7 @@ export default function DataRecordsPage() {
           <select value={reviewStatus} onChange={(e) => { setReviewStatus(e.target.value); setPage(1); }}
             className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             <option value="">All</option>
-            {REVIEW_STATUSES.map((s) => <option key={s} value={s}>{s.replace('_', ' ')}</option>)}
+            {REVIEW_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}
           </select>
         </div>
       </div>

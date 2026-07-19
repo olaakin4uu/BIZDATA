@@ -114,7 +114,7 @@ function ProviderView({ data }: { data: ProviderAnalytics | null }) {
                   <td className="px-4 py-3">
                     <Link href={`/providers/${r.provider.id}`} className="font-medium text-slate-800 hover:text-indigo-700">{r.provider.name}</Link>
                   </td>
-                  <td className="px-4 py-3 text-xs text-slate-500">{r.provider.providerType.replace('_', ' ')}</td>
+                  <td className="px-4 py-3 text-xs text-slate-500">{r.provider.providerType.replace(/_/g, ' ')}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-700">{r.records.toLocaleString()}</td>
                   <td className="px-4 py-3 text-right tabular-nums text-slate-700">{r.taxpayers.toLocaleString()}</td>
                   <td className="px-4 py-3">

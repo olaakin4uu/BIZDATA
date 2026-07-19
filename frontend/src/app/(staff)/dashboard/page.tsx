@@ -358,7 +358,7 @@ export default function StaffDashboardPage() {
               ];
               return (
                 <span key={row.providerType} className={`px-3 py-1.5 rounded-lg text-xs font-medium ring-1 ${colors[i % colors.length]}`}>
-                  {row.providerType.replace('_', ' ')} · <span className="font-bold">{row.count}</span>
+                  {row.providerType.replace(/_/g, ' ')} · <span className="font-bold">{row.count}</span>
                 </span>
               );
             })}

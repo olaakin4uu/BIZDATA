@@ -63,7 +63,7 @@ export default function DataRecordDetailPage({ params }: { params: Params }) {
       />
 
       <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
-        <Info label="Provider type" value={rec.providerType.replace('_', ' ')} />
+        <Info label="Provider type" value={rec.providerType.replace(/_/g, ' ')} />
         <Info label="Period" value={`${rec.periodLabel} (${rec.periodYear})`} />
         <Info label="Taxpayer" value={rec.taxpayer ? (
           <Link href={`/taxpayers/${rec.taxpayer.id}`} className="text-teal-700 hover:underline">{tpName(rec.taxpayer)}</Link>
@@ -98,7 +98,7 @@ export default function DataRecordDetailPage({ params }: { params: Params }) {
                 <span className="text-xs text-slate-500">Review status: </span>
                 {rec.reviewStatus ? (
                   <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(rec.reviewStatus)}`}>
-                    {rec.reviewStatus.replace('_', ' ')}
+                    {rec.reviewStatus.replace(/_/g, ' ')}
                   </span>
                 ) : <span className="text-xs text-slate-400">—</span>}
               </div>

@@ -152,7 +152,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             Evidence bundle
           </button>
           <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_BADGE[c.status]}`}>
-            {c.status.replace('_', ' ')}
+            {c.status.replace(/_/g, ' ')}
           </span>
         </div>
       </div>

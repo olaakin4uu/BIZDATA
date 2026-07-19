@@ -103,7 +103,7 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <Info label="Status" value={
-          <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(sub.status)}`}>{sub.status.replace('_', ' ')}</span>
+          <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(sub.status)}`}>{sub.status.replace(/_/g, ' ')}</span>
         } />
         <Info label="Period" value={sub.periodLabel} />
         <Info label="Records" value={sub.recordCount.toLocaleString()} />

@@ -155,7 +155,7 @@ export default function ProvidersDashboardPage() {
         <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value)}
           className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
           <option value="">All types</option>
-          {PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace('_', ' ')}</option>)}
+          {PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </select>
         {/* legend */}
         <div className="flex items-center gap-3 text-[11px] text-slate-500 ml-auto">
@@ -199,7 +199,7 @@ export default function ProvidersDashboardPage() {
                       </Link>
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-500">
-                      {r.provider.providerType.replace('_', ' ')}
+                      {r.provider.providerType.replace(/_/g, ' ')}
                       {!isSection29ProviderType(r.provider.providerType) && (
                         <span
                           title="Outside NTAA §29 scope — retained for history; cannot receive new submissions."
