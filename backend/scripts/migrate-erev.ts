@@ -50,25 +50,26 @@ function defaultPeriodLabel(year: number): string {
   return `${year}-Q${q}`;
 }
 
-// Derive the TRUE reporting period for a record from its erev transaction_date.
-// A dated row lands in its real quarter (YYYY-Qn); an undated row (transaction_date
-// NULL — ~72% of the erev dataset) goes to an annual "undated" bucket for its year
-// (YYYY), so it never falsely claims a specific quarter. Override the undated
-// bucket with UNDATED_PERIOD_LABEL if desired.
-function periodFromRow(row: any, fallbackYear: number): { label: string; year: number } {
+// Derive the reporting period for a record from its erev transaction_date.
+//  - dated row   → its real quarter (YYYY-Qn), undated=false.
+//  - undated row (transaction_date NULL — ~72% of the erev dataset) → the
+//    UNDATED_PERIOD_LABEL period (so it still COUNTS somewhere for compliance —
+//    we park these in 2026-Q2 for now), but flagged undated=true so they stay
+//    distinguishable from genuinely-dated rows (stored in record.payload).
+function periodFromRow(row: any, fallbackYear: number): { label: string; year: number; undated: boolean } {
   const raw = row.transaction_date;
   if (raw) {
     const d = raw instanceof Date ? raw : new Date(String(raw));
     if (!isNaN(d.getTime())) {
       const y = d.getUTCFullYear();
       const q = Math.floor(d.getUTCMonth() / 3) + 1;
-      return { label: `${y}-Q${q}`, year: y };
+      return { label: `${y}-Q${q}`, year: y, undated: false };
     }
   }
-  // Undated: annual bucket for the row's year (transaction_year, else created_at year).
+  // Undated: report under UNDATED_PERIOD_LABEL (default the row's year); flagged.
   const y = row.transaction_year ?? fallbackYear;
-  const undatedLabel = process.env.UNDATED_PERIOD_LABEL?.trim() || `${y}`;
-  return { label: undatedLabel, year: y };
+  const label = process.env.UNDATED_PERIOD_LABEL?.trim() || `${y}`;
+  return { label, year: y, undated: true };
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -327,6 +328,9 @@ async function migrateTransactions(providerMap: Map<number, string>) {
             accountIndex:   acctIdx ?? undefined,
             totalInflow:    row.transaction_amount ?? 0,
             transactionCount: 1,
+            // dateSource marks whether the reporting period came from a real
+            // transaction_date or is an undated row parked in UNDATED_PERIOD_LABEL.
+            payload:        { dateSource: period.undated ? 'undated' : 'transaction_date' },
           },
         });
         recordsCreated++;
