@@ -116,7 +116,7 @@ async function main() {
           providerType: p.type as any,
           status: 'ACTIVE',
           contactEmail: `compliance@${p.name.toLowerCase().replace(/\s+/g, '')}.local`,
-          reportingFrequency: p.type === 'BANK' ? 'QUARTERLY' : 'MONTHLY',
+          reportingFrequency: 'QUARTERLY', // policy: every §29 provider reports quarterly
         },
       });
       console.log(`  Provider created: ${p.name}`);

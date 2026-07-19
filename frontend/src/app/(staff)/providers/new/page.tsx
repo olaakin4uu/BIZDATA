@@ -6,8 +6,6 @@ import PageHeader from '@/components/PageHeader';
 import { providersApi } from '@/lib/api/providers';
 import { SECTION_29_PROVIDER_TYPES, PROVIDER_STATUSES, extractErrorMessage } from '@/lib/utils';
 
-const FREQUENCIES = ['QUARTERLY', 'MONTHLY', 'ANNUAL'];
-
 export default function NewProviderPage() {
   const router = useRouter();
   const [form, setForm] = useState({
@@ -108,13 +106,10 @@ export default function NewProviderPage() {
             />
           </Field>
           <Field label="Reporting frequency">
-            <select
-              value={form.reportingFrequency}
-              onChange={(e) => update('reportingFrequency', e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white"
-            >
-              {FREQUENCIES.map((f) => <option key={f} value={f}>{f}</option>)}
-            </select>
+            <div className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-600">
+              Quarterly
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">All §29 providers report quarterly (statutory policy).</p>
           </Field>
           <Field label="Initial status">
             <select

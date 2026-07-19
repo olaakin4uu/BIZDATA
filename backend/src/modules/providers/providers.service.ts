@@ -27,7 +27,9 @@ export class ProvidersService {
         contactEmail: dto.contactEmail,
         contactPhone: dto.contactPhone,
         address: dto.address,
-        reportingFrequency: dto.reportingFrequency || 'QUARTERLY',
+        // Statutory policy: every §29 provider reports QUARTERLY. Frequency is
+        // not configurable — force it regardless of what the caller supplied.
+        reportingFrequency: 'QUARTERLY',
         status: dto.status || 'PENDING_ONBOARDING',
       },
     });
@@ -117,7 +119,9 @@ export class ProvidersService {
         contactEmail: dto.contactEmail ?? undefined,
         contactPhone: dto.contactPhone ?? undefined,
         address: dto.address ?? undefined,
-        reportingFrequency: dto.reportingFrequency ?? undefined,
+        // Policy: quarterly for everyone. Pin it on every update so a stray
+        // MONTHLY/ANNUAL value can never take hold (and self-heals legacy rows).
+        reportingFrequency: 'QUARTERLY',
         status: dto.status ?? undefined,
       },
     });

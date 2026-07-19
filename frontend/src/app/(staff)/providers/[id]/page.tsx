@@ -317,8 +317,8 @@ function EditProviderForm({ provider, onSaved, onCancel }: { provider: Provider;
         <div className="md:col-span-2"><label className="block text-xs font-medium text-slate-700 mb-1">Address</label>
           <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
         <div><label className="block text-xs font-medium text-slate-700 mb-1">Reporting frequency</label>
-          <select value={form.reportingFrequency} onChange={(e) => setForm({ ...form, reportingFrequency: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-            <option value="QUARTERLY">QUARTERLY</option><option value="MONTHLY">MONTHLY</option><option value="ANNUAL">ANNUAL</option></select></div>
+          <div className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-slate-50 text-slate-600">Quarterly</div>
+          <p className="mt-1 text-[11px] text-slate-400">Fixed — all §29 providers report quarterly.</p></div>
       </div>
       <div className="flex gap-2">
         <button type="submit" disabled={busy} className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">{busy ? 'Saving…' : 'Save changes'}</button>
