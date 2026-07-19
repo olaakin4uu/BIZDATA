@@ -73,6 +73,14 @@ export class AccessService {
   async revoke(id: string, staffId: string) {
     const grant = await this.prisma.accessElevation.findUnique({ where: { id } });
     if (!grant) throw new NotFoundException('Elevation not found');
+    // "End now" is strictly self-service: a staffer may only end their OWN live
+    // grant. Without this, any staffer could expire anyone's elevation by id (IDOR).
+    if (grant.staffId !== staffId) {
+      throw new ForbiddenException('You can only end your own access grant');
+    }
+    if (grant.status !== 'ACTIVE') {
+      throw new BadRequestException('Only an active grant can be ended');
+    }
     const updated = await this.prisma.accessElevation.update({ where: { id }, data: { status: 'EXPIRED' } });
     await this.audit.log({
       actorType: 'STAFF', actorId: staffId, staffId,

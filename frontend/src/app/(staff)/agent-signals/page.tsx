@@ -123,8 +123,8 @@ export default function AgentSignalsPage() {
                   </td>
                   <td className="px-4 py-3 text-xs text-slate-600 whitespace-nowrap">{AGENT_NAMES[sig.agentKey] ?? sig.agentKey}</td>
                   <td className="px-4 py-3 text-center">
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${SEV_META[sig.severity].chip}`}>
-                      <span className={`h-1.5 w-1.5 rounded-full ${SEV_META[sig.severity].dot}`} />{sig.severity}
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ring-1 ${(SEV_META[sig.severity] ?? SEV_META.LOW).chip}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${(SEV_META[sig.severity] ?? SEV_META.LOW).dot}`} />{sig.severity}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-700">{Math.round(Number(sig.score) * 100)}%</td>
