@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { providerAuthApi } from '@/lib/api/auth';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
+import { tenantApi } from '@/lib/api/tenant';
 import PasswordInput from '@/components/PasswordInput';
 
 export default function ProviderLoginPage() {
@@ -15,10 +16,19 @@ export default function ProviderLoginPage() {
   const [password, setPassword] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Organisation logo/name uploaded under Settings (public branding endpoint).
+  const [orgLogo, setOrgLogo] = useState<string | null>(null);
+  const [orgName, setOrgName] = useState<string | null>(null);
 
   useEffect(() => {
     if (token && user) router.replace('/provider/dashboard');
   }, [token, user, router]);
+
+  useEffect(() => {
+    tenantApi.branding()
+      .then((b) => { setOrgLogo(b.logoUrl ?? null); setOrgName(b.name ?? null); })
+      .catch(() => { /* fall back to the generic mark below */ });
+  }, []);
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -49,25 +59,33 @@ export default function ProviderLoginPage() {
       </div>
 
       <div className="relative w-full max-w-md rise-in">
-        <div className="text-center mb-7">
-          <Image
-            src="/manam-logo.jpeg"
-            alt="MANAM — Advisory / Tax / Secretarial Services"
-            width={220}
-            height={86}
-            priority
-            className="mx-auto mb-4 rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-white/25"
-          />
+        <div className="text-center mb-4">
+          {orgLogo ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={orgLogo}
+              alt={orgName ?? 'Organisation logo'}
+              className="mx-auto mb-2.5 h-16 w-auto max-w-[220px] rounded-xl bg-white px-3 py-2 shadow-lg ring-1 ring-white/25 object-contain"
+            />
+          ) : (
+            <span className="mx-auto mb-2.5 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/12 ring-1 ring-white/25 shadow-lg backdrop-blur">
+              <svg viewBox="0 0 24 24" width={26} height={26} fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" className="text-white" aria-hidden>
+                <path d="M7 3.5h6l5 5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V4.5a1 1 0 0 1 1-1Z" />
+                <path d="M13 3.5V9h5" />
+                <path d="m8.5 14 2 2 4-4.5" />
+              </svg>
+            </span>
+          )}
           <p className="text-[10px] uppercase tracking-[0.22em] text-teal-100/90">Provider Portal</p>
-          <h1 className="text-4xl font-bold text-white mt-1 tracking-tight">BizData</h1>
+          <h1 className="text-3xl font-bold text-white mt-0.5 tracking-tight">BizData</h1>
         </div>
 
-        <div className="rounded-2xl border border-white/60 bg-white/95 p-8 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
+        <div className="rounded-2xl border border-white/60 bg-white/95 p-6 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
           <h2 className="text-lg font-semibold text-[var(--ink)] mb-1">Sign in</h2>
-          <p className="text-xs text-[var(--ink-2)] mb-5">
+          <p className="text-xs text-[var(--ink-2)] mb-4">
             For registered banks, fintechs, processors, telcos, and other data providers.
           </p>
-          <form onSubmit={submit} className="space-y-4">
+          <form onSubmit={submit} className="space-y-3">
             {error && (
               <div className="flex items-start gap-2 px-3 py-2 bg-[var(--bad-soft)] border border-rose-200 rounded-lg text-sm text-rose-700">
                 <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.8} className="mt-0.5 shrink-0" aria-hidden><circle cx="12" cy="12" r="9" /><path d="M12 8v4.5M12 16h.01" strokeLinecap="round" /></svg>
@@ -95,22 +113,22 @@ export default function ProviderLoginPage() {
               {busy ? 'Signing in…' : 'Sign in'}
             </button>
           </form>
-          <p className="text-xs text-[var(--ink-3)] text-center mt-5">
+          <p className="text-xs text-[var(--ink-3)] text-center mt-4">
             Are you a regulator?{' '}
             <Link href="/login" className="text-teal-700 hover:text-teal-800 hover:underline font-medium">Use the staff sign-in</Link>
           </p>
         </div>
 
-        <div className="mt-8 flex flex-col items-center justify-center gap-3">
+        <div className="mt-4 flex flex-col items-center justify-center gap-1.5">
           <span className="text-[10px] uppercase tracking-[0.22em] text-teal-100/80">
             Powered by
           </span>
           <Image
             src="/manam-logo.jpeg"
             alt="MANAM — Advisory / Tax / Secretarial Services"
-            width={200}
-            height={79}
-            className="rounded-xl bg-white px-4 py-3 shadow-lg ring-1 ring-white/25"
+            width={150}
+            height={59}
+            className="rounded-lg bg-white px-3 py-1.5 shadow-lg ring-1 ring-white/25"
           />
         </div>
       </div>
