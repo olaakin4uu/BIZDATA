@@ -51,6 +51,15 @@ export default function SubmissionDetailPage({ params }: { params: Params }) {
         <Info label="Size" value={formatBytes(sub.fileSizeBytes)} />
         <Info label="Received" value={formatDateTime(sub.receivedAt)} />
         <Info label="Processed" value={formatDateTime(sub.processedAt)} />
+        {sub.receiptHash && (
+          <Info label="Receipt hash (§6.5)" value={<span className="font-mono text-[11px] break-all">{sub.receiptHash}</span>} />
+        )}
+        {sub.resubmitDueAt && (sub.status === 'REJECTED' || sub.status === 'PARTIALLY_ACCEPTED') && (
+          <Info label="Resubmit due (§6.5)" value={<span className="text-amber-700 font-medium">{formatDateTime(sub.resubmitDueAt)}</span>} />
+        )}
+        {(sub.warningCount ?? 0) > 0 && (
+          <Info label="Warnings" value={<span className="text-amber-700 font-medium">{sub.warningCount}</span>} />
+        )}
       </div>
 
       {errors && Object.keys(errors).length > 0 && (
@@ -59,6 +68,19 @@ export default function SubmissionDetailPage({ params }: { params: Params }) {
           <pre className="bg-red-50 border border-red-200 rounded-xl p-4 text-[11px] font-mono text-red-800 overflow-auto max-h-72">
             {JSON.stringify(errors, null, 2)}
           </pre>
+        </section>
+      )}
+
+      {sub.warnings && sub.warnings.length > 0 && (
+        <section className="mb-6">
+          <h2 className="text-sm font-semibold text-slate-800 mb-2">
+            Warnings {(sub.warningCount ?? sub.warnings.length) > sub.warnings.length ? `(showing ${sub.warnings.length} of ${sub.warningCount})` : `(${sub.warnings.length})`}
+          </h2>
+          <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800 max-h-72 overflow-auto space-y-1">
+            {sub.warnings.map((w, i) => (
+              <div key={i}><span className="font-mono font-semibold">Row {w.row}:</span> {w.messages.join('; ')}</div>
+            ))}
+          </div>
         </section>
       )}
 

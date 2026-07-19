@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import StatCard from '@/components/StatCard';
 import { governanceApi, type GovernanceReport, type BankMou } from '@/lib/api/governance';
@@ -45,6 +46,32 @@ export default function GovernancePage() {
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {report && report.topCases.length > 0 && (
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
+          <h3 className="text-sm font-semibold text-slate-800 mb-3">Top cases by recoverable tax</h3>
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
+                <th className="py-2 font-medium">Case</th>
+                <th className="py-2 font-medium">Year</th>
+                <th className="py-2 font-medium">Status</th>
+                <th className="py-2 font-medium text-right">Est. tax</th>
+              </tr>
+            </thead>
+            <tbody>
+              {report.topCases.map((c) => (
+                <tr key={c.id} className="border-b border-slate-50">
+                  <td className="py-2"><Link href={`/cases/${c.id}`} className="font-mono text-xs text-teal-700 hover:underline">{c.id.slice(0, 8)}</Link></td>
+                  <td className="py-2 text-xs text-slate-600">{c.year}</td>
+                  <td className="py-2 text-xs text-slate-600">{c.status.replace(/_/g, ' ')}</td>
+                  <td className="py-2 text-right font-semibold text-red-700">{formatNaira(c.estimatedTaxDue)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
 

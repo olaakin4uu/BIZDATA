@@ -57,6 +57,9 @@ export default function ScanDetailPage({ params }: { params: Params }) {
         <Info label="Records flagged" value={
           <span className={scan.totalFlagged > 0 ? 'text-red-700 font-bold' : ''}>{scan.totalFlagged.toLocaleString()}</span>
         } />
+        <Info label="Est. recoverable tax" value={
+          <span className="font-semibold text-slate-800">{scan.totalEstimatedTax != null ? `₦${Number(scan.totalEstimatedTax).toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—'}</span>
+        } />
         <Info label="Started by" value={scan.startedBy ? `${scan.startedBy.firstName} ${scan.startedBy.lastName}` : '—'} />
         <Info label="Provider types" value={
           scan.providerTypes && scan.providerTypes.length > 0 ? scan.providerTypes.join(', ') : 'All'
