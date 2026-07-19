@@ -432,12 +432,25 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                 <span className="text-sm font-semibold text-slate-800">{report.title}</span>
                 <span className="rounded bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Confidential · in secure session</span>
               </div>
-              <button onClick={() => setReport(null)} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">✕ Close</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => {
+                    const f = document.getElementById('report-frame') as HTMLIFrameElement | null;
+                    f?.contentWindow?.focus();
+                    f?.contentWindow?.print();
+                  }}
+                  className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
+                >
+                  🖨 Print / Save as PDF
+                </button>
+                <button onClick={() => setReport(null)} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">✕ Close</button>
+              </div>
             </div>
             <iframe
+              id="report-frame"
               title={report.title}
               srcDoc={report.html}
-              sandbox="allow-same-origin allow-modals allow-popups"
+              sandbox="allow-same-origin allow-modals"
               className="flex-1 w-full bg-slate-100"
             />
           </div>

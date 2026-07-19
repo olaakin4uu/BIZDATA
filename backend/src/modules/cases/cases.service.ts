@@ -250,10 +250,6 @@ export class CasesService {
    .paper-wm span{color:rgba(185,28,28,.08)}
  }
 </style></head><body>
- <div class="toolbar noprint">
-   <button class="btn" onclick="window.print()">🖨 Print / Save as PDF</button>
-   <button class="btn ghost" onclick="window.close()">Close</button>
- </div>
  <div class="sheet">
   <div class="paper-wm"><span>Confidential — KIRS</span></div>
   <div class="content">
