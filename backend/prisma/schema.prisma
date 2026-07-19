@@ -204,7 +204,7 @@ model DataProviderUser {
   id           String           @id @default(uuid())
   providerId   String
   email        String           @unique
-  // DB CHECK constraint `provider_users_passwordHash_not_blank` (migration
+  // DB CHECK constraint `data_provider_users_passwordHash_not_blank` (migration
   // 20260719090000) enforces char_length >= 60 — a blank hash can never persist.
   passwordHash String
   firstName    String

@@ -8,6 +8,6 @@ ALTER TABLE "users"
   ADD CONSTRAINT "users_passwordHash_not_blank"
   CHECK (char_length("passwordHash") >= 60);
 
-ALTER TABLE "provider_users"
-  ADD CONSTRAINT "provider_users_passwordHash_not_blank"
+ALTER TABLE "data_provider_users"
+  ADD CONSTRAINT "data_provider_users_passwordHash_not_blank"
   CHECK (char_length("passwordHash") >= 60);
