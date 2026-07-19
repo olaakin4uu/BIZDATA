@@ -22,8 +22,18 @@ export interface BankMou {
   provider?: { name: string; providerType: string };
 }
 
+export interface KeyRotationStatus {
+  activeKeyId: string;
+  keyCount: number;
+  activeKeyAgeDays: number;
+  rotationDue: boolean;
+  keys: { id: string; ageDays: number; active: boolean }[];
+}
+
 export const governanceApi = {
   report: (year: number) => apiFetch<GovernanceReport>(`/governance/report?year=${year}`),
   listMou: () => apiFetch<BankMou[]>('/governance/mou'),
   upsertMou: (dto: Partial<BankMou> & { providerId: string }) => apiFetch<BankMou>('/governance/mou', { method: 'POST', body: dto }),
+  keyStatus: () => apiFetch<KeyRotationStatus>('/governance/key-status'),
+  reencryptPii: () => apiFetch<{ scanned: number; migrated: number; activeKeyId: string }>('/governance/key-reencrypt', { method: 'POST' }),
 };
