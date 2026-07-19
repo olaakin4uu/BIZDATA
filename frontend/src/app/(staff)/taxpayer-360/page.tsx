@@ -3,21 +3,30 @@ import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import SensitiveValue from '@/components/SensitiveValue';
 import { taxpayer360Api, type SearchResult, type Taxpayer360 } from '@/lib/api/taxpayer360';
-import { formatMoney, formatDate } from '@/lib/utils';
+import { formatMoney, formatDate, extractErrorMessage } from '@/lib/utils';
 
 export default function Taxpayer360Page() {
   const [q, setQ] = useState('');
   const [results, setResults] = useState<SearchResult[] | null>(null);
   const [profile, setProfile] = useState<Taxpayer360 | null>(null);
   const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
 
   const search = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!q.trim()) return;
-    setBusy(true); setProfile(null);
-    try { setResults(await taxpayer360Api.search(q.trim())); } catch { setResults([]); } finally { setBusy(false); }
+    setBusy(true); setProfile(null); setErr(null);
+    try { setResults(await taxpayer360Api.search(q.trim())); }
+    catch (e2) { setResults([]); setErr(extractErrorMessage(e2)); }
+    finally { setBusy(false); }
   };
-  const open = async (id: string) => { setBusy(true); try { setProfile(await taxpayer360Api.profile(id)); } finally { setBusy(false); } };
+  const open = async (id: string) => {
+    setBusy(true); setErr(null);
+    // Previously had no catch — a failed profile open did nothing at all.
+    try { setProfile(await taxpayer360Api.profile(id)); }
+    catch (e2) { setErr(extractErrorMessage(e2)); }
+    finally { setBusy(false); }
+  };
 
   const tp = profile?.taxpayer;
 
@@ -30,6 +39,13 @@ export default function Taxpayer360Page() {
           className="flex-1 border border-slate-300 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500" />
         <button disabled={busy} className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">Search</button>
       </form>
+
+      {err && (
+        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>
+      )}
+      {busy && (
+        <p className="text-xs text-slate-400 mb-3 animate-pulse">Loading…</p>
+      )}
 
       {results && !profile && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm divide-y divide-slate-100">
