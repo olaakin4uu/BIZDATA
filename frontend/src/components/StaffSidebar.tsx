@@ -15,6 +15,7 @@ interface NavItem {
 // Grouped so a 25-item list reads as an organised console, not a wall of links.
 const NAV: NavItem[] = [
   { href: '/dashboard', label: 'Dashboard', icon: 'dashboard', section: 'Overview' },
+  { href: '/iris', label: 'Ask IRIS', icon: 'robot' },
   { href: '/providers', label: 'Data Providers', icon: 'bank', section: 'Data' },
   { href: '/taxpayers', label: 'Tax Payer Data', icon: 'taxpayers' },
   { href: '/taxpayer-360', label: 'Taxpayer 360', icon: 'compass' },
