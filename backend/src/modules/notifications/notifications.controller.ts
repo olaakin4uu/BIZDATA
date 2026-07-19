@@ -15,7 +15,7 @@ export class NotificationsController {
 
   @Get()
   list(@CurrentStaff() u: any) {
-    return this.service.list(u?.id);
+    return this.service.list(u?.id, u?.role);
   }
 
   @Patch(':id/read')

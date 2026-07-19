@@ -12,14 +12,22 @@ export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * A user sees notifications broadcast to everyone (no targetUserId) plus any
-   * addressed specifically to them.
+   * A user sees notifications addressed to everyone (targetRole null AND
+   * targetUserId null), those scoped to their role (targetRole = their role),
+   * and those addressed specifically to them (targetUserId = them).
    */
-  async list(staffId?: string) {
+  async list(staffId?: string, role?: string) {
     return this.prisma.notification.findMany({
-      where: staffId
-        ? { OR: [{ targetUserId: null }, { targetUserId: staffId }] }
-        : { targetUserId: null },
+      where: {
+        OR: [
+          // Broadcast to all staff.
+          { targetRole: null, targetUserId: null },
+          // Scoped to the caller's role.
+          ...(role ? [{ targetRole: role, targetUserId: null }] : []),
+          // Addressed to the caller directly.
+          ...(staffId ? [{ targetUserId: staffId }] : []),
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
@@ -88,7 +96,7 @@ export class NotificationsService {
         message: `Open case ${ref} (taxpayer ${c.taxpayerId}, ${year}) has an estimated tax due of ${amount}.`,
         entity: 'UnderdeclarationCase',
         entityId: c.id,
-        targetRole: 'OFFICER',
+        targetRole: null, // operational alerts: visible to all staff
       });
       if (ok) created += 1;
     }
@@ -124,7 +132,7 @@ export class NotificationsService {
           .slice(0, 10)}, within the next 7 days.`,
         entity: 'UnderdeclarationCase',
         entityId: c.id,
-        targetRole: 'OFFICER',
+        targetRole: null, // operational alerts: visible to all staff
       });
       if (ok) created += 1;
     }
@@ -151,7 +159,7 @@ export class NotificationsService {
         message: `Active provider ${p.name} has not submitted any data for ${year}.`,
         entity: 'DataProvider',
         entityId: p.id,
-        targetRole: 'OFFICER',
+        targetRole: null, // operational alerts: visible to all staff
       });
       if (ok) created += 1;
     }
