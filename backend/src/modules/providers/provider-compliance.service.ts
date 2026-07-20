@@ -236,20 +236,28 @@ export class ProviderComplianceService {
       formula: 'first + (months - 1) × perMonth',
       amount: period.penalty,
     };
-    const data = {
+    // Figures that a re-issue SHOULD refresh (e.g. a MISSING period accruing
+    // further months). Deliberately excludes noticeRef: a served notice cites a
+    // fixed reference, so re-issuing must never re-mint it (that would desync the
+    // record from the letter already served on the provider).
+    const refreshable = {
       providerId, periodLabel, periodYear: yearFromLabel, dueAt: period.dueAt,
       reason: period.status, monthsInDefault: period.monthsInDefault,
       firstMonthAmount: new Prisma.Decimal(cfg.providerPenaltyFirstMonth.toFixed(2)),
       perMonthAmount: new Prisma.Decimal(cfg.providerPenaltyPerMonth.toFixed(2)),
       amount: new Prisma.Decimal(period.penalty.toFixed(2)),
       basis: basis as any, statutoryVersion: cfg.version,
-      noticeRef: `PPN-${periodLabel}-${randomBytes(3).toString('hex').toUpperCase()}`,
     };
 
     const saved = await this.prisma.providerPenalty.upsert({
       where: { providerId_periodLabel: { providerId, periodLabel } },
-      update: data,        // refresh figures (e.g. a MISSING period accruing further)
-      create: { ...data, status: 'ASSESSED' },
+      update: refreshable, // refresh figures only — keep the existing noticeRef/status
+      create: {
+        ...refreshable,
+        status: 'ASSESSED',
+        // Notice reference is minted once, at first assessment, and never changes.
+        noticeRef: `PPN-${periodLabel}-${randomBytes(3).toString('hex').toUpperCase()}`,
+      },
     });
 
     await this.audit.log({
