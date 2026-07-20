@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import {
   providersApi, type ProviderUpload, type UploadRecord, type UploadsResponse,
 } from '@/lib/api/providers';
-import { accessAssignmentsApi, stepUpApi } from '@/lib/api/access';
+import { accessAssignmentsApi, stepUpApi, grantTokenApi, type AccessGrantToken } from '@/lib/api/access';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { formatBytes, formatDate, formatDateTime, formatMoneyShort, extractErrorMessage } from '@/lib/utils';
 import PasswordInput from '@/components/PasswordInput';
@@ -36,6 +36,12 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
   const [assignBusy, setAssignBusy] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
 
+  // four-eyes grant-token state
+  const [grant, setGrant] = useState<AccessGrantToken | null>(null); // this provider's live grant, if any
+  const [grantBusy, setGrantBusy] = useState(false);
+  const [grantError, setGrantError] = useState<string | null>(null);
+  const [token, setToken] = useState('');
+
   // step-up state
   const [stepToken, setStepToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
@@ -45,12 +51,28 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
 
-  // Check whether this officer is assigned to THIS provider (need-to-know).
+  // Check assignment (need-to-know) + any live grant token for THIS provider.
+  const refreshGrant = () => {
+    grantTokenApi.mine()
+      .then((rows) => setGrant(rows.find((g) => g.providerId === providerId && !g.revokedAt) ?? null))
+      .catch(() => setGrant(null));
+  };
   useEffect(() => {
     accessAssignmentsApi.mine()
       .then((rows) => setAssigned(rows.some((a) => a.providerId === providerId && !a.revokedAt)))
       .catch(() => setAssigned(false));
+    refreshGrant();
   }, [providerId]);
+
+  const requestToken = async () => {
+    if (!assignReason.trim()) { setGrantError('A reason is required to request access.'); return; }
+    setGrantBusy(true); setGrantError(null);
+    try {
+      await grantTokenApi.request({ providerId, reason: assignReason.trim() });
+      setAssignReason(''); refreshGrant();
+    } catch (e) { setGrantError(extractErrorMessage(e)); }
+    finally { setGrantBusy(false); }
+  };
 
   const selfAssign = async () => {
     if (!assignReason.trim()) { setAssignError('A reason is required.'); return; }
@@ -106,10 +128,15 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
   const doStepUp = async () => {
     setAuthBusy(true); setAuthError(null);
     try {
+      // Four-eyes: redeem the SUPER_ADMIN-approved token with the password FIRST.
+      // Reusable for the work session, so if it's already redeemed this just
+      // confirms the session is live. Then issue the sliding-session step-up.
+      await grantTokenApi.redeem({ providerId, token: token.trim().toUpperCase(), password });
       const r = await providersApi.stepUp(password, providerId, needTotp ? totp.trim() : undefined);
       setStepToken(r.stepUpToken);
       setExpiresAt(Date.now() + r.expiresInSeconds * 1000);
-      setPassword(''); setTotp('');
+      setPassword(''); setTotp(''); setToken('');
+      refreshGrant();
     } catch (err) {
       const msg = extractErrorMessage(err);
       if (msg === 'MFA code required' && !needTotp) { setNeedTotp(true); setAuthError('Enter your authenticator code.'); }
@@ -247,16 +274,54 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
             </div>
           ) : !stepToken && assigned === null ? (
             <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Checking your access…</div>
+          ) : !stepToken && (!grant || grant.status === 'REVOKED' || grant.status === 'EXPIRED') ? (
+            /* Assigned, but no live grant token — request one (four-eyes). */
+            <div className="mt-6 rounded-xl border border-sky-200 bg-sky-50/60 p-5">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">🪪</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-800">Request access to upload records</p>
+                  <p className="text-xs text-slate-600 mt-0.5 mb-3">
+                    Viewing raw records requires a <strong>Super Admin</strong> to approve your access (four-eyes). Request it
+                    with a reason; you&apos;ll receive a one-time token to unlock with your password. This is audited.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">Reason for access</label>
+                      <input value={assignReason} onChange={(e) => setAssignReason(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && requestToken()}
+                        placeholder="e.g. assessing case #1234"
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-sky-500" />
+                    </div>
+                    <button onClick={requestToken} disabled={grantBusy || !assignReason.trim()}
+                      className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                      {grantBusy ? 'Requesting…' : 'Request access'}
+                    </button>
+                  </div>
+                  {grantError && <p className="text-xs text-rose-600 mt-2">{grantError}</p>}
+                </div>
+              </div>
+            </div>
+          ) : !stepToken && grant?.status === 'PENDING' ? (
+            /* Requested — waiting for a Super Admin to approve. */
+            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-5 text-sm text-slate-700">
+              <p className="font-semibold text-slate-800">⏳ Awaiting Super Admin approval</p>
+              <p className="text-xs text-slate-600 mt-1">
+                Your access request is pending. A Super Admin will approve it and issue you a one-time token (also emailed).
+                Once you have the token, refresh and enter it with your password below.
+              </p>
+              <button onClick={refreshGrant} className="mt-2 text-xs font-medium text-amber-700 hover:underline">Refresh status</button>
+            </div>
           ) : !stepToken ? (
-            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-5">
+            /* Approved (or redeemed within session) — redeem password + token to unlock. */
+            <div className="mt-6 rounded-xl border border-teal-200 bg-teal-50/60 p-5">
               <div className="flex items-start gap-3">
                 <span className="text-xl">🔐</span>
                 <div className="flex-1">
-                  <p className="text-sm font-semibold text-slate-800">Authorise access to upload records</p>
+                  <p className="text-sm font-semibold text-slate-800">Unlock upload records</p>
                   <p className="text-xs text-slate-600 mt-0.5 mb-3">
-                    Viewing the actual records inside an upload reveals sensitive taxpayer data (BVN, NIN, account details).
-                    Re-enter your password to unlock. Your session stays open while you work and locks after 5 minutes idle.
-                    This action is audited.
+                    Your access was approved. Enter your <strong>password</strong> and the <strong>one-time token</strong> (from
+                    the Super Admin / your email) to unlock. Your session stays open while you work and locks after 5 minutes idle. Audited.
                   </p>
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
@@ -265,24 +330,27 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
                         value={password} autoComplete="current-password"
                         onChange={(e) => setPassword(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && doStepUp()}
-                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-56 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-52 focus:outline-none focus:ring-2 focus:ring-teal-500"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">Access token</label>
+                      <input value={token} onChange={(e) => setToken(e.target.value.toUpperCase())}
+                        onKeyDown={(e) => e.key === 'Enter' && doStepUp()}
+                        placeholder="e.g. 3F9A2C7B10" maxLength={10}
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-44 font-mono tracking-widest uppercase focus:outline-none focus:ring-2 focus:ring-teal-500" />
                     </div>
                     {needTotp && (
                       <div>
                         <label className="block text-[10px] font-medium text-slate-500 mb-1">Authenticator code</label>
-                        <input
-                          inputMode="numeric" maxLength={6} value={totp}
+                        <input inputMode="numeric" maxLength={6} value={totp}
                           onChange={(e) => setTotp(e.target.value.replace(/\D/g, ''))}
                           onKeyDown={(e) => e.key === 'Enter' && doStepUp()}
-                          className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-32 font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-teal-500"
-                        />
+                          className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-32 font-mono tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-teal-500" />
                       </div>
                     )}
-                    <button
-                      onClick={doStepUp} disabled={authBusy || !password}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50"
-                    >
+                    <button onClick={doStepUp} disabled={authBusy || !password || !token.trim()}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
                       {authBusy ? 'Verifying…' : 'Unlock'}
                     </button>
                   </div>

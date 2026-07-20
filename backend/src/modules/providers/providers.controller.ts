@@ -6,6 +6,7 @@ import { ProvidersService } from './providers.service';
 import { ProviderComplianceService } from './provider-compliance.service';
 import { AuthService } from '../auth/auth.service';
 import { AccessAssignmentService } from '../access/access-assignment.service';
+import { AccessGrantTokenService } from '../access/access-grant-token.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -21,6 +22,7 @@ export class ProvidersController {
     private compliance: ProviderComplianceService,
     private auth: AuthService,
     private access: AccessAssignmentService,
+    private grant: AccessGrantTokenService,
   ) {}
 
   @Post()
@@ -49,6 +51,28 @@ export class ProvidersController {
   @Get('compliance')
   complianceList(@Query('year') year?: string, @Query('providerId') providerId?: string) {
     return this.compliance.forYear(parseInt(year ?? `${new Date().getFullYear()}`, 10), providerId);
+  }
+
+  // ─── Provider late/failure-to-file penalties (NTAA s.101) ───────────────────
+  @Get('penalties')
+  listPenalties(@Query('year') year?: string, @Query('providerId') providerId?: string, @Query('status') status?: string) {
+    return this.compliance.listPenalties({
+      providerId, status,
+      year: year ? parseInt(year, 10) : undefined,
+    });
+  }
+
+  @Post('penalties/issue')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  issuePenalty(@Body() dto: { providerId: string; periodLabel: string }, @CurrentStaff() u: any) {
+    if (!dto?.providerId || !dto?.periodLabel) throw new BadRequestException('providerId and periodLabel are required.');
+    return this.compliance.issuePenalty(dto.providerId, dto.periodLabel, u.id);
+  }
+
+  @Post('penalties/issue-all')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  issueAllPenalties(@Body() dto: { year?: number }, @CurrentStaff() u: any) {
+    return this.compliance.issueAllForYear(dto?.year ?? new Date().getFullYear(), u.id);
   }
 
   @Get()
@@ -101,6 +125,8 @@ export class ProvidersController {
     // Re-checked on every fetch, so a revoke cuts access immediately.
     const providerId = await this.service.providerIdForSubmission(submissionId);
     await this.access.assertProviderAccess({ id: staffId, role: u.role }, providerId);
+    // Four-eyes: also require a live, SUPER_ADMIN-approved grant token session.
+    await this.grant.assertActiveSession(staffId, { providerId });
     return this.service.getUploadRecords(submissionId, staffId, {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
@@ -122,6 +148,7 @@ export class ProvidersController {
     const { staffId } = await this.auth.verifyStepUp(stepUpToken, 'PROVIDER_UPLOADS');
     const providerId = await this.service.providerIdForSubmission(submissionId);
     await this.access.assertProviderAccess({ id: staffId, role: u.role }, providerId);
+    await this.grant.assertActiveSession(staffId, { providerId });
     const { filename, csv } = await this.service.exportUploadCsv(submissionId, staffId);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

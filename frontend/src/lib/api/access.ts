@@ -67,3 +67,36 @@ export const stepUpApi = {
       method: 'POST', body: { stepUpToken },
     }),
 };
+
+// ── Four-eyes grant tokens for raw-record unlock. ──
+export type GrantTokenStatus = 'PENDING' | 'APPROVED' | 'REDEEMED' | 'REVOKED' | 'EXPIRED';
+export interface AccessGrantToken {
+  id: string;
+  staffId: string;
+  providerId: string | null;
+  caseId: string | null;
+  reason: string;
+  status: GrantTokenStatus;
+  requestedAt: string;
+  approvedById: string | null;
+  approvedAt: string | null;
+  redeemExpiresAt: string | null;
+  redeemedAt: string | null;
+  sessionExpiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export const grantTokenApi = {
+  /** Officer requests access to a provider/case they're assigned to. */
+  request: (dto: { providerId?: string; caseId?: string; reason: string }) =>
+    apiFetch<{ id: string; status: GrantTokenStatus }>('/access/grant-tokens/request', { method: 'POST', body: dto }),
+  /** SUPER_ADMIN approves — returns the raw one-time token to relay. */
+  approve: (id: string) =>
+    apiFetch<{ id: string; token: string; redeemExpiresAt: string; requester: string }>(`/access/grant-tokens/${id}/approve`, { method: 'POST', body: {} }),
+  /** Officer redeems password + token to open the access session. */
+  redeem: (dto: { providerId?: string; caseId?: string; token: string; password: string }) =>
+    apiFetch<{ ok: boolean; sessionExpiresAt: string | null }>('/access/grant-tokens/redeem', { method: 'POST', body: dto }),
+  revoke: (id: string) => apiFetch<AccessGrantToken>(`/access/grant-tokens/${id}/revoke`, { method: 'POST', body: {} }),
+  pending: () => apiFetch<AccessGrantToken[]>('/access/grant-tokens/pending'),
+  mine: () => apiFetch<AccessGrantToken[]>('/access/grant-tokens/me'),
+};

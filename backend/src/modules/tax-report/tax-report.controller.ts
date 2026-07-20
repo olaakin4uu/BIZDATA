@@ -10,6 +10,7 @@ import { CurrentStaff } from '../../common/decorators/current-staff.decorator';
 import { ApiKeyGuard } from '../integration/api-key.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AccessAssignmentService } from '../access/access-assignment.service';
+import { AccessGrantTokenService } from '../access/access-grant-token.service';
 
 // Staff-facing: the per-customer tax report + manual payment entry.
 @ApiTags('Tax Report')
@@ -21,6 +22,7 @@ export class TaxReportController {
     private svc: TaxReportService,
     private prisma: PrismaService,
     private access: AccessAssignmentService,
+    private grant: AccessGrantTokenService,
   ) {}
 
   @Get('taxpayers/:id/tax-report')
@@ -46,6 +48,7 @@ export class TaxReportController {
     // Need-to-know: printable report reveals the taxpayer's identity — require an
     // active case-level assignment.
     await this.access.assertCaseAccess({ id: u.id, role: u.role }, id);
+    await this.grant.assertActiveSession(u.id, { caseId: id });
     const report = await this.svc.taxReport(c.taxpayerId, { year: year ? parseInt(year, 10) : c.year });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');

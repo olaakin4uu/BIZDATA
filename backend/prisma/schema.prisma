@@ -196,8 +196,45 @@ model DataProvider {
   records      DataRecord[]
   mou          BankMou?
   uploads      SubmissionUpload[]
+  penalties    ProviderPenalty[]
 
   @@map("data_providers")
+}
+
+// ─── PROVIDER LATE/FAILURE-TO-FILE PENALTIES (NTAA 2025 s.101) ─────────────────
+// A formal, auditable penalty record raised against a provider for a reporting
+// period it filed late or failed to file. The amount is computed on the s.101
+// basis (first-month fine + per-subsequent-month fine) using the StatutoryConfig
+// figures active when the penalty is issued; the version + breakdown are stamped
+// for defensibility. One record per provider/period (re-issuing refreshes it).
+model ProviderPenalty {
+  id            String   @id @default(uuid())
+  providerId    String
+  periodLabel   String   // e.g. '2025-Q2' or '2025-03'
+  periodYear    Int
+  dueAt         DateTime // statutory due date for the period
+  reason        String   // 'LATE' | 'MISSING'
+  monthsInDefault Int    // whole months counted (>=1)
+  firstMonthAmount Decimal @db.Decimal(18, 2)
+  perMonthAmount   Decimal @db.Decimal(18, 2)
+  amount        Decimal  @db.Decimal(18, 2) // total: first + (monthsInDefault-1) * perMonth
+  basis         Json?    // methodology snapshot (statute, figures, dates) for the notice
+  statutoryVersion Int?  // StatutoryConfig.version used
+  status        String   @default("ASSESSED") // 'ASSESSED' | 'NOTIFIED' | 'WAIVED' | 'PAID'
+  noticeRef     String?  // e.g. PPN-2025-Q2-AB12CD
+  notifiedAt    DateTime?
+  resolvedAt    DateTime?
+  notes         String?
+  createdById   String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  provider      DataProvider @relation(fields: [providerId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, periodLabel])
+  @@index([providerId])
+  @@index([status])
+  @@map("provider_penalties")
 }
 
 model DataProviderUser {
@@ -281,6 +318,14 @@ model Taxpayer {
   businessType   String?        // nature of business (e.g. "Retail", "Restaurant", "Consultancy") — provider-supplied
   identityVerifiedAt DateTime?  // set when NIN was confirmed via an external source (NIBSS/NIMC)
   identitySource String?        // 'NIBSS' | 'NIMC' | 'MOCK' — how the NIN was verified
+  // ── Legal form: limited-liability company (LTD/Limited/PLC) ──
+  // CIT/VAT are FEDERAL taxes — a State IRS does NOT assess income tax on limited
+  // companies. Defaulted from the business-name suffix at ingest/scan; staff may
+  // override (a genuine Ltd whose stored name omits the suffix, or vice-versa).
+  // When true, the scan raises no income-underdeclaration case; the party is
+  // pursued on the PAYE/CGT/WHT remittance-verification track (see Tax Net).
+  isLimitedLiability Boolean   @default(false)
+  llcSource      String?        // 'NAME_SUFFIX' | 'MANUAL' — how isLimitedLiability was set
   // ── PAYE / employer registration (mainly for CORPORATE taxpayers) ──
   // BIZDATA cannot know PAYE status natively; it is pushed from the KIRS Tax app
   // (POST /integration/paye) or set manually by staff. A corporate that is
@@ -386,6 +431,42 @@ model AccessAssignment {
   @@index([staffId, providerId, revokedAt])
   @@index([staffId, caseId, revokedAt])
   @@map("access_assignments")
+}
+
+// Four-eyes grant token for unlocking raw records. An assigned officer REQUESTS
+// access; a SUPER_ADMIN (never the requester) APPROVES, which mints a one-time
+// token (raw shown to the approver + emailed to the officer; only the SHA-256
+// hash is stored). The officer redeems it with their PASSWORD + the token to
+// unlock. Once redeemed it is reusable for that provider/case for the work
+// session window (redeemedAt + sessionHours), then expires. Fully audited.
+enum GrantTokenStatus {
+  PENDING   // requested, awaiting approval
+  APPROVED  // approved, token minted, redeemable
+  REDEEMED  // officer has redeemed at least once (session active)
+  REVOKED   // withdrawn by an admin
+  EXPIRED   // past its window
+}
+
+model AccessGrantToken {
+  id           String           @id @default(uuid())
+  staffId      String           // the officer who will unlock (requester)
+  providerId   String?          // provider-scoped grant
+  caseId       String?          // case-scoped grant
+  reason       String           // business justification (required, audited)
+  status       GrantTokenStatus @default(PENDING)
+  tokenHash    String?          // SHA-256 of the raw token; set on approval, cleared on revoke/expire
+  requestedAt  DateTime         @default(now())
+  approvedById String?          // SUPER_ADMIN who approved (must differ from staffId)
+  approvedAt   DateTime?
+  redeemExpiresAt DateTime?      // deadline for the FIRST redemption after approval
+  redeemedAt   DateTime?         // first successful redemption; starts the session window
+  sessionExpiresAt DateTime?     // redeemedAt + sessionHours; token usable until then
+  revokedAt    DateTime?
+  revokedById  String?
+
+  @@index([staffId, status])
+  @@index([tokenHash])
+  @@map("access_grant_tokens")
 }
 
 model DataSubmission {
@@ -581,7 +662,10 @@ model UnderdeclarationCase {
   declaredIncome    Decimal    @db.Decimal(18, 2)
   discrepancyAmount Decimal    @db.Decimal(18, 2)
   discrepancyPct    Decimal    @db.Decimal(8, 4)
-  estimatedTaxDue   Decimal    @db.Decimal(18, 2) // recoverable tax estimate on the gap
+  estimatedTaxDue   Decimal    @db.Decimal(18, 2) // recoverable tax estimate on the gap (graduated NTA bands)
+  taxBasis          String?    // 'PIT_GRADUATED' | 'NOT_ASSESSED_LLC' — how estimatedTaxDue was derived
+  altTaxRate        Decimal?   @db.Decimal(5, 4)  // configurable flat comparison rate (seeded from CIT)
+  altTaxDue         Decimal?   @db.Decimal(18, 2) // the gap taxed at altTaxRate, shown beside the graduated figure
   confidence        Decimal    @db.Decimal(3, 2)  // 0..1 detection-engine confidence
   agentScore        Decimal?   @db.Decimal(3, 2)  // 0..1 aggregate AI-agent corroboration
   reasons           Json?      // reason codes explaining the flag
@@ -685,6 +769,14 @@ model StatutoryConfig {
   // period (quarter) reaches these amounts. Below-threshold parties are hidden.
   reportingThresholdIndividual Decimal @default(50000000)  @db.Decimal(18, 2) // 50m per period, individuals
   reportingThresholdCorporate  Decimal @default(250000000) @db.Decimal(18, 2) // 250m per period, corporates
+
+  // Provider late/failure-to-file penalty (NTAA 2025 s.101). A provider that
+  // files a statutory return late, or misses it entirely, incurs a fixed fine
+  // for the first month of default plus a further fixed fine for each subsequent
+  // month it continues. Both amounts are editable so the authority can track the
+  // gazetted figures over time. Seeded from s.101 (₦100k first / ₦50k each after).
+  providerPenaltyFirstMonth Decimal @default(100000) @db.Decimal(18, 2)
+  providerPenaltyPerMonth   Decimal @default(50000)  @db.Decimal(18, 2)
 
   // Grace period for phased-in compulsory submission fields (sector /
   // businessType / customerType). Blank values warn before this date and are

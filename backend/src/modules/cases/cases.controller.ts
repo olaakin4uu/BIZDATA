@@ -6,6 +6,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CasesService } from './cases.service';
 import { AccessAssignmentService } from '../access/access-assignment.service';
+import { AccessGrantTokenService } from '../access/access-grant-token.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -19,6 +20,7 @@ export class CasesController {
   constructor(
     private service: CasesService,
     private access: AccessAssignmentService,
+    private grant: AccessGrantTokenService,
   ) {}
 
   @Get('stats')
@@ -54,6 +56,8 @@ export class CasesController {
     // officer must hold an active case-level assignment. Re-checked here, so a
     // revoke blocks the next export immediately.
     await this.access.assertCaseAccess({ id: u.id, role: u.role }, id);
+    // Four-eyes: also require a live, SUPER_ADMIN-approved grant token session.
+    await this.grant.assertActiveSession(u.id, { caseId: id });
     return this.service.evidenceBundle(id, { id: u.id, email: u.email });
   }
 
