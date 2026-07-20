@@ -34,7 +34,12 @@ export class LlmFactory {
   }
 
   get maxTokens(): number {
-    return Number(process.env.IRIS_MAX_TOKENS || 4096);
+    return Number(process.env.IRIS_MAX_TOKENS || 6000);
+  }
+
+  /** Thinking depth: low | medium | high | xhigh | max. Medium keeps chat snappy. */
+  get effort(): string {
+    return process.env.IRIS_EFFORT || 'medium';
   }
 
   get enabled(): boolean {

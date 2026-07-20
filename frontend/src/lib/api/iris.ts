@@ -47,6 +47,7 @@ export const irisApi = {
 };
 
 export interface IrisStreamHandlers {
+  onThinking?: (text: string) => void;
   onDelta: (text: string) => void;
   onDone: (r: { conversationId: string; reply: string; cards: IrisCard[] }) => void;
   onError: (message: string) => void;
@@ -89,7 +90,8 @@ export async function chatStream(
       if (!line.startsWith('data:')) continue;
       try {
         const e = JSON.parse(line.slice(5).trim());
-        if (e.type === 'delta') h.onDelta(e.text);
+        if (e.type === 'thinking') h.onThinking?.(e.text);
+        else if (e.type === 'delta') h.onDelta(e.text);
         else if (e.type === 'done') h.onDone(e);
         else if (e.type === 'error') h.onError(e.message);
       } catch {

@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PageHeader from '@/components/PageHeader';
+import Markdown from '@/components/Markdown';
 import {
   irisApi,
   chatStream,
@@ -12,7 +13,7 @@ import {
 import { extractErrorMessage } from '@/lib/utils';
 
 type Item =
-  | { kind: 'text'; role: 'user' | 'assistant'; text: string }
+  | { kind: 'text'; role: 'user' | 'assistant'; text: string; thinking?: string }
   | {
       kind: 'card';
       card: IrisCard;
@@ -25,6 +26,7 @@ const SUGGESTIONS = [
   'Show me the top 10 cases for 2025',
   'Explain the highest-confidence case',
   'Generate an Excel report of open cases',
+  'Run the 2025 scan',
 ];
 
 export default function IrisPage() {
@@ -41,18 +43,15 @@ export default function IrisPage() {
   }, []);
 
   useEffect(() => refreshConversations(), [refreshConversations]);
-
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: 'smooth' });
   }, [items, loading]);
 
-  function appendDelta(delta: string) {
+  function patchLastAssistant(fn: (it: Extract<Item, { kind: 'text' }>) => Extract<Item, { kind: 'text' }>) {
     setItems((prev) => {
       const next = [...prev];
       const last = next[next.length - 1];
-      if (last && last.kind === 'text' && last.role === 'assistant') {
-        next[next.length - 1] = { ...last, text: last.text + delta };
-      }
+      if (last && last.kind === 'text' && last.role === 'assistant') next[next.length - 1] = fn(last);
       return next;
     });
   }
@@ -62,15 +61,18 @@ export default function IrisPage() {
     if (!text || loading) return;
     setError('');
     setInput('');
-    setItems((prev) => [...prev, { kind: 'text', role: 'user', text }, { kind: 'text', role: 'assistant', text: '' }]);
+    setItems((prev) => [...prev, { kind: 'text', role: 'user', text }, { kind: 'text', role: 'assistant', text: '', thinking: '' }]);
     setLoading(true);
     await chatStream(text, conversationId, {
-      onDelta: appendDelta,
+      onThinking: (t) => patchLastAssistant((it) => ({ ...it, thinking: (it.thinking ?? '') + t })),
+      onDelta: (t) => patchLastAssistant((it) => ({ ...it, text: it.text + t })),
       onError: (m) => {
         setError(m);
         setLoading(false);
-        // drop the empty assistant placeholder
-        setItems((prev) => (prev[prev.length - 1]?.kind === 'text' && (prev[prev.length - 1] as { text: string }).text === '' ? prev.slice(0, -1) : prev));
+        setItems((prev) => {
+          const last = prev[prev.length - 1];
+          return last && last.kind === 'text' && last.role === 'assistant' && !last.text && !last.thinking ? prev.slice(0, -1) : prev;
+        });
       },
       onDone: ({ conversationId: cid, reply, cards }) => {
         setConversationId(cid);
@@ -79,7 +81,7 @@ export default function IrisPage() {
           const last = next[next.length - 1];
           if (last && last.kind === 'text' && last.role === 'assistant') {
             if (reply) next[next.length - 1] = { ...last, text: reply };
-            else next.pop(); // no text (pure action) — drop the empty bubble
+            else if (!last.thinking) next.pop();
           }
           for (const card of cards) next.push({ kind: 'card', card, state: 'pending' });
           return next;
@@ -138,16 +140,12 @@ export default function IrisPage() {
       <PageHeader
         title="IRIS"
         icon="robot"
-        subtitle="Your revenue-intelligence assistant. Ask it to find cases, run a scan, export an encrypted report, or draft a §35 notice. Sensitive actions always ask for your confirmation first."
+        subtitle="Your revenue-intelligence assistant. Ask it to find cases, run a scan, export an encrypted report, or draft a §35 notice. It reasons before answering, and asks you to confirm anything sensitive."
       />
 
       <div className="flex h-[calc(100vh-11rem)] gap-4">
-        {/* History */}
         <aside className="hidden w-56 shrink-0 flex-col rounded-xl border border-slate-200 bg-white md:flex">
-          <button
-            onClick={newChat}
-            className="m-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700"
-          >
+          <button onClick={newChat} className="m-2 rounded-lg bg-teal-600 px-3 py-2 text-sm font-medium text-white hover:bg-teal-700">
             + New chat
           </button>
           <div className="flex-1 overflow-y-auto px-2 pb-2">
@@ -157,7 +155,7 @@ export default function IrisPage() {
                 key={c.id}
                 onClick={() => loadConversation(c.id)}
                 className={`mb-0.5 w-full truncate rounded-lg px-2.5 py-2 text-left text-xs transition-colors ${
-                  c.id === conversationId ? 'bg-teal-50 text-teal-800' : 'text-[var(--ink-2)] hover:bg-slate-50'
+                  c.id === conversationId ? 'bg-teal-50 font-medium text-teal-800' : 'text-[var(--ink-2)] hover:bg-slate-50'
                 }`}
                 title={c.title ?? 'Conversation'}
               >
@@ -167,15 +165,14 @@ export default function IrisPage() {
           </div>
         </aside>
 
-        {/* Chat */}
         <div className="flex min-w-0 flex-1 flex-col">
-          <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto rounded-xl border border-slate-200 bg-slate-50/60 p-4">
+          <div ref={scrollRef} className="flex-1 space-y-4 overflow-y-auto rounded-xl border border-slate-200 bg-gradient-to-b from-slate-50/80 to-white p-4">
             {items.length === 0 && (
               <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-600 text-lg font-semibold text-white">IR</span>
+                <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-teal-600 text-xl font-semibold text-white shadow-sm">IR</span>
                 <p className="max-w-md text-sm text-[var(--ink-2)]">
-                  Hello — I&apos;m IRIS. I can only tell you what the detection engine and the data show, and I&apos;ll ask you to
-                  confirm anything that changes a case, sends a notice, or exports data.
+                  Hello — I&apos;m IRIS. I reason over what the detection engine and the data actually show, present it clearly, and
+                  ask you to confirm anything that changes a case, sends a notice, or exports data.
                 </p>
                 <div className="flex flex-wrap justify-center gap-2">
                   {SUGGESTIONS.map((s) => (
@@ -193,23 +190,24 @@ export default function IrisPage() {
 
             {items.map((it, i) =>
               it.kind === 'text' ? (
-                <div key={i} className={`flex ${it.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div
-                    className={`max-w-[80%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
-                      it.role === 'user' ? 'bg-teal-600 text-white' : 'border border-slate-200 bg-white text-[var(--ink)]'
-                    }`}
-                  >
-                    {it.text || (loading && i === items.length - 1 ? '…' : '')}
+                it.role === 'user' ? (
+                  <div key={i} className="flex justify-end">
+                    <div className="max-w-[80%] whitespace-pre-wrap rounded-2xl rounded-tr-sm bg-teal-600 px-4 py-2.5 text-sm leading-relaxed text-white">
+                      {it.text}
+                    </div>
                   </div>
-                </div>
+                ) : (
+                  <AssistantBubble key={i} text={it.text} thinking={it.thinking} streaming={loading && i === items.length - 1} />
+                )
               ) : (
-                <ConfirmCard
-                  key={i}
-                  item={it}
-                  onConfirm={() => confirmCard(it.card)}
-                  onCancel={() => cancelCard(it.card)}
-                  onDownload={() => it.download && downloadIrisExport(it.download.exportId, it.download.fileName)}
-                />
+                <div key={i} className="pl-9">
+                  <ConfirmCard
+                    item={it}
+                    onConfirm={() => confirmCard(it.card)}
+                    onCancel={() => cancelCard(it.card)}
+                    onDownload={() => it.download && downloadIrisExport(it.download.exportId, it.download.fileName)}
+                  />
+                </div>
               ),
             )}
           </div>
@@ -250,6 +248,38 @@ export default function IrisPage() {
   );
 }
 
+function AssistantBubble({ text, thinking, streaming }: { text: string; thinking?: string; streaming: boolean }) {
+  const [open, setOpen] = useState(false);
+  const hasThinking = !!thinking && thinking.trim().length > 0;
+  const autoShow = streaming && !text; // stream reasoning live until the answer begins
+  const show = open || autoShow;
+  return (
+    <div className="flex items-start gap-2.5">
+      <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-teal-600 text-[11px] font-bold text-white">IR</span>
+      <div className="min-w-0 max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3 shadow-sm">
+        {hasThinking && (
+          <div className="mb-2">
+            <button onClick={() => setOpen((o) => !o)} className="flex items-center gap-1 text-xs font-medium text-slate-400 hover:text-slate-600">
+              <span>{show ? '▾' : '▸'}</span>
+              {autoShow ? 'Thinking…' : 'Reasoning'}
+            </button>
+            {show && (
+              <div className="mt-1.5 whitespace-pre-wrap border-l-2 border-slate-200 pl-3 text-xs italic leading-relaxed text-slate-400">
+                {thinking}
+              </div>
+            )}
+          </div>
+        )}
+        {text ? (
+          <Markdown>{text}</Markdown>
+        ) : streaming ? (
+          <span className="inline-block h-4 w-1.5 animate-pulse rounded-sm bg-slate-300 align-middle" />
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
 function ConfirmCard({
   item,
   onConfirm,
@@ -263,21 +293,21 @@ function ConfirmCard({
 }) {
   const { card, state } = item;
   return (
-    <div className="max-w-[80%] rounded-2xl border border-amber-300 bg-amber-50 p-4">
+    <div className="max-w-[80%] rounded-2xl border border-amber-300 bg-amber-50 p-4 shadow-sm">
       <div className="flex items-center gap-2">
-        <span className="rounded-md bg-amber-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">
-          Confirm required
-        </span>
+        <span className="rounded-md bg-amber-200 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-800">Confirm required</span>
         <span className="text-sm font-semibold text-[var(--ink)]">{card.title}</span>
       </div>
       <p className="mt-2 text-sm leading-relaxed text-[var(--ink-2)]">{card.summary}</p>
 
       {card.details && (
-        <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+        <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-1 text-xs sm:grid-cols-2">
           {Object.entries(card.details).map(([k, v]) => (
-            <div key={k} className="flex justify-between border-b border-amber-200/60 py-0.5">
+            <div key={k} className="flex justify-between gap-2 border-b border-amber-200/60 py-0.5">
               <dt className="text-[var(--ink-2)]">{k}</dt>
-              <dd className="max-w-[60%] truncate font-medium text-[var(--ink)]" title={String(v)}>{String(v)}</dd>
+              <dd className="max-w-[60%] truncate font-medium text-[var(--ink)]" title={String(v)}>
+                {String(v)}
+              </dd>
             </div>
           ))}
         </dl>

@@ -11,20 +11,30 @@ const MAX_ITERATIONS = 6;
 
 export interface IrisTurnResult {
   reply: string;
-  messages: Anthropic.MessageParam[]; // full history incl. this turn, real names, for persistence
+  messages: Anthropic.MessageParam[]; // full history incl. this turn, real names, thinking stripped
   cards: ConfirmRequired['card'][]; // confirm cards raised this turn (real names, for the UI)
   usage: { inputTokens: number; outputTokens: number };
 }
 
 export interface IrisStreamEvents {
-  onDelta?: (text: string) => void; // restored (real-name) text deltas
+  onDelta?: (text: string) => void; // restored (real-name) answer text
+  onThinking?: (text: string) => void; // restored summarised reasoning
+}
+
+function stripThinking(content: unknown): unknown {
+  if (!Array.isArray(content)) return content;
+  return content.filter((b) => {
+    const t = (b as { type?: string } | null)?.type;
+    return t !== 'thinking' && t !== 'redacted_thinking';
+  });
 }
 
 /**
  * The tool-use loop. Hand-rolled so we own the permission gate, confirm handling,
- * per-turn token accounting, and — new in v2 — NAME PSEUDONYMISATION: the stored
- * `messages` carry real names; a per-turn Pseudonymizer tokenises everything sent
- * to the model and restores real names on the way back.
+ * token accounting, NAME PSEUDONYMISATION, and — new — ADAPTIVE THINKING: IRIS
+ * reasons before answering and streams a summarised chain of thought. Signed
+ * thinking blocks are preserved verbatim during the turn and stripped before we
+ * persist (they're the model's scratchpad, not history).
  */
 @Injectable()
 export class IrisOrchestrator {
@@ -52,57 +62,54 @@ export class IrisOrchestrator {
     const tools = this.registry.catalogFor(input.ctx.role);
     const pseudo = new Pseudonymizer();
 
-    // Real-name history — persisted and re-pseudonymised each iteration.
-    const messages: Anthropic.MessageParam[] = [
-      ...input.history,
-      { role: 'user', content: input.userMessage },
-    ];
+    const messages: Anthropic.MessageParam[] = [...input.history, { role: 'user', content: input.userMessage }];
     const cards: ConfirmRequired['card'][] = [];
     let inputTokens = 0;
     let outputTokens = 0;
     let reply = '';
 
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
-      // Register names from the whole context, then send a tokenised copy.
-      pseudo.scanValue(messages);
-      const sendMessages = messages.map((m) => ({
-        role: m.role,
-        content: pseudo.applyValue(m.content),
-      })) as Anthropic.MessageParam[];
+    const onText = input.events?.onDelta;
+    const onThink = input.events?.onThinking;
 
-      const streamed = input.events?.onDelta;
+    for (let i = 0; i < MAX_ITERATIONS; i++) {
+      pseudo.scanValue(messages);
+      const sendMessages = messages.map((m) => ({ role: m.role, content: pseudo.applyValue(m.content) })) as Anthropic.MessageParam[];
+
+      const req = {
+        model: this.llm.model,
+        max_tokens: this.llm.maxTokens,
+        system,
+        tools: tools as unknown as Anthropic.Tool[],
+        messages: sendMessages,
+        thinking: { type: 'adaptive', display: 'summarized' },
+        output_config: { effort: this.llm.effort },
+      } as unknown as Anthropic.MessageCreateParamsNonStreaming;
+
       let res: Anthropic.Message;
-      if (streamed) {
-        const stream = client.messages.stream({
-          model: this.llm.model,
-          max_tokens: this.llm.maxTokens,
-          system,
-          tools: tools as unknown as Anthropic.Tool[],
-          messages: sendMessages,
-        });
-        // Restore each token-space text delta to real names before the UI sees it.
-        stream.on('text', (delta: string) => streamed(pseudo.restore(delta)));
+      if (onText || onThink) {
+        const stream = client.messages.stream(req);
+        for await (const event of stream) {
+          if (event.type === 'content_block_delta') {
+            if (event.delta.type === 'text_delta') onText?.(pseudo.restore(event.delta.text));
+            else if (event.delta.type === 'thinking_delta') onThink?.(pseudo.restore(event.delta.thinking));
+          }
+        }
         res = await stream.finalMessage();
       } else {
-        res = await client.messages.create({
-          model: this.llm.model,
-          max_tokens: this.llm.maxTokens,
-          system,
-          tools: tools as unknown as Anthropic.Tool[],
-          messages: sendMessages,
-        });
+        res = await client.messages.create(req);
       }
 
       inputTokens += res.usage.input_tokens;
       outputTokens += res.usage.output_tokens;
 
-      // Store the assistant turn with real names restored.
+      // Preserve full content (incl. signed thinking) during the turn so the
+      // next iteration's tool_result send has a valid thinking block.
       const restored = pseudo.restoreValue(res.content) as Anthropic.ContentBlockParam[];
       messages.push({ role: 'assistant', content: restored });
 
-      const turnText = (restored as Anthropic.TextBlockParam[])
-        .filter((b) => b.type === 'text')
-        .map((b) => b.text)
+      const turnText = res.content
+        .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+        .map((b) => pseudo.restore(b.text))
         .join('');
       if (turnText) reply = reply ? `${reply}\n${turnText}` : turnText;
 
@@ -111,16 +118,17 @@ export class IrisOrchestrator {
       const toolUses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const use of toolUses) {
-        // The model's tool input is token-space — restore before executing.
         const realInput = pseudo.restoreValue(use.input ?? {}) as Record<string, unknown>;
         const r = await this.executor.run(use.id, use.name, realInput, input.ctx);
-        if (r.raw) pseudo.scanValue(r.raw); // register names the result introduced
+        if (r.raw) pseudo.scanValue(r.raw);
         if (r.card) cards.push(r.card);
         toolResults.push({ type: 'tool_result', tool_use_id: use.id, content: r.content, is_error: r.isError });
       }
-      messages.push({ role: 'user', content: toolResults }); // real names; tokenised next iteration
+      messages.push({ role: 'user', content: toolResults });
     }
 
-    return { reply: reply.trim(), messages, cards, usage: { inputTokens, outputTokens } };
+    // Strip signed thinking blocks before returning for persistence/replay.
+    const cleaned = messages.map((m) => ({ role: m.role, content: stripThinking(m.content) })) as Anthropic.MessageParam[];
+    return { reply: reply.trim(), messages: cleaned, cards, usage: { inputTokens, outputTokens } };
   }
 }

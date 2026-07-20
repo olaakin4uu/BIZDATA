@@ -29,6 +29,13 @@ function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+/** Thinking blocks are signed — their content must never be modified, or the
+ *  signature won't verify on replay. We pass them through untouched. */
+function isThinkingBlock(v: unknown): boolean {
+  const t = (v as { type?: string } | null)?.type;
+  return t === 'thinking' || t === 'redacted_thinking';
+}
+
 export class Pseudonymizer {
   private toToken = new Map<string, string>(); // realName(lower) -> token
   private toName = new Map<string, string>(); // token -> realName
@@ -76,6 +83,7 @@ export class Pseudonymizer {
   /** Return a redacted copy: registered names → tokens, then financial ids masked. */
   applyValue(value: unknown): unknown {
     if (value == null) return value;
+    if (isThinkingBlock(value)) return value; // never touch signed thinking blocks
     if (typeof value === 'string') return this.applyText(value);
     if (Array.isArray(value)) return value.map((v) => this.applyValue(v));
     if (typeof value === 'object') {
@@ -99,6 +107,7 @@ export class Pseudonymizer {
   /** Swap tokens back to real names for the officer-facing reply. */
   restoreValue(value: unknown): unknown {
     if (value == null) return value;
+    if (isThinkingBlock(value)) return value; // signed — leave untouched
     if (typeof value === 'string') return this.restore(value);
     if (Array.isArray(value)) return value.map((v) => this.restoreValue(v));
     if (typeof value === 'object') {
