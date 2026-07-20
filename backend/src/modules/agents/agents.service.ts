@@ -22,20 +22,24 @@ export class AgentsService {
 
   /** Build one profile per taxpayer for the year from bank-report aggregates. */
   private async buildProfiles(year: number): Promise<TaxpayerProfile[]> {
+    // STATUTORY REPORTING THRESHOLD — agents only profile reportable taxpayers,
+    // so no signal is ever raised for a below-threshold party. Compute this set
+    // FIRST and scope the record query to it: at scale the data_records table has
+    // millions of rows but only the reportable taxpayers' records are needed, so
+    // fetching all-then-filtering would load the whole table into memory (OOM).
+    const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
+    if (reportableIds.size === 0) return [];
     const records = await this.prisma.dataRecord.findMany({
-      where: { periodYear: year, taxpayerId: { not: null } },
+      where: { periodYear: year, taxpayerId: { in: [...reportableIds] } },
       select: {
         taxpayerId: true, providerId: true, providerType: true, periodLabel: true, periodYear: true,
         totalInflow: true, totalOutflow: true, openingBalance: true, closingBalance: true,
         transactionCount: true, matchConfidence: true, accountName: true, payload: true,
       },
     });
-    // STATUTORY REPORTING THRESHOLD — agents only profile reportable taxpayers,
-    // so no signal is ever raised for a below-threshold party.
-    const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
     const byTp = new Map<string, typeof records>();
     for (const r of records) {
-      if (!r.taxpayerId || !reportableIds.has(r.taxpayerId)) continue;
+      if (!r.taxpayerId) continue;
       (byTp.get(r.taxpayerId) ?? byTp.set(r.taxpayerId, []).get(r.taxpayerId)!).push(r);
     }
     if (byTp.size === 0) return [];

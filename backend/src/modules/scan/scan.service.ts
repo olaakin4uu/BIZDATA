@@ -62,15 +62,19 @@ export class ScanService {
   async runScan(scanId: string, year: number, threshold: number, providerTypes?: string[]) {
     this.logger.log(`Starting scan ${scanId} (engine ${ENGINE_VERSION}) for year ${year} threshold ${threshold}`);
     try {
+      // Scope to reportable taxpayers FIRST, then load only their records. The
+      // data_records table has millions of rows; loading all of them to aggregate
+      // in-memory OOMs at scale. Only reportable parties can be flagged anyway, so
+      // restricting the read to reportable taxpayer ids is both correct and bounded.
+      // (Account-opening rows carry ₦0 and never affect the sums.)
+      const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
       const whereRecord: Prisma.DataRecordWhereInput = {
         periodYear: year,
-        taxpayerId: { not: null },
+        taxpayerId: reportableIds.size ? { in: [...reportableIds] } : { not: null },
         ...(providerTypes?.length ? { providerType: { in: providerTypes as any[] } } : {}),
       };
 
-      // Pull the matching records once and aggregate per taxpayer in-memory.
-      // NOTE: for very large datasets this should be streamed/batched; demo-scale
-      // volumes make a single read acceptable and keep the scoring logic readable.
+      // Pull the (now bounded) matching records once and aggregate per taxpayer in-memory.
       const records = await this.prisma.dataRecord.findMany({
         where: whereRecord,
         select: {
@@ -104,10 +108,8 @@ export class ScanService {
       let totalFlagged = 0;
       let totalEstimatedTax = 0;
 
-      // STATUTORY REPORTING THRESHOLD — only taxpayers whose §29 cumulative inflow
-      // in a month meets their type's threshold may be reported. Everyone else is
-      // never scanned/flagged/cased, no matter how much data was uploaded.
-      const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
+      // STATUTORY REPORTING THRESHOLD — reportableIds was already computed above
+      // (and used to bound the record read). Only these taxpayers may be flagged.
 
       // Per-sector threshold overrides from the analyst feedback loop (fairness-gated).
       const sectorOverrides = new Map(
