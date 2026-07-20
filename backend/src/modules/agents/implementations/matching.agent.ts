@@ -87,27 +87,79 @@ export class MatchingAgent implements AnalyticsAgent {
       1,
     );
 
-    const score = clamp01(1 - avgMatchConfidence);
+    // --- Distinct accounts (NOT record count) --------------------------------
+    // Records are per (account, period); many rows share one account number, so
+    // counting rows massively overstates the account spread. Count distinct
+    // account numbers (fall back to distinct account NAMES where the number is
+    // absent, e.g. PDF/cumulative sources).
+    const acctKeys = new Set<string>();
+    for (const r of records) {
+      const k = (r.accountNumber || r.accountName || '').trim().toUpperCase();
+      if (k) acctKeys.add(k);
+    }
+    const distinctAccounts = acctKeys.size || 1;
+
+    // --- Shared-identifier concern (the real identity flag) ------------------
+    // A BVN identifies ONE individual. If the same BVN appears on accounts whose
+    // holder NAMES differ materially — e.g. a company account and a personal
+    // account sharing one BVN — that is an identity/beneficial-owner concern
+    // regardless of how "confidently" each record was linked. High match
+    // confidence measures link RELIABILITY, not link INNOCENCE, so it must not
+    // suppress this. Detect any BVN carried by 2+ distinct account-holder names.
+    const namesByBvn = new Map<string, Set<string>>();
+    for (const r of records) {
+      const bvn = (r.bvn || '').trim();
+      const nm = normalizeName(r.accountName);
+      if (!bvn || !nm) continue;
+      (namesByBvn.get(bvn) ?? namesByBvn.set(bvn, new Set()).get(bvn)!).add(nm);
+    }
+    const sharedBvnConflicts: { bvn: string; names: string[] }[] = [];
+    for (const [bvn, names] of namesByBvn) {
+      if (names.size >= 2) {
+        // Only flag when the names aren't near-duplicates (spelling variants).
+        const arr = [...names];
+        let distinct = false;
+        outer: for (let i = 0; i < arr.length; i++) {
+          for (let j = i + 1; j < arr.length; j++) {
+            if (nameSimilarity(arr[i], arr[j]) < 0.7) { distinct = true; break outer; }
+          }
+        }
+        if (distinct) sharedBvnConflicts.push({ bvn, names: arr });
+      }
+    }
+    const hasSharedIdConcern = sharedBvnConflicts.length > 0;
+
+    // --- Score / severity ----------------------------------------------------
+    // Base concern = weak linkage (1 - confidence). A shared-BVN conflict is an
+    // independent, serious identity concern that floors the score at HIGH.
+    let score = clamp01(1 - avgMatchConfidence);
+    if (hasSharedIdConcern) score = Math.max(score, 0.8);
     const severity = severityFor(score);
 
-    // Count accounts that look like name-only / weak matches for the narrative.
     const weakAccounts = scored.filter(
       (r) => clamp01(r.matchConfidence as number) < 0.66,
     ).length;
 
     let summary: string;
-    if (avgMatchConfidence < 0.66) {
+    if (hasSharedIdConcern) {
+      const ex = sharedBvnConflicts[0];
+      const names = ex.names.slice(0, 2).map((n) => n.toUpperCase()).join(' + ');
+      summary =
+        `Identity concern: one BVN is shared across ${ex.names.length} differently-named ` +
+        `account holder(s) (e.g. ${names}) — likely a company account carrying a ` +
+        `director/individual's BVN. Verify beneficial ownership before relying on this profile.`;
+    } else if (avgMatchConfidence < 0.66) {
       summary =
         `Identity matched on name only (avg confidence ${(avgMatchConfidence * 100).toFixed(0)}%) — ` +
         `verify TIN/BVN linkage before enforcement; some inflow may belong to a different person.`;
     } else if (avgMatchConfidence < 0.9) {
       summary =
         `Identity link is moderately confident (avg ${(avgMatchConfidence * 100).toFixed(0)}%); ` +
-        `${weakAccounts} of ${scored.length} account(s) are weakly matched and worth a spot-check.`;
+        `${weakAccounts} of ${distinctAccounts} account(s) are weakly matched and worth a spot-check.`;
     } else {
       summary =
         `Identity link is strong (avg confidence ${(avgMatchConfidence * 100).toFixed(0)}%) across ` +
-        `${scored.length} account(s); no identity concern.`;
+        `${distinctAccounts} account(s); no shared-identifier conflict detected.`;
     }
 
     return {
@@ -119,14 +171,25 @@ export class MatchingAgent implements AnalyticsAgent {
         avgMatchConfidence: round4(avgMatchConfidence),
         avgMatchConfidenceUnweighted: round4(plainMean),
         minMatchConfidence: round4(minConfidence),
+        distinctAccounts,
         recordsTotal: records.length,
         recordsWithConfidence: scored.length,
         weakMatchAccounts: weakAccounts,
+        sharedIdentifierConflict: hasSharedIdConcern,
+        sharedBvnConflicts: sharedBvnConflicts.slice(0, 5).map((c) => ({
+          bvn: maskBvn(c.bvn), names: c.names,
+        })),
         weightedByTransactionCount: totalWeight > 0,
         degraded: scored.length < records.length,
       },
     };
   }
+}
+
+/** Mask a BVN for display in signal details (show first 3 + last 2). */
+function maskBvn(bvn: string): string {
+  const s = String(bvn).trim();
+  return s.length >= 6 ? `${s.slice(0, 3)}${'*'.repeat(s.length - 5)}${s.slice(-2)}` : '***';
 }
 
 function round4(n: number): number {

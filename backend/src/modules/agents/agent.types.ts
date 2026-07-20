@@ -27,6 +27,8 @@ export interface ProfileRecord {
   transactionCount: number;
   matchConfidence: number | null; // 0..1 identity-match quality
   accountName: string | null;
+  accountNumber: string | null;   // for distinct-account counting
+  bvn: string | null;             // for shared-identifier concern detection
   payload: Record<string, unknown> | null;
 }
 

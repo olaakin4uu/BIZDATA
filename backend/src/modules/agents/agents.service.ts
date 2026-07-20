@@ -34,7 +34,8 @@ export class AgentsService {
       select: {
         taxpayerId: true, providerId: true, providerType: true, periodLabel: true, periodYear: true,
         totalInflow: true, totalOutflow: true, openingBalance: true, closingBalance: true,
-        transactionCount: true, matchConfidence: true, accountName: true, payload: true,
+        transactionCount: true, matchConfidence: true, accountName: true, accountNumber: true,
+        bvn: true, payload: true,
       },
     });
     const byTp = new Map<string, typeof records>();
@@ -79,6 +80,8 @@ export class AgentsService {
           transactionCount: r.transactionCount ?? 0,
           matchConfidence: r.matchConfidence != null ? Number(r.matchConfidence) : null,
           accountName: r.accountName,
+          accountNumber: r.accountNumber ?? null,
+          bvn: r.bvn ?? null,
           payload: (r.payload as any) ?? null,
         })),
         totalInflow: recs.reduce((s, r) => s + num(r.totalInflow), 0),
