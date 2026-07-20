@@ -110,7 +110,12 @@ export class ProviderUsersService {
       throw new BadRequestException('New password must be at least 8 characters');
     }
     const passwordHash = await bcrypt.hash(newPassword, 10);
-    await this.prisma.dataProviderUser.update({ where: { id }, data: { passwordHash } });
+    // An admin-set password is temporary — force the provider to set their own
+    // on next login (consistent with new-user creation + imported-login policy).
+    await this.prisma.dataProviderUser.update({
+      where: { id },
+      data: { passwordHash, mustChangePassword: true, passwordChangedAt: new Date() },
+    });
     await this.audit.log({
       actorType: 'STAFF',
       actorId,
