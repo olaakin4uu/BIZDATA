@@ -73,11 +73,21 @@ export default function AgentSignalsPage() {
         {Object.keys(AGENT_NAMES).map((key) => {
           const count = summary?.byAgent.find((a) => a.agentKey === key)?.count ?? 0;
           const active = agentKey === key;
+          // Document Intelligence only runs at objection time (when a taxpayer
+          // uploads documents to reconcile), so it never produces signals during
+          // a bulk profile run. Show "N/A" rather than a misleading "0".
+          const objectionTimeOnly = key === 'document';
           return (
             <button key={key} onClick={() => { setAgentKey(active ? '' : key); setPage(1); }}
-              className={`text-left bg-white rounded-xl border border-slate-100 shadow-sm p-3 border-l-4 ${AGENT_COLORS[key] ?? 'border-l-slate-300'} ${active ? 'ring-2 ring-indigo-500' : 'hover:shadow-md'} transition`}>
+              disabled={objectionTimeOnly}
+              title={objectionTimeOnly ? 'Runs at objection time (reconciles uploaded documents) — not part of the bulk profile scan.' : undefined}
+              className={`text-left bg-white rounded-xl border border-slate-100 shadow-sm p-3 border-l-4 ${AGENT_COLORS[key] ?? 'border-l-slate-300'} ${active ? 'ring-2 ring-indigo-500' : objectionTimeOnly ? 'opacity-60 cursor-default' : 'hover:shadow-md'} transition`}>
               <p className="text-[11px] font-semibold text-slate-700 leading-tight">{AGENT_NAMES[key]}</p>
-              <p className="text-xl font-bold text-slate-800 tabular-nums mt-0.5">{count.toLocaleString()}</p>
+              {objectionTimeOnly ? (
+                <p className="text-xl font-bold text-slate-400 tabular-nums mt-0.5" title="Objection-time only">N/A</p>
+              ) : (
+                <p className="text-xl font-bold text-slate-800 tabular-nums mt-0.5">{count.toLocaleString()}</p>
+              )}
             </button>
           );
         })}

@@ -72,12 +72,27 @@ export class BehaviouralAnalyticsAgent implements AnalyticsAgent {
     // --- Aggregate score ----------------------------------------------------
     // Weighted blend. Rising-undisclosed and new-provider signals are the most
     // direct undisclosed-income tells, so they carry the most weight.
-    const score = clamp01(
-      0.40 * risingUndisclosedScore +
-      0.25 * newProviderScore +
-      0.20 * volatilityScore +
-      0.15 * passThroughScore,
-    );
+    //
+    // DATA-AVAILABILITY RENORMALISATION. Some sub-scores are structurally 0 when
+    // the source data lacks the fields they need — bank-filing records carry no
+    // opening/closing balances (so passThrough and the balance side of the
+    // new-provider signal are always 0) and few taxpayers have a declared-income
+    // figure. With fixed weights those dead components silently cap the max score
+    // below the suppression threshold, so the agent emits NOTHING even when the
+    // live signals (volatility, rising inflow) are strong. To fix, we blend only
+    // over the components that have usable inputs and renormalise their weights.
+    const components: { score: number; weight: number; usable: boolean }[] = [
+      { score: risingUndisclosedScore, weight: 0.40, usable: fp.periodCount >= 2 },
+      { score: newProviderScore,       weight: 0.25, usable: fp.newHighValueProviderShare > 0 },
+      { score: volatilityScore,        weight: 0.20, usable: fp.periodCount >= 2 },
+      // passThrough needs opening/closing balances — usable only when present.
+      { score: passThroughScore,       weight: 0.15, usable: fp.balanceRetentionRatio !== 0 || fp.netBalanceChange !== 0 },
+    ];
+    const usable = components.filter((c) => c.usable && c.weight > 0);
+    const totalW = usable.reduce((s, c) => s + c.weight, 0);
+    const score = totalW > 0
+      ? clamp01(usable.reduce((s, c) => s + c.score * c.weight, 0) / totalW)
+      : 0;
 
     // Suppress noise: nothing concerning enough to surface.
     if (score < 0.2) return null;
