@@ -7,6 +7,12 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { MailService } from '../../common/services/mail.service';
 
+// Sliding-session parameters for sensitive-record access (step-up):
+//  - IDLE_TTL:     an unused session expires after this (protects abandoned screens)
+//  - HARD_CEILING: max session lifetime even with continuous activity (re-auth ~once/day)
+const STEP_UP_IDLE_TTL = 5 * 60;        // 5 minutes idle → locks
+const STEP_UP_HARD_CEILING = 8 * 60 * 60; // 8 hours absolute max
+
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
@@ -219,10 +225,14 @@ export class AuthService {
       }
     }
 
-    const TTL_SECONDS = 600; // 10 minutes
+    // Sliding session: the token expires after IDLE_TTL of inactivity, but the
+    // frontend renews it on active use (see renewStepUp). Regardless of activity,
+    // no session may live past HARD_CEILING from its FIRST authorisation — the
+    // origIat claim carries that anchor so renewals can enforce the ceiling.
+    const nowSec = Math.floor(Date.now() / 1000);
     const stepUpToken = await this.jwt.signAsync(
-      { sub: user.id, kind: 'STEP_UP', scope, providerId: providerId ?? null },
-      { expiresIn: TTL_SECONDS },
+      { sub: user.id, kind: 'STEP_UP', scope, providerId: providerId ?? null, origIat: nowSec },
+      { expiresIn: STEP_UP_IDLE_TTL },
     );
 
     await this.audit.log({
@@ -234,10 +244,35 @@ export class AuthService {
       entityId: providerId ?? scope,
       ip,
       userAgent,
-      afterJson: { scope, providerId: providerId ?? null, ttlSeconds: TTL_SECONDS },
+      afterJson: { scope, providerId: providerId ?? null, idleTtl: STEP_UP_IDLE_TTL, hardCeiling: STEP_UP_HARD_CEILING },
     });
 
-    return { stepUpToken, scope, providerId: providerId ?? null, expiresInSeconds: TTL_SECONDS };
+    return { stepUpToken, scope, providerId: providerId ?? null, expiresInSeconds: STEP_UP_IDLE_TTL, hardCeilingSeconds: STEP_UP_HARD_CEILING };
+  }
+
+  /**
+   * Renew a step-up token on active use (sliding session). Issues a fresh
+   * IDLE_TTL token IF the current one is still valid AND the original
+   * authorisation is within the HARD_CEILING. Past the ceiling → must re-auth.
+   */
+  async renewStepUp(token: string): Promise<{ stepUpToken: string; expiresInSeconds: number }> {
+    let payload: any;
+    try {
+      payload = await this.jwt.verifyAsync(token); // fails if idle-expired
+    } catch {
+      throw new UnauthorizedException('Access session expired (idle) — please re-authenticate.');
+    }
+    if (payload.kind !== 'STEP_UP') throw new UnauthorizedException('Not a step-up session.');
+    const nowSec = Math.floor(Date.now() / 1000);
+    const origIat = payload.origIat ?? payload.iat ?? nowSec;
+    if (nowSec - origIat >= STEP_UP_HARD_CEILING) {
+      throw new UnauthorizedException('Access session reached its maximum duration — please re-authenticate.');
+    }
+    const fresh = await this.jwt.signAsync(
+      { sub: payload.sub, kind: 'STEP_UP', scope: payload.scope, providerId: payload.providerId ?? null, origIat },
+      { expiresIn: STEP_UP_IDLE_TTL },
+    );
+    return { stepUpToken: fresh, expiresInSeconds: STEP_UP_IDLE_TTL };
   }
 
   /** Verify a step-up token for a given scope/provider. Throws if invalid/expired/mismatched. */

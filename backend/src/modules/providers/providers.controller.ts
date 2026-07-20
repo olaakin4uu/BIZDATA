@@ -5,6 +5,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ProvidersService } from './providers.service';
 import { ProviderComplianceService } from './provider-compliance.service';
 import { AuthService } from '../auth/auth.service';
+import { AccessAssignmentService } from '../access/access-assignment.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -19,6 +20,7 @@ export class ProvidersController {
     private service: ProvidersService,
     private compliance: ProviderComplianceService,
     private auth: AuthService,
+    private access: AccessAssignmentService,
   ) {}
 
   @Post()
@@ -83,8 +85,9 @@ export class ProvidersController {
    * `x-step-up` header, scoped to PROVIDER_UPLOADS.
    */
   @Get('uploads/:submissionId/records')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'AUDIT_OFFICER')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   async uploadRecords(
+    @CurrentStaff() u: any,
     @Param('submissionId') submissionId: string,
     @Headers('x-step-up') stepUpToken: string,
     @Query('page') page?: string,
@@ -94,6 +97,10 @@ export class ProvidersController {
       throw new BadRequestException('Step-up authorisation required to view upload records.');
     }
     const { staffId } = await this.auth.verifyStepUp(stepUpToken, 'PROVIDER_UPLOADS');
+    // Need-to-know: the officer must be assigned to this upload's provider.
+    // Re-checked on every fetch, so a revoke cuts access immediately.
+    const providerId = await this.service.providerIdForSubmission(submissionId);
+    await this.access.assertProviderAccess({ id: staffId, role: u.role }, providerId);
     return this.service.getUploadRecords(submissionId, staffId, {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
@@ -102,8 +109,9 @@ export class ProvidersController {
 
   /** Step-up gated CSV export of an upload's records. */
   @Get('uploads/:submissionId/export')
-  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR', 'AUDIT_OFFICER')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   async exportUpload(
+    @CurrentStaff() u: any,
     @Param('submissionId') submissionId: string,
     @Headers('x-step-up') stepUpToken: string,
     @Res() res: any,
@@ -112,6 +120,8 @@ export class ProvidersController {
       throw new BadRequestException('Step-up authorisation required to export upload records.');
     }
     const { staffId } = await this.auth.verifyStepUp(stepUpToken, 'PROVIDER_UPLOADS');
+    const providerId = await this.service.providerIdForSubmission(submissionId);
+    await this.access.assertProviderAccess({ id: staffId, role: u.role }, providerId);
     const { filename, csv } = await this.service.exportUploadCsv(submissionId, staffId);
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);

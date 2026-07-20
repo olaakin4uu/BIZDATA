@@ -4,12 +4,15 @@ import PageHeader from '@/components/PageHeader';
 import { accessApi, type AccessElevation } from '@/lib/api/access';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { extractErrorMessage, formatDateTime } from '@/lib/utils';
+import AccessAssignments from '@/components/access/AccessAssignments';
 
 const APPROVER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR'];
+const ASSIGNMENT_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 export default function AccessPage() {
   const user = useStaffAuthStore((s) => s.user);
   const isApprover = APPROVER_ROLES.includes(user?.role ?? '');
+  const isAssignmentAdmin = ASSIGNMENT_ADMIN_ROLES.includes(user?.role ?? '');
 
   const [mine, setMine] = useState<{ grant: AccessElevation | null; active: boolean } | null>(null);
   const [pending, setPending] = useState<AccessElevation[] | null>(null);
@@ -110,6 +113,9 @@ export default function AccessPage() {
           )}
         </div>
       )}
+
+      {/* Raw-record access assignments (need-to-know) — SUPER_ADMIN/ADMIN only. */}
+      {isAssignmentAdmin && <AccessAssignments />}
     </div>
   );
 }

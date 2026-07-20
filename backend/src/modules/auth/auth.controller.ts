@@ -158,6 +158,14 @@ export class AuthController {
     );
   }
 
+  @Post('staff/step-up/renew')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Sliding-session keepalive: renew an active step-up token' })
+  @UseGuards(StaffAuthGuard)
+  renewStepUp(@Body() dto: { stepUpToken: string }) {
+    return this.service.renewStepUp(dto?.stepUpToken);
+  }
+
   @Patch('provider/change-password')
   @ApiBearerAuth()
   @UseGuards(ProviderAuthGuard)

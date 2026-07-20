@@ -189,6 +189,16 @@ export class ProvidersService {
    * payload. Requires a valid step-up authorisation (verified in the controller),
    * whose staffId is passed in so the reveal is audited to a real person.
    */
+  /** Resolve the provider that owns an upload — used for the need-to-know check. */
+  async providerIdForSubmission(submissionId: string): Promise<string> {
+    const s = await this.prisma.dataSubmission.findUnique({
+      where: { id: submissionId },
+      select: { providerId: true },
+    });
+    if (!s) throw new NotFoundException('Submission not found');
+    return s.providerId;
+  }
+
   async getUploadRecords(
     submissionId: string,
     staffId: string,

@@ -365,6 +365,29 @@ model ResubmitPermission {
   @@map("resubmit_permissions")
 }
 
+// Need-to-know access grant: a staff officer (SUPER_ADMIN/ADMIN only) may view or
+// download raw taxpayer records for a SPECIFIC provider OR a SPECIFIC case. Even
+// SUPER_ADMIN is constrained — they must self-assign (with a reason), which is
+// audited. Exactly one of providerId / caseId is set. An assignment is active
+// while revokedAt IS NULL. Access is re-checked on every record fetch, so a
+// revoke cuts access immediately (mid-session), regardless of the step-up token.
+model AccessAssignment {
+  id          String    @id @default(uuid())
+  staffId     String    // the officer granted access
+  providerId  String?   // provider-level grant (governs Provider Uploads records/export)
+  caseId      String?   // case-level grant (governs case-detail raw PII)
+  reason      String    // why this access was granted (required — incl. self-assign)
+  grantedById String    // SUPER_ADMIN/ADMIN who granted it (== staffId when self-assigned)
+  selfAssigned Boolean  @default(false)
+  createdAt   DateTime  @default(now())
+  revokedAt   DateTime? // set when access is withdrawn; NULL = active
+  revokedById String?
+
+  @@index([staffId, providerId, revokedAt])
+  @@index([staffId, caseId, revokedAt])
+  @@map("access_assignments")
+}
+
 model DataSubmission {
   id              String           @id @default(uuid())
   providerId      String

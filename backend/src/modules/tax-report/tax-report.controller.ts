@@ -9,6 +9,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentStaff } from '../../common/decorators/current-staff.decorator';
 import { ApiKeyGuard } from '../integration/api-key.guard';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AccessAssignmentService } from '../access/access-assignment.service';
 
 // Staff-facing: the per-customer tax report + manual payment entry.
 @ApiTags('Tax Report')
@@ -16,7 +17,11 @@ import { PrismaService } from '../../prisma/prisma.service';
 @UseGuards(StaffAuthGuard, RolesGuard)
 @Controller()
 export class TaxReportController {
-  constructor(private svc: TaxReportService, private prisma: PrismaService) {}
+  constructor(
+    private svc: TaxReportService,
+    private prisma: PrismaService,
+    private access: AccessAssignmentService,
+  ) {}
 
   @Get('taxpayers/:id/tax-report')
   @ApiOperation({ summary: 'AI tax report for a taxpayer (income, per-type tax cards, cross-provider breakdown, agent signals)' })
@@ -33,12 +38,17 @@ export class TaxReportController {
   }
 
   @Get('cases/:id/tax-report.html')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   @ApiOperation({ summary: 'Printable HTML of the case tax report (→ PDF)' })
-  async byCaseHtml(@Param('id') id: string, @Query('year') year: string | undefined, @Res() res: Response) {
+  async byCaseHtml(@Param('id') id: string, @Query('year') year: string | undefined, @CurrentStaff() u: any, @Res() res: Response) {
     const c = await this.prisma.underdeclarationCase.findUnique({ where: { id }, select: { taxpayerId: true, year: true } });
     if (!c) { res.status(404).send('Case not found'); return; }
+    // Need-to-know: printable report reveals the taxpayer's identity — require an
+    // active case-level assignment.
+    await this.access.assertCaseAccess({ id: u.id, role: u.role }, id);
     const report = await this.svc.taxReport(c.taxpayerId, { year: year ? parseInt(year, 10) : c.year });
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
     res.send(renderTaxReportHtml(report));
   }
 

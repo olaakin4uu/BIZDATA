@@ -5,6 +5,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiTags } from '@nestjs/swagger';
 import { CasesService } from './cases.service';
+import { AccessAssignmentService } from '../access/access-assignment.service';
 import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -15,7 +16,10 @@ import { CurrentStaff } from '../../common/decorators/current-staff.decorator';
 @UseGuards(StaffAuthGuard, RolesGuard)
 @Controller('cases')
 export class CasesController {
-  constructor(private service: CasesService) {}
+  constructor(
+    private service: CasesService,
+    private access: AccessAssignmentService,
+  ) {}
 
   @Get('stats')
   stats(@Query() q: any) {
@@ -39,12 +43,17 @@ export class CasesController {
   }
 
   @Get(':id/evidence')
+  @Roles('SUPER_ADMIN', 'ADMIN')
   @Header('Content-Type', 'text/html; charset=utf-8')
   // Confidential document with decrypted PII — never let the browser or any proxy
   // cache it to disk.
   @Header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
   @Header('Pragma', 'no-cache')
-  evidence(@Param('id') id: string, @CurrentStaff() u: any) {
+  async evidence(@Param('id') id: string, @CurrentStaff() u: any) {
+    // Need-to-know: the evidence bundle fully decrypts the taxpayer's PII, so the
+    // officer must hold an active case-level assignment. Re-checked here, so a
+    // revoke blocks the next export immediately.
+    await this.access.assertCaseAccess({ id: u.id, role: u.role }, id);
     return this.service.evidenceBundle(id, { id: u.id, email: u.email });
   }
 

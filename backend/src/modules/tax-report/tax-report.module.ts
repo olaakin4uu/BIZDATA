@@ -3,11 +3,13 @@ import { TaxReportService } from './tax-report.service';
 import { TaxReportController, IntegrationTaxPaymentsController } from './tax-report.controller';
 import { IntegrationModule } from '../integration/integration.module';
 import { StatutoryModule } from '../statutory/statutory.module';
+import { AccessModule } from '../access/access.module';
 
 @Module({
   // IntegrationModule → ApiKeyGuard (partner endpoint); StatutoryModule →
-  // StatutoryService (thresholds/rates used by the report).
-  imports: [IntegrationModule, StatutoryModule],
+  // StatutoryService (thresholds/rates used by the report); AccessModule →
+  // case-level need-to-know enforcement on the printable report.
+  imports: [IntegrationModule, StatutoryModule, AccessModule],
   controllers: [TaxReportController, IntegrationTaxPaymentsController],
   providers: [TaxReportService],
   exports: [TaxReportService],

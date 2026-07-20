@@ -3,8 +3,12 @@ import { useEffect, useState } from 'react';
 import {
   providersApi, type ProviderUpload, type UploadRecord, type UploadsResponse,
 } from '@/lib/api/providers';
+import { accessAssignmentsApi, stepUpApi } from '@/lib/api/access';
+import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { formatBytes, formatDate, formatDateTime, formatMoneyShort, extractErrorMessage } from '@/lib/utils';
 import PasswordInput from '@/components/PasswordInput';
+
+const RAW_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
 interface Props {
   providerId: string;
@@ -24,6 +28,14 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
   const [uploads, setUploads] = useState<UploadsResponse | null>(null);
   const [loadingUploads, setLoadingUploads] = useState(true);
 
+  // need-to-know assignment state
+  const user = useStaffAuthStore((s) => s.user);
+  const canHoldAccess = RAW_ACCESS_ROLES.includes(user?.role ?? '');
+  const [assigned, setAssigned] = useState<boolean | null>(null); // null = checking
+  const [assignReason, setAssignReason] = useState('');
+  const [assignBusy, setAssignBusy] = useState(false);
+  const [assignError, setAssignError] = useState<string | null>(null);
+
   // step-up state
   const [stepToken, setStepToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<number | null>(null);
@@ -32,6 +44,38 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
   const [needTotp, setNeedTotp] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+
+  // Check whether this officer is assigned to THIS provider (need-to-know).
+  useEffect(() => {
+    accessAssignmentsApi.mine()
+      .then((rows) => setAssigned(rows.some((a) => a.providerId === providerId && !a.revokedAt)))
+      .catch(() => setAssigned(false));
+  }, [providerId]);
+
+  const selfAssign = async () => {
+    if (!assignReason.trim()) { setAssignError('A reason is required.'); return; }
+    setAssignBusy(true); setAssignError(null);
+    try {
+      await accessAssignmentsApi.self({ providerId, reason: assignReason.trim() });
+      setAssigned(true); setAssignReason('');
+    } catch (e) { setAssignError(extractErrorMessage(e)); }
+    finally { setAssignBusy(false); }
+  };
+
+  // Sliding-session keepalive: while records are open, renew the step-up token on
+  // active use so an actively-working officer isn't interrupted; an idle screen
+  // (no renew) lets the token expire (5-min idle lock, 8h hard ceiling server-side).
+  const renewSession = async () => {
+    if (!stepToken) return;
+    try {
+      const r = await stepUpApi.renew(stepToken);
+      setStepToken(r.stepUpToken);
+      setExpiresAt(Date.now() + r.expiresInSeconds * 1000);
+    } catch {
+      // idle-expired or ceiling reached → drop the session; user re-authorises.
+      setStepToken(null); setExpiresAt(null); setRecords(null); setSelected(null);
+    }
+  };
 
   // selected submission records
   const [selected, setSelected] = useState<ProviderUpload | null>(null);
@@ -79,6 +123,7 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
     try {
       const r = await providersApi.uploadRecords(sub.id, stepToken, 1, 100);
       setRecords(r.records); setRecTotal(r.total);
+      renewSession(); // active use → extend the sliding session
     } catch (err) {
       setRecError(extractErrorMessage(err));
     } finally { setRecBusy(false); }
@@ -162,7 +207,47 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
           )}
 
           {/* step-up gate */}
-          {!stepToken ? (
+          {/* Need-to-know gate: wrong role → blocked; right role but unassigned →
+              self-assign (reason); assigned + no token → password unlock. */}
+          {!stepToken && !canHoldAccess ? (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-600">
+              🔒 Raw taxpayer records can only be viewed by Super Admin or Admin officers assigned to this provider.
+              You do not have the required role.
+            </div>
+          ) : !stepToken && assigned === false ? (
+            <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-5">
+              <div className="flex items-start gap-3">
+                <span className="text-xl">⛔</span>
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-slate-800">You are not assigned to {providerName}</p>
+                  <p className="text-xs text-slate-600 mt-0.5 mb-3">
+                    Access to this provider&apos;s raw records is need-to-know. Assign yourself with a reason (this is
+                    recorded in the audit trail), or ask an administrator to grant you access.
+                  </p>
+                  <div className="flex flex-wrap items-end gap-2">
+                    <div>
+                      <label className="block text-[10px] font-medium text-slate-500 mb-1">Reason for access</label>
+                      <input
+                        value={assignReason} onChange={(e) => setAssignReason(e.target.value)}
+                        onKeyDown={(e) => e.key === 'Enter' && selfAssign()}
+                        placeholder="e.g. assessing under-declaration case"
+                        className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      />
+                    </div>
+                    <button
+                      onClick={selfAssign} disabled={assignBusy || !assignReason.trim()}
+                      className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50"
+                    >
+                      {assignBusy ? 'Assigning…' : 'Assign myself (audited)'}
+                    </button>
+                  </div>
+                  {assignError && <p className="text-xs text-rose-600 mt-2">{assignError}</p>}
+                </div>
+              </div>
+            </div>
+          ) : !stepToken && assigned === null ? (
+            <div className="mt-6 rounded-xl border border-slate-200 bg-slate-50 p-5 text-sm text-slate-500">Checking your access…</div>
+          ) : !stepToken ? (
             <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50/60 p-5">
               <div className="flex items-start gap-3">
                 <span className="text-xl">🔐</span>
@@ -170,7 +255,8 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
                   <p className="text-sm font-semibold text-slate-800">Authorise access to upload records</p>
                   <p className="text-xs text-slate-600 mt-0.5 mb-3">
                     Viewing the actual records inside an upload reveals sensitive taxpayer data (BVN, NIN, account details).
-                    Re-enter your password to unlock this for 10 minutes. This action is audited.
+                    Re-enter your password to unlock. Your session stays open while you work and locks after 5 minutes idle.
+                    This action is audited.
                   </p>
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
@@ -206,8 +292,8 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
             </div>
           ) : (
             <div className="mt-6 flex items-center gap-2 text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-              <span>✓ Access authorised</span>
-              <span className="text-emerald-500">· expires in {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')}</span>
+              <span>✓ Access authorised for {providerName}</span>
+              <span className="text-emerald-500">· locks in {Math.floor(remaining / 60)}:{String(remaining % 60).padStart(2, '0')} if idle (extends while you work)</span>
             </div>
           )}
 
