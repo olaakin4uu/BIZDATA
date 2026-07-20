@@ -138,8 +138,8 @@ export default function CommandPalette() {
         aria-label="Command palette"
         className="w-full max-w-xl overflow-hidden rounded-2xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--elev-3)] rise-in"
       >
-        <div className="flex items-center gap-2.5 border-b border-[var(--line)] px-4">
-          <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="text-[var(--ink-3)]" aria-hidden>
+        <div className="flex items-center gap-3 border-b border-[var(--line)] px-4">
+          <svg viewBox="0 0 24 24" width={18} height={18} fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" className="flex-shrink-0 text-[var(--ink-3)]" aria-hidden>
             <circle cx="11" cy="11" r="6.5" /><path d="m20 20-4-4" />
           </svg>
           <input
@@ -150,14 +150,14 @@ export default function CommandPalette() {
             placeholder="Search pages and actions…"
             aria-label="Search pages and actions"
             aria-controls="command-list"
-            className="flex-1 bg-transparent py-3.5 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
+            className="flex-1 bg-transparent py-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
           />
           <kbd className="hidden rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-3)] sm:block">Esc</kbd>
         </div>
 
-        <ul id="command-list" ref={listRef} role="listbox" className="max-h-80 overflow-y-auto py-1.5">
+        <ul id="command-list" ref={listRef} role="listbox" className="max-h-[22rem] overflow-y-auto p-2">
           {results.length === 0 ? (
-            <li className="px-4 py-6 text-center text-sm text-[var(--ink-3)]">No matches for “{query}”.</li>
+            <li className="px-3 py-10 text-center text-sm text-[var(--ink-3)]">No matches for “{query}”.</li>
           ) : (
             results.map((c, i) => (
               <li key={c.id} role="option" aria-selected={i === active} data-idx={i}>
@@ -165,18 +165,25 @@ export default function CommandPalette() {
                   type="button"
                   onMouseEnter={() => setActive(i)}
                   onClick={() => choose(i)}
-                  className={`flex w-full items-center gap-3 px-4 py-2.5 text-left text-sm transition-colors ${
+                  className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2.5 text-left text-sm transition-colors ${
                     i === active ? 'bg-[var(--surface-2)] text-[var(--ink)]' : 'text-[var(--ink-2)]'
                   }`}
                 >
                   <Icon name={c.icon} width={17} height={17} className="flex-shrink-0 text-[var(--ink-3)]" />
                   <span className="flex-1 truncate">{c.label}</span>
-                  {c.hint && <span className="text-xs text-[var(--ink-3)]">{c.hint}</span>}
+                  {c.hint && <span className="flex-shrink-0 text-xs text-[var(--ink-3)]">{c.hint}</span>}
                 </button>
               </li>
             ))
           )}
         </ul>
+
+        {/* Keyboard hint bar */}
+        <div className="flex items-center gap-4 border-t border-[var(--line)] bg-[var(--surface-2)] px-4 py-2 text-[11px] text-[var(--ink-3)]">
+          <span className="flex items-center gap-1"><kbd className="rounded border border-[var(--line)] bg-[var(--surface)] px-1 py-0.5">↑</kbd><kbd className="rounded border border-[var(--line)] bg-[var(--surface)] px-1 py-0.5">↓</kbd> navigate</span>
+          <span className="flex items-center gap-1"><kbd className="rounded border border-[var(--line)] bg-[var(--surface)] px-1 py-0.5">↵</kbd> open</span>
+          <span className="flex items-center gap-1"><kbd className="rounded border border-[var(--line)] bg-[var(--surface)] px-1 py-0.5">esc</kbd> close</span>
+        </div>
       </div>
     </div>
   );
