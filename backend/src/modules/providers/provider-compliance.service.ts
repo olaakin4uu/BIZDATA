@@ -269,4 +269,138 @@ export class ProviderComplianceService {
       orderBy: [{ periodYear: 'desc' }, { amount: 'desc' }],
     });
   }
+
+  /**
+   * Render a formal, printable penalty notice (HTML → print/PDF) for one issued
+   * penalty and mark it NOTIFIED (serving the notice IS the notification). Reuses
+   * the evidence-bundle letterhead/print styling so the authority's documents
+   * read as one family. Audited.
+   */
+  async penaltyNotice(penaltyId: string, staff: { id: string; email?: string }) {
+    const p = await this.prisma.providerPenalty.findUnique({
+      where: { id: penaltyId },
+      include: { provider: { select: { name: true, providerType: true, contactEmail: true, address: true } } },
+    });
+    if (!p) throw new NotFoundException('Penalty not found');
+
+    const tenant = await this.prisma.tenant.findFirst({ select: { name: true, shortName: true, logoUrl: true } });
+    const orgName = tenant?.name || 'Internal Revenue Service';
+    const orgShort = tenant?.shortName || 'IRS';
+    const orgLogo = tenant?.logoUrl || null;
+
+    // First service marks it NOTIFIED (keep a later PAID/WAIVED untouched).
+    if (p.status === 'ASSESSED') {
+      await this.prisma.providerPenalty.update({
+        where: { id: p.id },
+        data: { status: 'NOTIFIED', notifiedAt: new Date() },
+      }).catch(() => { /* non-fatal — still serve the notice */ });
+    }
+    await this.audit.log({
+      actorType: 'STAFF', actorId: staff.id, staffId: staff.id,
+      action: 'SERVE_PROVIDER_PENALTY_NOTICE', entity: 'ProviderPenalty', entityId: p.id,
+      afterJson: { servedBy: staff.email, noticeRef: p.noticeRef, amount: Number(p.amount) },
+    });
+
+    const ngn = (v: any) => '₦' + Number(v ?? 0).toLocaleString();
+    const esc = (s: any) => String(s ?? '').replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]!));
+    const now = new Date();
+    const ref = esc(p.noticeRef ?? p.id.slice(0, 8).toUpperCase());
+    const genDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+    const genTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    const reasonLabel = p.reason === 'MISSING' ? 'Failure to file a return' : 'Late filing of a return';
+    const first = Number(p.firstMonthAmount);
+    const per = Number(p.perMonthAmount);
+    const subsequent = Math.max(0, p.monthsInDefault - 1);
+
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Penalty Notice ${ref}</title>
+<style>
+ :root{--ink:#0f172a;--soft:#475569;--line:#e2e8f0;--brand:#0f766e;--bad:#b91c1c;--bg:#f8fafc}
+ *{box-sizing:border-box} html,body{margin:0;padding:0}
+ body{font-family:'Segoe UI',Arial,sans-serif;color:var(--ink);font-size:12.5px;line-height:1.5;background:#eef2f6}
+ .sheet{max-width:820px;width:100%;margin:20px auto;background:#fff;padding:44px 52px 64px;position:relative;box-shadow:0 1px 4px rgba(15,23,42,.12)}
+ .content{position:relative;z-index:1}
+ .lh{display:flex;align-items:center;gap:16px;border-bottom:3px solid var(--brand);padding-bottom:14px}
+ .crest{flex:0 0 54px;height:54px;border-radius:50%;background:var(--brand);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:18px;letter-spacing:.03em;overflow:hidden}
+ .logo-img{height:56px;width:auto;max-width:220px;object-fit:contain}
+ .lh h1{font-size:17px;margin:0;color:var(--ink)} .lh .sub{font-size:11px;color:var(--soft);margin-top:2px}
+ .class-band{background:var(--brand);color:#fff;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;text-align:center;padding:5px;margin:16px 0 4px;border-radius:3px}
+ .doctitle{text-align:center;margin:20px 0 4px} .doctitle h2{font-size:19px;margin:0;letter-spacing:.02em} .doctitle .ref{font-size:11px;color:var(--soft);margin-top:4px}
+ h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:5px;margin:26px 0 10px}
+ .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px}
+ .grid .k{color:var(--soft)} .grid .v{font-weight:600}
+ table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed;font-size:11.5px}
+ th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere;vertical-align:top}
+ th{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--soft);background:var(--bg)}
+ .num{text-align:right;font-variant-numeric:tabular-nums} tr.tot td{font-weight:800;color:var(--bad);border-top:2px solid var(--ink);border-bottom:none;background:#fef2f2}
+ p.body{font-size:12px;margin:10px 0}
+ .note{font-size:10.5px;color:var(--soft);margin-top:8px}
+ .sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:44px}
+ .sig .line{border-top:1px solid var(--ink);padding-top:5px;font-size:11px;color:var(--soft)}
+ .foot{margin-top:36px;border-top:1px solid var(--line);padding-top:10px;font-size:9.5px;color:var(--soft)}
+ .toolbar{position:fixed;top:14px;right:14px;z-index:10;display:flex;gap:8px}
+ .btn{background:var(--brand);color:#fff;border:none;border-radius:7px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.2)}
+ .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
+ @media print{ @page{size:A4;margin:14mm} body{background:#fff} .sheet{box-shadow:none;margin:0;max-width:none;padding:0} .toolbar,.noprint{display:none!important} }
+</style></head><body>
+ <div class="toolbar noprint"><button class="btn" onclick="window.print()">Print / Save PDF</button></div>
+ <div class="sheet"><div class="content">
+   <div class="lh">
+     ${orgLogo ? `<img class="logo-img" src="${esc(orgLogo)}" alt="${esc(orgName)}">` : `<div class="crest">${esc(orgShort)}</div>`}
+     <div><h1>${esc(orgName)}</h1><div class="sub">Third-Party Reporting Compliance · Provider Enforcement</div></div>
+   </div>
+   <div class="class-band">Notice of administrative penalty · NTAA 2025 §101</div>
+
+   <div class="doctitle">
+     <h2>Provider Penalty Notice</h2>
+     <div class="ref">Ref: <strong>${ref}</strong> · Period ${esc(p.periodLabel)} · Issued ${genDate} ${genTime}</div>
+   </div>
+
+   <h3>Reporting entity</h3>
+   <div class="grid">
+     <div><span class="k">Provider:</span> <span class="v">${esc(p.provider.name)}</span></div>
+     <div><span class="k">Type:</span> <span class="v">${esc(String(p.provider.providerType).replace(/_/g, ' '))}</span></div>
+     <div><span class="k">Contact:</span> <span class="v">${esc(p.provider.contactEmail ?? '—')}</span></div>
+     <div><span class="k">Address:</span> <span class="v">${esc(p.provider.address ?? '—')}</span></div>
+   </div>
+
+   <p class="body">
+     Records held by ${esc(orgName)} show that the statutory return for the period
+     <strong>${esc(p.periodLabel)}</strong> was, as at the date of this notice,
+     <strong>${esc(reasonLabel.toLowerCase())}</strong>. The return fell due on
+     <strong>${esc(p.dueAt.toDateString())}</strong> (NTAA 2025 §29). An administrative
+     penalty is accordingly assessed under NTAA 2025 §101.
+   </p>
+
+   <h3>Penalty assessment — NTAA 2025 §101</h3>
+   <table>
+    <tr><td>Basis of default</td><td class="num">${esc(reasonLabel)}</td></tr>
+    <tr><td>Return due date (§29)</td><td class="num">${esc(p.dueAt.toDateString())}</td></tr>
+    <tr><td>Whole months in default</td><td class="num">${p.monthsInDefault}</td></tr>
+    <tr><td>First month of default</td><td class="num">${ngn(first)}</td></tr>
+    <tr><td>Subsequent months (${subsequent} × ${ngn(per)})</td><td class="num">${ngn(subsequent * per)}</td></tr>
+    <tr class="tot"><td>Total penalty payable</td><td class="num">${ngn(p.amount)}</td></tr>
+   </table>
+   <p class="note">Computed as the first-month fine plus a further fine for each subsequent month the default continues
+   (§101). Statutory config version ${p.statutoryVersion ?? '—'}. The penalty continues to accrue until the return is filed.</p>
+
+   <p class="body">
+     To resolve this notice, file the outstanding return without further delay and settle the penalty above through
+     the channels prescribed by ${esc(orgName)}. Filing the return stops further monthly accrual. If you believe this
+     notice is issued in error, contact the authority quoting the reference above.
+   </p>
+
+   <div class="sig">
+     <div class="line">Authorised officer, ${esc(orgName)}</div>
+     <div class="line">Date of service</div>
+   </div>
+
+   <div class="foot">
+     This is an official notice generated by ${esc(orgName)}. Ref ${ref}. Served ${genDate} ${genTime}.
+     NTAA 2025 §101 (failure/late filing of returns) · §29 (reporting obligation).
+   </div>
+ </div></div>
+</body></html>`;
+
+    return html;
+  }
 }

@@ -22,7 +22,29 @@ export class ProviderPortalService {
    */
   async complianceForYear(providerId: string, year: number) {
     const rows = await this.compliance.forYear(year, providerId);
-    return rows[0] ?? null; // scoped call returns a single row
+    const row = rows[0] ?? null; // scoped call returns a single row
+    if (!row) return null;
+
+    // Formally-issued penalties the regulator has raised against this provider
+    // for the year — shown for information so the provider can see what is owed,
+    // the statutory basis, and the notice reference. Read-only in the portal.
+    const issued = await this.compliance.listPenalties({ providerId, year });
+    const issuedTotal = issued.reduce((s, p) => s + Number(p.amount), 0);
+    return {
+      ...row,
+      penalties: {
+        // What the regulator has FORMALLY assessed (has a notice ref).
+        issued: issued.map((p) => ({
+          id: p.id, periodLabel: p.periodLabel, reason: p.reason,
+          monthsInDefault: p.monthsInDefault, amount: Number(p.amount),
+          status: p.status, noticeRef: p.noticeRef, notifiedAt: p.notifiedAt,
+          basis: p.basis,
+        })),
+        issuedTotal,
+        // Accrued-but-not-yet-issued exposure (row.penaltyTotal already computed).
+        accruedTotal: row.penaltyTotal,
+      },
+    };
   }
 
   /**

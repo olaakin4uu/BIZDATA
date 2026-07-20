@@ -21,6 +21,20 @@ export interface CompliancePeriod {
   dueAt: string;       // statutory due date (ISO)
   status: PeriodStatus;
   receivedAt: string | null;
+  monthsInDefault?: number;
+  penalty?: number;         // NTAA §101 penalty for this period (0 if none/not enforced)
+  penaltyEnforced?: boolean; // false when the period is before the commencement date
+}
+
+export interface IssuedPenalty {
+  id: string;
+  periodLabel: string;
+  reason: 'LATE' | 'MISSING' | string;
+  monthsInDefault: number;
+  amount: number;
+  status: string;       // ASSESSED | NOTIFIED | WAIVED | PAID
+  noticeRef: string | null;
+  notifiedAt: string | null;
 }
 
 export interface ProviderCompliance {
@@ -33,7 +47,13 @@ export interface ProviderCompliance {
   complianceRate: number;
   submissions: number;
   rejectionRate: number;
+  penaltyTotal?: number; // accrued NTAA §101 exposure across late/missing periods
   periods: CompliancePeriod[];
+  penalties?: {
+    issued: IssuedPenalty[];
+    issuedTotal: number;
+    accruedTotal: number;
+  };
 }
 
 export interface ProviderUploadArgs {

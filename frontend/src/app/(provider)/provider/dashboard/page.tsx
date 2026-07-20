@@ -89,6 +89,9 @@ export default function ProviderDashboardPage() {
         </section>
       )}
 
+      {/* ── Late-filing penalties (NTAA §101) — informational ── */}
+      {compliance && <PenaltyPanel compliance={compliance} />}
+
       {/* ── Activity: demoted below the obligation ── */}
       <section className="grid gap-6 lg:grid-cols-[1fr_1.4fr]">
         <div>
@@ -298,6 +301,98 @@ function FilingCell({ period, isNext }: { period: CompliancePeriod; isNext: bool
             : `filed ${period.receivedAt ? formatDate(period.receivedAt) : ''}`}
       </p>
     </div>
+  );
+}
+
+// ─── Late-filing penalty panel (NTAA §101) — informational ───────────────────
+function ngn(n: number): string {
+  return `₦${Math.round(n).toLocaleString('en-NG')}`;
+}
+
+function PenaltyPanel({ compliance }: { compliance: ProviderCompliance }) {
+  const accrued = compliance.penalties?.accruedTotal ?? compliance.penaltyTotal ?? 0;
+  const issued = compliance.penalties?.issued ?? [];
+  const issuedTotal = compliance.penalties?.issuedTotal ?? 0;
+
+  // Nothing owed and nothing accruing → a reassuring, quiet all-clear.
+  if (accrued <= 0 && issued.length === 0) {
+    return (
+      <section>
+        <div className="mb-3"><SectionTitle icon="shield">Late-filing penalties</SectionTitle></div>
+        <div className="flex items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50/60 px-5 py-4">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200">
+            <svg viewBox="0 0 24 24" width={16} height={16} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden><circle cx="12" cy="12" r="9" /><path d="m8.5 12 2.5 2.5 4.5-5" /></svg>
+          </span>
+          <p className="text-sm text-emerald-800">
+            No late-filing penalties for {YEAR}. Filing each return by its statutory due date keeps it that way.
+          </p>
+        </div>
+      </section>
+    );
+  }
+
+  return (
+    <section>
+      <div className="mb-3"><SectionTitle icon="shield">Late-filing penalties</SectionTitle></div>
+      <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--elev-1)]">
+        {/* Header strip: the two figures that matter. */}
+        <div className="grid grid-cols-1 gap-px bg-[var(--line-2)] sm:grid-cols-2">
+          <div className="bg-[var(--surface)] px-5 py-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Formally assessed ({YEAR})</p>
+            <p className="tnum mt-1 text-2xl font-semibold text-rose-700">{ngn(issuedTotal)}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">{issued.length} penalt{issued.length === 1 ? 'y' : 'ies'} issued by the authority</p>
+          </div>
+          <div className="bg-[var(--surface)] px-5 py-4">
+            <p className="text-[11px] font-medium uppercase tracking-wide text-[var(--ink-3)]">Currently accruing</p>
+            <p className="tnum mt-1 text-2xl font-semibold text-amber-700">{ngn(accrued)}</p>
+            <p className="mt-0.5 text-[11px] text-[var(--ink-3)]">estimated on late/unfiled periods, not yet formally assessed</p>
+          </div>
+        </div>
+
+        {/* Issued penalties detail. */}
+        {issued.length > 0 && (
+          <div className="border-t border-[var(--line)]">
+            <table className="w-full text-sm">
+              <thead className="bg-[var(--surface-2)] text-left text-[11px] uppercase tracking-wide text-[var(--ink-3)]">
+                <tr>
+                  <th className="px-5 py-2.5 font-medium">Notice</th>
+                  <th className="px-5 py-2.5 font-medium">Period</th>
+                  <th className="px-5 py-2.5 font-medium">Reason</th>
+                  <th className="px-5 py-2.5 font-medium">Months</th>
+                  <th className="px-5 py-2.5 text-right font-medium">Amount</th>
+                  <th className="px-5 py-2.5 font-medium">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--line-2)]">
+                {issued.map((p) => (
+                  <tr key={p.id}>
+                    <td className="px-5 py-3 font-mono text-xs text-[var(--ink-2)]">{p.noticeRef ?? '—'}</td>
+                    <td className="px-5 py-3 font-mono text-xs">{p.periodLabel}</td>
+                    <td className="px-5 py-3 text-xs">{p.reason === 'MISSING' ? 'Not filed' : 'Filed late'}</td>
+                    <td className="tnum px-5 py-3 text-xs">{p.monthsInDefault}</td>
+                    <td className="tnum px-5 py-3 text-right font-medium">{ngn(p.amount)}</td>
+                    <td className="px-5 py-3">
+                      <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(p.status)}`}>{p.status}</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* Statutory footnote — the basis, plainly stated. */}
+        <div className="border-t border-[var(--line)] bg-[var(--surface-2)] px-5 py-3">
+          <p className="text-[11px] leading-relaxed text-[var(--ink-3)]">
+            Penalties accrue under <strong>NTAA 2025 §101</strong> for returns filed late or not filed:
+            a fixed fine for the first month of default plus a further fixed fine for each subsequent month.
+            Figures shown are for information; a formally assessed penalty is served separately with its notice reference.
+            File any outstanding return to stop further accrual.{' '}
+            <Link href="/provider/submissions/new" className="font-medium text-teal-700 underline hover:text-teal-800">File a return →</Link>
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 

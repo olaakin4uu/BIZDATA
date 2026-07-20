@@ -1,5 +1,5 @@
 import {
-  BadRequestException, Body, Controller, Get, Headers, Param, Patch, Post, Query, Res, UseGuards,
+  BadRequestException, Body, Controller, Get, Header, Headers, Param, Patch, Post, Query, Res, UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ProvidersService } from './providers.service';
@@ -73,6 +73,16 @@ export class ProvidersController {
   @Roles('SUPER_ADMIN', 'ADMIN')
   issueAllPenalties(@Body() dto: { year?: number }, @CurrentStaff() u: any) {
     return this.compliance.issueAllForYear(dto?.year ?? new Date().getFullYear(), u.id);
+  }
+
+  /** Formal printable penalty notice (HTML → print/PDF). Marks the penalty NOTIFIED. */
+  @Get('penalties/:id/notice')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'no-store, no-cache, must-revalidate, private')
+  @Header('Pragma', 'no-cache')
+  penaltyNotice(@Param('id') id: string, @CurrentStaff() u: any) {
+    return this.compliance.penaltyNotice(id, { id: u.id, email: u.email });
   }
 
   @Get()
