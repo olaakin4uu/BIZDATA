@@ -187,7 +187,13 @@ model DataProvider {
   contactPhone String?
   address      String?
   status       ProviderStatus @default(PENDING_ONBOARDING)
-  reportingFrequency String?  @default("QUARTERLY") // QUARTERLY | MONTHLY | ANNUAL
+  // QUARTERLY | MONTHLY | ANNUAL. NTAA 2025 §29 (Official Gazette No. 117, 26 Jun
+  // 2025) prescribes ANNUAL returns for financial institutions. We DELIBERATELY
+  // default to QUARTERLY — a stricter-than-statutory cadence that gives finer
+  // enforcement granularity — not an oversight. The §29 thresholds (₦50m
+  // individual / ₦250m corporate, monthly-cumulative) ARE matched. Set a provider
+  // to ANNUAL to align it strictly with §29.
+  reportingFrequency String?  @default("QUARTERLY")
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 
