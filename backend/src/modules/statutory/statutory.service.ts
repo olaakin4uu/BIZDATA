@@ -21,6 +21,8 @@ export interface StatutoryValues {
   reportingThresholdCorporate: number;  // ₦ per period a corporate must reach to be reportable
   providerPenaltyFirstMonth: number;    // NTAA s.101 — fine for the first month of default
   providerPenaltyPerMonth: number;      // NTAA s.101 — fine for each subsequent month
+  /** Commencement date for provider penalties (YYYY-MM-DD) or null → enforce from every due date. */
+  providerPenaltyEffectiveFrom: string | null;
   /**
    * Date the phased-in compulsory submission fields (sector / businessType /
    * customerType) become hard-required. ISO 'YYYY-MM-DD', or null to fall back
@@ -44,6 +46,7 @@ const DEFAULTS: StatutoryValues = {
   reportingThresholdCorporate: 250_000_000,
   providerPenaltyFirstMonth: 100_000, // NTAA s.101
   providerPenaltyPerMonth: 50_000,    // NTAA s.101
+  providerPenaltyEffectiveFrom: null, // null → enforce from every due date
   fieldEnforcementDate: null, // null → schema default (COMPULSORY_FIELD_ENFORCE_FROM)
 };
 
@@ -70,6 +73,7 @@ export class StatutoryService {
           reportingThresholdCorporate: DEFAULTS.reportingThresholdCorporate,
           providerPenaltyFirstMonth: DEFAULTS.providerPenaltyFirstMonth,
           providerPenaltyPerMonth: DEFAULTS.providerPenaltyPerMonth,
+          providerPenaltyEffectiveFrom: null,
           fieldEnforcementDate: null,
         },
       });
@@ -112,6 +116,7 @@ export class StatutoryService {
           reportingThresholdCorporate: next.reportingThresholdCorporate,
           providerPenaltyFirstMonth: next.providerPenaltyFirstMonth,
           providerPenaltyPerMonth: next.providerPenaltyPerMonth,
+          providerPenaltyEffectiveFrom: next.providerPenaltyEffectiveFrom ? new Date(next.providerPenaltyEffectiveFrom) : null,
           fieldEnforcementDate: next.fieldEnforcementDate ? new Date(next.fieldEnforcementDate) : null,
         },
       });
@@ -141,6 +146,9 @@ export class StatutoryService {
       reportingThresholdCorporate: Number(r.reportingThresholdCorporate),
       providerPenaltyFirstMonth: Number(r.providerPenaltyFirstMonth),
       providerPenaltyPerMonth: Number(r.providerPenaltyPerMonth),
+      providerPenaltyEffectiveFrom: r.providerPenaltyEffectiveFrom
+        ? (r.providerPenaltyEffectiveFrom as Date).toISOString().slice(0, 10)
+        : null,
       fieldEnforcementDate: r.fieldEnforcementDate
         ? (r.fieldEnforcementDate as Date).toISOString().slice(0, 10)
         : null,
@@ -166,6 +174,16 @@ function sanitize(p: Partial<StatutoryValues>): Partial<StatutoryValues> {
   if (p.reportingThresholdCorporate != null) out.reportingThresholdCorporate = money(p.reportingThresholdCorporate);
   if (p.providerPenaltyFirstMonth != null) out.providerPenaltyFirstMonth = money(p.providerPenaltyFirstMonth);
   if (p.providerPenaltyPerMonth != null) out.providerPenaltyPerMonth = money(p.providerPenaltyPerMonth);
+  // Penalty commencement date: undefined = leave unchanged; '' / null = clear
+  // (enforce from every due date); a valid YYYY-MM-DD = set the commencement date.
+  if (p.providerPenaltyEffectiveFrom !== undefined) {
+    const raw = (p.providerPenaltyEffectiveFrom ?? '').toString().trim();
+    if (raw === '') {
+      out.providerPenaltyEffectiveFrom = null;
+    } else if (/^\d{4}-\d{2}-\d{2}$/.test(raw) && !Number.isNaN(new Date(raw).getTime())) {
+      out.providerPenaltyEffectiveFrom = raw;
+    }
+  }
   // Enforcement date: undefined = leave unchanged; '' / null = clear to null
   // (revert to schema default); a valid YYYY-MM-DD = set it.
   if (p.fieldEnforcementDate !== undefined) {

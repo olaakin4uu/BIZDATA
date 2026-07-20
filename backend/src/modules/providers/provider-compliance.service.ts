@@ -85,6 +85,9 @@ export class ProviderComplianceService {
     const dueDays = cfg.reportingDueDays;
     const pFirst = cfg.providerPenaltyFirstMonth;
     const pPer = cfg.providerPenaltyPerMonth;
+    // Commencement gate: penalties apply only to periods due on/after this date.
+    // Null → no gate (enforce from every due date).
+    const pEffective = cfg.providerPenaltyEffectiveFrom ? new Date(cfg.providerPenaltyEffectiveFrom) : null;
     const providers = await this.prisma.dataProvider.findMany({
       where: { ...(providerId ? { id: providerId } : { status: 'ACTIVE' }) },
       select: { id: true, name: true, providerType: true, reportingFrequency: true, status: true },
@@ -108,12 +111,17 @@ export class ProviderComplianceService {
         else status = e.due < now ? 'MISSING' : 'PENDING';
         // NTAA s.101 penalty for a period in default. LATE accrues to the filing
         // date; MISSING keeps accruing to today. ON_TIME/PENDING → no penalty.
+        // Commencement gate: a period whose due date precedes the effective date
+        // is never penalised (non-retroactive), even if in default.
+        const inDefault = status === 'LATE' || status === 'MISSING';
+        const enforced = inDefault && (!pEffective || e.due >= pEffective);
         const asOf = status === 'LATE' ? first!.receivedAt : now;
-        const months = status === 'LATE' || status === 'MISSING' ? monthsInDefault(e.due, asOf) : 0;
+        const months = enforced ? monthsInDefault(e.due, asOf) : 0;
         const penalty = s101Penalty(months, pFirst, pPer);
         return {
           period: e.label, dueAt: e.due, status, receivedAt: first?.receivedAt ?? null,
           monthsInDefault: months, penalty,
+          penaltyEnforced: enforced, // false when before the commencement date
         };
       });
 
@@ -176,6 +184,9 @@ export class ProviderComplianceService {
     if (!period) throw new NotFoundException(`Period ${periodLabel} not expected for this provider.`);
     if (period.status !== 'LATE' && period.status !== 'MISSING') {
       throw new NotFoundException(`Period ${periodLabel} is ${period.status} — no penalty is due.`);
+    }
+    if (!period.penaltyEnforced) {
+      throw new NotFoundException(`Period ${periodLabel} is due before the penalty commencement date — not enforceable.`);
     }
 
     const existing = await this.prisma.providerPenalty.findUnique({

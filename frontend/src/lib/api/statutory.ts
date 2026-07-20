@@ -10,6 +10,10 @@ export interface StatutoryConfig {
   citSmallCoThreshold: number;
   cgtRate: number;
   defaultScanThreshold: number;
+  providerPenaltyFirstMonth: number; // NTAA s.101 — first month of default
+  providerPenaltyPerMonth: number;   // NTAA s.101 — each subsequent month
+  /** Penalty commencement date (YYYY-MM-DD) or null → enforce from every due date. */
+  providerPenaltyEffectiveFrom: string | null;
   /** Date the phased-in compulsory fields become mandatory (YYYY-MM-DD) or null. */
   fieldEnforcementDate: string | null;
 }

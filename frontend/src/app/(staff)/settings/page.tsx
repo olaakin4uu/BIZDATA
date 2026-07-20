@@ -198,6 +198,8 @@ const STAT_FIELDS: { key: keyof StatutoryConfig; label: string; hint: string; ki
   { key: 'citRate',               label: 'Company income tax rate',               hint: 'Fraction, e.g. 0.30 = 30%', kind: 'rate' },
   { key: 'cgtRate',               label: 'Capital-gains tax rate',                hint: 'NTA §50 — fraction, e.g. 0.10 = 10%', kind: 'rate' },
   { key: 'defaultScanThreshold',  label: 'Default scan threshold',                hint: 'Discrepancy fraction to flag, e.g. 0.20', kind: 'rate' },
+  { key: 'providerPenaltyFirstMonth', label: 'Provider penalty — first month (₦)', hint: 'NTAA §101 — fine for the first month of default', kind: 'money' },
+  { key: 'providerPenaltyPerMonth',   label: 'Provider penalty — each month after (₦)', hint: 'NTAA §101 — fine for each subsequent month', kind: 'money' },
 ];
 
 function StatutoryPanel() {
@@ -213,6 +215,7 @@ function StatutoryPanel() {
   // Enforcement date is handled apart from the numeric grid (it's a date, and can
   // be cleared to fall back to the built-in default).
   const [enforceDate, setEnforceDate] = useState('');
+  const [penaltyDate, setPenaltyDate] = useState('');
 
   const load = () => {
     statutoryApi.active().then((c) => {
@@ -221,6 +224,7 @@ function StatutoryPanel() {
       STAT_FIELDS.forEach(({ key }) => { f[key] = String(c[key]); });
       setForm(f);
       setEnforceDate(c.fieldEnforcementDate ?? '');
+      setPenaltyDate(c.providerPenaltyEffectiveFrom ?? '');
     }).catch(() => setCfg(null));
     statutoryApi.history().then(setHistory).catch(() => setHistory([]));
   };
@@ -233,6 +237,8 @@ function StatutoryPanel() {
       STAT_FIELDS.forEach(({ key }) => { patch[key] = Number(form[key]); });
       // Send the date explicitly ('' clears it back to the schema default).
       patch.fieldEnforcementDate = enforceDate.trim();
+      // '' clears the penalty commencement date (enforce from every due date).
+      patch.providerPenaltyEffectiveFrom = penaltyDate.trim();
       const c = await statutoryApi.update(patch);
       setMsg(`Saved as version ${c.version}.`);
       setNote('');
@@ -298,6 +304,41 @@ function StatutoryPanel() {
                     return days > 0 ? `enforced in ${days} day${days === 1 ? '' : 's'}` : 'enforced now';
                   })()
                 : 'using default: 2027-01-01'}
+            </span>
+          </div>
+        </Field>
+      </div>
+
+      {/* Provider penalty commencement date — NTAA §101 penalties apply only to
+          reporting periods whose statutory due date falls on/after this date. */}
+      <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
+        <Field
+          label="Provider penalty — effective from"
+          hint="NTAA §101 late/failure-to-file penalties apply only to reporting periods due on or after this date. A period due before it is never penalised (non-retroactive). Leave empty to enforce from every period's due date."
+        >
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="date"
+              value={penaltyDate}
+              onChange={(e) => setPenaltyDate(e.target.value)}
+              className="px-3 py-2 border border-slate-300 rounded-lg text-sm font-mono"
+            />
+            {penaltyDate && (
+              <button
+                type="button"
+                onClick={() => setPenaltyDate('')}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700 underline"
+              >
+                Clear (enforce from every due date)
+              </button>
+            )}
+            <span className="text-xs text-slate-500">
+              {penaltyDate
+                ? (() => {
+                    const days = Math.ceil((new Date(penaltyDate).getTime() - Date.now()) / 86_400_000);
+                    return days > 0 ? `commences in ${days} day${days === 1 ? '' : 's'}` : 'in force';
+                  })()
+                : 'no commencement date — all due periods enforced'}
             </span>
           </div>
         </Field>
