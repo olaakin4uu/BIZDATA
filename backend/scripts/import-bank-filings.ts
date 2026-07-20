@@ -24,6 +24,7 @@
 import 'dotenv/config';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as readline from 'readline';
 import { PrismaClient, ProviderType, TaxpayerType, TaxpayerStatus, SubmissionStatus } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -111,11 +112,25 @@ async function findOrCreateTaxpayer(rec: any): Promise<string | null> {
   }
 }
 
+/** Stream the JSONL file line-by-line, invoking cb per parsed record.
+ * Avoids loading the whole 1GB+ file into a single string (ERR_STRING_TOO_LONG). */
+async function forEachRecord(file: string, cb: (r: any) => Promise<void> | void): Promise<number> {
+  let n = 0;
+  const rl = readline.createInterface({ input: fs.createReadStream(file, { encoding: 'utf-8' }), crlfDelay: Infinity });
+  for await (const line of rl) {
+    const s = line.trim();
+    if (!s) continue;
+    let r: any;
+    try { r = JSON.parse(s); } catch { continue; }
+    await cb(r);
+    n++;
+  }
+  return n;
+}
+
 async function main() {
   console.log(`=== FinData ← bank-filing import ${DRY_RUN ? '(DRY RUN — no writes)' : ''} ===`);
   if (!fs.existsSync(RECORDS)) throw new Error(`records file not found: ${RECORDS}`);
-  const rows = fs.readFileSync(RECORDS, 'utf-8').split('\n').filter((l) => l.trim()).map((l) => JSON.parse(l));
-  console.log(`Records to import: ${rows.length}`);
 
   // Resolve provider name via the reconciliation map, then to a live provider id.
   const pmap = JSON.parse(fs.readFileSync(PROVIDER_MAP, 'utf-8')).map as Record<string, string>;
@@ -126,9 +141,21 @@ async function main() {
     return byName.get(mapped.trim().toUpperCase());
   };
 
-  // Fail LOUDLY if any provider can't be resolved — never silently drop a bank.
+  // PASS 1 (streaming): validate providers + gather per-provider counts + distinct
+  // (provider, quarter) pairs. Fail LOUDLY if any provider can't be resolved.
   const missing = new Set<string>();
-  for (const r of rows) if (!resolve(r.provider)) missing.add(`${r.provider}  ->  ${pmap[r.provider] || '(unmapped)'}`);
+  const perProv: Record<string, { txn: number; open: number }> = {};
+  const pairs = new Set<string>();  // "providerId|quarter"
+  let scanned = 0;
+  await forEachRecord(RECORDS, (r) => {
+    scanned++;
+    const p = resolve(r.provider);
+    if (!p) { missing.add(`${r.provider}  ->  ${pmap[r.provider] || '(unmapped)'}`); return; }
+    perProv[r.provider] ??= { txn: 0, open: 0 };
+    if (r.recordKind === 'ACCOUNT_OPENED') perProv[r.provider].open++; else perProv[r.provider].txn++;
+    pairs.add(`${p.id}|${r.quarter}`);
+  });
+  console.log(`Scanned ${scanned} records.`);
   if (missing.size) {
     console.error(`\n❌ ${missing.size} provider(s) not found in findata data_providers:`);
     for (const m of missing) console.error('   - ' + m);
@@ -138,14 +165,10 @@ async function main() {
   console.log('✓ all providers resolve to live data_providers');
 
   if (DRY_RUN) {
-    const perProv: Record<string, { txn: number; open: number }> = {};
-    for (const r of rows) {
-      const k = r.provider; perProv[k] ??= { txn: 0, open: 0 };
-      if (r.recordKind === 'ACCOUNT_OPENED') perProv[k].open++; else perProv[k].txn++;
-    }
     console.log('\nWould import (per provider  txn / account-opened):');
     for (const [k, v] of Object.entries(perProv).sort()) console.log(`   ${k.padEnd(26)}  ${String(v.txn).padStart(8)} / ${v.open}`);
-    console.log('\nDRY RUN complete — no writes performed.');
+    console.log(`\n${pairs.size} (provider, quarter) submissions.`);
+    console.log('DRY RUN complete — no writes performed.');
     return;
   }
 
@@ -163,12 +186,16 @@ async function main() {
     subCache.set(key, sub.id);
     return sub.id;
   }
-  for (const r of rows) { const p = resolve(r.provider)!; await getSubmission(p.id, r.quarter); }
+  for (const pair of pairs) { const [pid, quarter] = pair.split('|'); await getSubmission(pid, quarter); }
+  console.log(`Pre-created ${subCache.size} submissions.`);
 
+  // PASS 2 (streaming): import in batches of BATCH, running each batch concurrently.
   const BATCH = 200;
-  for (let i = 0; i < rows.length; i += BATCH) {
-    const batch = rows.slice(i, i + BATCH);
-    await Promise.all(batch.map(async (r: any) => {
+  let batch: any[] = [];
+  let done = 0;
+  const flush = async () => {
+    const b = batch; batch = [];
+    await Promise.all(b.map(async (r: any) => {
       try {
         const p = resolve(r.provider)!;
         const submissionId = await getSubmission(p.id, r.quarter);
@@ -216,8 +243,15 @@ async function main() {
         recordsSkipped++;
       }
     }));
-    process.stdout.write(`\r  Records: ${Math.min(i + BATCH, rows.length)}/${rows.length}…`);
-  }
+    done += b.length;
+    process.stdout.write(`\r  Records: ${done}/${scanned}…`);
+  };
+
+  await forEachRecord(RECORDS, async (r) => {
+    batch.push(r);
+    if (batch.length >= BATCH) await flush();
+  });
+  if (batch.length) await flush();
 
   // Backfill submission counters (transaction rows only — account-openings don't count).
   let finalized = 0;
