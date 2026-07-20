@@ -11,6 +11,9 @@ import { DraftProposer } from './approval/draft-proposer';
 import { IrisDraftService } from './approval/iris-draft.service';
 import { ExportService } from './export/export.service';
 import { ListCasesTool } from './tools/read/list-cases.tool';
+import { ExplainCaseTool } from './tools/read/explain-case.tool';
+import { TaxpayerSummaryTool } from './tools/read/taxpayer-summary.tool';
+import { ScanResultsTool } from './tools/read/scan-results.tool';
 import { RunScanTool } from './tools/action/run-scan.tool';
 import { GenerateReportTool } from './tools/action/generate-report.tool';
 import { DraftNoticeTool } from './tools/action/draft-notice.tool';
@@ -34,6 +37,9 @@ import { DraftNoticeTool } from './tools/action/draft-notice.tool';
     ExportService,
     // Tools
     ListCasesTool,
+    ExplainCaseTool,
+    TaxpayerSummaryTool,
+    ScanResultsTool,
     RunScanTool,
     GenerateReportTool,
     DraftNoticeTool,

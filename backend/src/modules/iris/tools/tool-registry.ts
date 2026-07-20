@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
 import { AgentTool } from './tool.types';
 import { ListCasesTool } from './read/list-cases.tool';
+import { ExplainCaseTool } from './read/explain-case.tool';
+import { TaxpayerSummaryTool } from './read/taxpayer-summary.tool';
+import { ScanResultsTool } from './read/scan-results.tool';
 import { RunScanTool } from './action/run-scan.tool';
 import { GenerateReportTool } from './action/generate-report.tool';
 import { DraftNoticeTool } from './action/draft-notice.tool';
@@ -17,11 +20,16 @@ export class ToolRegistry {
 
   constructor(
     listCases: ListCasesTool,
+    explainCase: ExplainCaseTool,
+    taxpayerSummary: TaxpayerSummaryTool,
+    scanResults: ScanResultsTool,
     runScan: RunScanTool,
     generateReport: GenerateReportTool,
     draftNotice: DraftNoticeTool,
   ) {
-    for (const t of [listCases, runScan, generateReport, draftNotice]) this.register(t);
+    for (const t of [listCases, explainCase, taxpayerSummary, scanResults, runScan, generateReport, draftNotice]) {
+      this.register(t);
+    }
   }
 
   register(tool: AgentTool): void {

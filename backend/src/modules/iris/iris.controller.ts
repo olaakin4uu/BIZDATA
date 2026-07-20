@@ -10,9 +10,9 @@ import { IrisDraftService } from './approval/iris-draft.service';
 import { ExportService } from './export/export.service';
 
 /**
- * IRIS chat + the approval gate. Any authenticated staff member may talk to IRIS;
- * what they can DO is gated per-tool by role (the catalog filter), and confirming
- * a draft re-checks role/ownership. Downloads decrypt server-side for the owner.
+ * IRIS chat (blocking + streaming) + the approval gate + conversation history.
+ * Any authenticated staff may talk to IRIS; per-tool role gating and draft
+ * confirmation enforce what they can DO. Downloads decrypt server-side for the owner.
  */
 @ApiTags('iris')
 @ApiBearerAuth()
@@ -29,6 +29,32 @@ export class IrisController {
   @ApiOperation({ summary: 'Send a message to IRIS and get a reply (+ any confirm cards)' })
   chat(@CurrentStaff() staff: User, @Body() dto: IrisChatDto) {
     return this.iris.chat(staff, dto);
+  }
+
+  @Post('chat/stream')
+  @ApiOperation({ summary: 'Send a message to IRIS and stream the reply (SSE): delta / done / error' })
+  async chatStream(@CurrentStaff() staff: User, @Body() dto: IrisChatDto, @Res() res: Response): Promise<void> {
+    res.set({
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache, no-transform',
+      Connection: 'keep-alive',
+      'X-Accel-Buffering': 'no', // don't let nginx buffer the SSE stream
+    });
+    res.flushHeaders?.();
+    await this.iris.chatStream(staff, dto, (e) => res.write(`data: ${JSON.stringify(e)}\n\n`));
+    res.end();
+  }
+
+  @Get('conversations')
+  @ApiOperation({ summary: "List the officer's IRIS conversations" })
+  listConversations(@CurrentStaff() staff: User) {
+    return this.iris.listConversations(staff);
+  }
+
+  @Get('conversations/:id')
+  @ApiOperation({ summary: 'Load one conversation (human-readable messages)' })
+  getConversation(@CurrentStaff() staff: User, @Param('id') id: string) {
+    return this.iris.getConversation(staff, id);
   }
 
   @Post('drafts/:id/confirm')

@@ -23,6 +23,18 @@ export interface IrisConfirmResponse {
   download?: { exportId: string; fileName: string };
 }
 
+export interface IrisConversationSummary {
+  id: string;
+  title: string | null;
+  updatedAt: string;
+}
+
+export interface IrisConversationDetail {
+  conversationId: string;
+  title: string | null;
+  messages: { role: string; text: string }[];
+}
+
 export const irisApi = {
   chat: (message: string, conversationId?: string) =>
     apiFetch<IrisChatResponse>('/iris/chat', { method: 'POST', body: { message, conversationId } }),
@@ -30,7 +42,62 @@ export const irisApi = {
     apiFetch<IrisConfirmResponse>(`/iris/drafts/${draftId}/confirm`, { method: 'POST' }),
   cancel: (draftId: string) =>
     apiFetch<{ status: string }>(`/iris/drafts/${draftId}/cancel`, { method: 'POST' }),
+  listConversations: () => apiFetch<IrisConversationSummary[]>('/iris/conversations'),
+  getConversation: (id: string) => apiFetch<IrisConversationDetail>(`/iris/conversations/${id}`),
 };
+
+export interface IrisStreamHandlers {
+  onDelta: (text: string) => void;
+  onDone: (r: { conversationId: string; reply: string; cards: IrisCard[] }) => void;
+  onError: (message: string) => void;
+}
+
+/** Stream a reply over SSE (delta → done). Reads the POST body stream directly
+ *  since apiFetch parses JSON. */
+export async function chatStream(
+  message: string,
+  conversationId: string | undefined,
+  h: IrisStreamHandlers,
+): Promise<void> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
+  let res: Response;
+  try {
+    res = await fetch(`${BASE}/iris/chat/stream`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ message, conversationId }),
+    });
+  } catch {
+    h.onError('Network error.');
+    return;
+  }
+  if (!res.ok || !res.body) {
+    h.onError(`Request failed (${res.status})`);
+    return;
+  }
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = '';
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const parts = buf.split('\n\n');
+    buf = parts.pop() ?? '';
+    for (const part of parts) {
+      const line = part.trim();
+      if (!line.startsWith('data:')) continue;
+      try {
+        const e = JSON.parse(line.slice(5).trim());
+        if (e.type === 'delta') h.onDelta(e.text);
+        else if (e.type === 'done') h.onDone(e);
+        else if (e.type === 'error') h.onError(e.message);
+      } catch {
+        /* ignore partial frame */
+      }
+    }
+  }
+}
 
 /**
  * Encrypted export download. apiFetch parses JSON, so we fetch the binary

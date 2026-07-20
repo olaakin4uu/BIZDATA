@@ -8,6 +8,7 @@ export interface ToolRunResult {
   content: string; // JSON string fed back to the model as the tool_result
   isError: boolean;
   card?: ConfirmRequired['card']; // surfaced to the UI when a draft needs confirming
+  raw?: unknown; // the tool's structured return — so the caller can register names for pseudonymisation
 }
 
 /**
@@ -59,10 +60,11 @@ export class ToolExecutor {
           }),
           isError: false,
           card: result.card,
+          raw: result.card,
         };
       }
 
-      return { toolUseId, content: JSON.stringify(result), isError: false };
+      return { toolUseId, content: JSON.stringify(result), isError: false, raw: result };
     } catch (e) {
       return { toolUseId, content: JSON.stringify({ error: (e as Error).message }), isError: true };
     }
