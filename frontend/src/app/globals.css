@@ -155,16 +155,18 @@ h1, h2, h3 { letter-spacing: -0.011em; text-wrap: balance; }
    it is the guaranteed floor and cannot be silently defeated by a stray
    `focus:outline-none` utility (WCAG 2.4.7). Mouse users are unaffected
    because it targets :focus-visible only. */
-a:focus-visible,
-button:focus-visible,
-input:focus-visible,
-select:focus-visible,
-textarea:focus-visible,
-[tabindex]:focus-visible {
+a:focus-visible:not(.no-focus-ring),
+button:focus-visible:not(.no-focus-ring),
+input:focus-visible:not(.no-focus-ring),
+select:focus-visible:not(.no-focus-ring),
+textarea:focus-visible:not(.no-focus-ring),
+[tabindex]:focus-visible:not(.no-focus-ring) {
   outline: 2px solid var(--color-teal-600, #0d9488) !important;
   outline-offset: 2px;
   border-radius: 4px;
 }
+/* Opt-out for intentionally seamless controls (e.g. a borderless modal search
+   field) that provide their own focus context — add `no-focus-ring`. */
 
 /* Respect reduced-motion for any transitions we add. */
 @media (prefers-reduced-motion: reduce) {

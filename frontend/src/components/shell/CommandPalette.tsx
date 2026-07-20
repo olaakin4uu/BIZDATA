@@ -150,7 +150,7 @@ export default function CommandPalette() {
             placeholder="Search pages and actions…"
             aria-label="Search pages and actions"
             aria-controls="command-list"
-            className="flex-1 bg-transparent py-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
+            className="no-focus-ring flex-1 bg-transparent py-4 text-sm text-[var(--ink)] outline-none placeholder:text-[var(--ink-3)]"
           />
           <kbd className="hidden rounded border border-[var(--line)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--ink-3)] sm:block">Esc</kbd>
         </div>
