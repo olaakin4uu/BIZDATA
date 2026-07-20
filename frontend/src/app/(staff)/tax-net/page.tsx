@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { taxNetApi, type TaxNetReport, type TaxNetRow, type NetStatus } from '@/lib/api/taxNet';
 import { identityApi, type IdentityStatus } from '@/lib/api/identity';
 import { formatMoneyShort, extractErrorMessage } from '@/lib/utils';
+import { Modal } from '@/components/Modal';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Field';
 
 const NET_META: Record<NetStatus, { label: string; chip: string; dot: string; desc: string }> = {
   CAPTURED:   { label: 'Captured',   chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500', desc: 'Has the truth-of-record ID (RC / TIN)' },
@@ -302,38 +305,41 @@ function AutoRegisterModal({ onClose, onDone, invisibleCount }: { onClose: () =>
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Auto-register into the tax net</h2>
-          <p className="text-xs text-slate-500">Assigns a provisional TIN to registerable individuals (no TIN on file).</p>
+    <Modal
+      open
+      onClose={onClose}
+      title="Auto-register into the tax net"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={run} loading={busy}>Register batch</Button>
         </div>
-        <div className="p-6 space-y-4">
-          <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
-            {invisibleCount.toLocaleString()} taxpayers are currently invisible. Use the filters below to scope the batch.
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Minimum observed inflow (₦, optional)</label>
-            <input value={minInflow} onChange={(e) => setMinInflow(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric"
-              placeholder="e.g. 1000000 — only those receiving over ₦1m"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Max to register this run (optional)</label>
-            <input value={limit} onChange={(e) => setLimit(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric"
-              placeholder="leave blank for all matching"
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-          </div>
-          {error && <p className="text-xs text-rose-600">{error}</p>}
+      }
+    >
+      <p className="-mt-1 mb-3 text-xs text-[var(--ink-3)]">
+        Assigns a provisional TIN to registerable individuals (no TIN on file).
+      </p>
+      <div className="space-y-4">
+        <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-700">
+          {invisibleCount.toLocaleString()} taxpayers are currently invisible. Use the filters below to scope the batch.
         </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
-          <button onClick={run} disabled={busy} className="px-4 py-2 text-sm font-semibold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg disabled:opacity-50">
-            {busy ? 'Registering…' : 'Register batch'}
-          </button>
-        </div>
+        <Input
+          label="Minimum observed inflow (₦, optional)"
+          value={minInflow}
+          onChange={(e) => setMinInflow(e.target.value.replace(/[^\d]/g, ''))}
+          inputMode="numeric"
+          placeholder="e.g. 1000000 — only those receiving over ₦1m"
+        />
+        <Input
+          label="Max to register this run (optional)"
+          value={limit}
+          onChange={(e) => setLimit(e.target.value.replace(/[^\d]/g, ''))}
+          inputMode="numeric"
+          placeholder="leave blank for all matching"
+        />
+        {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>
-    </div>
+    </Modal>
   );
 }
 
@@ -353,48 +359,48 @@ function ResolveIdentityModal({ onClose, onDone, status }: { onClose: () => void
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Resolve identities · BVN → NIN</h2>
-          <p className="text-xs text-slate-500">
-            Bridges each stored BVN to its linked NIN via {status.provider}. {status.resolvable.toLocaleString()} resolvable.
-          </p>
-        </div>
-        <div className="p-6 space-y-4">
-          {status.isMock && (
-            <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
-              Demo mode: resolved NINs are synthetic. Connect NIBSS (set IDENTITY_PROVIDER=nibss) for authoritative resolution.
-            </div>
-          )}
-          {result ? (
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
-              Resolved <strong>{result.resolved}</strong> of {result.candidates}.
-              {result.notFound > 0 && <span className="text-slate-600"> {result.notFound} had no linked NIN.</span>}
-            </div>
-          ) : (
-            <div>
-              <label className="block text-xs font-medium text-slate-600 mb-1">Max to resolve this run (optional)</label>
-              <input value={limit} onChange={(e) => setLimit(e.target.value.replace(/[^\d]/g, ''))} inputMode="numeric"
-                placeholder="leave blank for all resolvable"
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-            </div>
-          )}
-          {error && <p className="text-xs text-rose-600">{error}</p>}
-        </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
-          <button onClick={result ? () => onDone(result.resolved) : onClose}
-            className="px-4 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-50">
-            {result ? 'Done' : 'Cancel'}
-          </button>
-          {!result && (
-            <button onClick={run} disabled={busy}
-              className="px-4 py-2 text-sm font-semibold bg-sky-600 hover:bg-sky-700 text-white rounded-lg disabled:opacity-50">
-              {busy ? 'Resolving…' : 'Resolve now'}
-            </button>
-          )}
-        </div>
+    <Modal
+      open
+      onClose={onClose}
+      title="Resolve identities · BVN → NIN"
+      footer={
+        result ? (
+          <div className="flex justify-end">
+            <Button onClick={() => onDone(result.resolved)}>Done</Button>
+          </div>
+        ) : (
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button onClick={run} loading={busy}>Resolve now</Button>
+          </div>
+        )
+      }
+    >
+      <p className="-mt-1 mb-3 text-xs text-[var(--ink-3)]">
+        Bridges each stored BVN to its linked NIN via {status.provider}. {status.resolvable.toLocaleString()} resolvable.
+      </p>
+      <div className="space-y-4">
+        {status.isMock && (
+          <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
+            Demo mode: resolved NINs are synthetic. Connect NIBSS (set IDENTITY_PROVIDER=nibss) for authoritative resolution.
+          </div>
+        )}
+        {result ? (
+          <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
+            Resolved <strong>{result.resolved}</strong> of {result.candidates}.
+            {result.notFound > 0 && <span className="text-slate-600"> {result.notFound} had no linked NIN.</span>}
+          </div>
+        ) : (
+          <Input
+            label="Max to resolve this run (optional)"
+            value={limit}
+            onChange={(e) => setLimit(e.target.value.replace(/[^\d]/g, ''))}
+            inputMode="numeric"
+            placeholder="leave blank for all resolvable"
+          />
+        )}
+        {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>
-    </div>
+    </Modal>
   );
 }

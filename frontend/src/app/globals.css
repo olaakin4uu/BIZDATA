@@ -14,9 +14,13 @@
   --surface-2: #f8fafa;   /* subtle inset (table headers, wells) — faint teal bias */
   --ink: #0f1729;         /* primary text (slate-biased near-black) */
   --ink-2: #475069;       /* secondary text */
-  --ink-3: #8a93a6;       /* muted / captions */
+  --ink-3: #6b7385;       /* muted / captions — darkened to clear AA 4.5:1 on white */
   --line: #e2e8ea;        /* hairline borders (teal-biased) */
   --line-2: #eef0f4;      /* faint dividers */
+
+  /* Sidebar ground — tokenised so the shell chrome participates in theming
+     instead of hardcoding a magic navy hex in the component. */
+  --sidebar-bg: #0c1322;
 
   /* Semantic state — NOT the accent. good / warn / critical / info */
   --ok: #059669;
@@ -47,6 +51,51 @@
 
   --background: var(--canvas);
   --foreground: var(--ink);
+}
+
+/* ─── Dark theme ─────────────────────────────────────────────────────────────
+   The console consumes these tokens, so redefining them re-skins every
+   token-driven surface at once. Follows the OS preference; the [data-theme]
+   overrides let a future in-app toggle win in either direction. Pages that
+   still hardcode slate/white utilities are migrated separately — until then
+   they stay light-on-dark and are the remaining dark-mode work. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --canvas: #0b1120;
+    --canvas-2: #070c15;
+    --surface: #111a2b;
+    --surface-2: #0d1524;
+    --ink: #e6ebf2;
+    --ink-2: #9aa6bd;
+    --ink-3: #8893a8;      /* lighter on dark ground for AA */
+    --line: #223049;
+    --line-2: #1a2438;
+    --ok-soft: #06281d;
+    --warn-soft: #2a1f06;
+    --bad-soft: #2a0d16;
+    --info-soft: #0d1c3a;
+    --elev-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 3px rgba(0, 0, 0, 0.40);
+    --elev-2: 0 2px 4px rgba(0, 0, 0, 0.30), 0 4px 12px rgba(0, 0, 0, 0.45);
+    --elev-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.40);
+  }
+}
+:root[data-theme="dark"] {
+  --canvas: #0b1120;
+  --canvas-2: #070c15;
+  --surface: #111a2b;
+  --surface-2: #0d1524;
+  --ink: #e6ebf2;
+  --ink-2: #9aa6bd;
+  --ink-3: #8893a8;
+  --line: #223049;
+  --line-2: #1a2438;
+  --ok-soft: #06281d;
+  --warn-soft: #2a1f06;
+  --bad-soft: #2a0d16;
+  --info-soft: #0d1c3a;
+  --elev-1: 0 1px 2px rgba(0, 0, 0, 0.30), 0 1px 3px rgba(0, 0, 0, 0.40);
+  --elev-2: 0 2px 4px rgba(0, 0, 0, 0.30), 0 4px 12px rgba(0, 0, 0, 0.45);
+  --elev-3: 0 8px 24px rgba(0, 0, 0, 0.55), 0 2px 6px rgba(0, 0, 0, 0.40);
 }
 
 /* Bind Tailwind v4 utilities to our tokens (font-sans → Inter; colour tokens). */
@@ -101,9 +150,18 @@ body {
 /* Headings: tighten tracking a touch and balance wrapping for an institutional feel. */
 h1, h2, h3 { letter-spacing: -0.011em; text-wrap: balance; }
 
-/* Consistent, visible keyboard focus (accessibility + polish). */
-:where(a, button, input, select, textarea, [tabindex]):focus-visible {
-  outline: 2px solid var(--color-teal-600, #0d9488);
+/* Consistent, visible keyboard focus (accessibility + polish).
+   Authored with `!important` and real element selectors — NOT `:where()` — so
+   it is the guaranteed floor and cannot be silently defeated by a stray
+   `focus:outline-none` utility (WCAG 2.4.7). Mouse users are unaffected
+   because it targets :focus-visible only. */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[tabindex]:focus-visible {
+  outline: 2px solid var(--color-teal-600, #0d9488) !important;
   outline-offset: 2px;
   border-radius: 4px;
 }

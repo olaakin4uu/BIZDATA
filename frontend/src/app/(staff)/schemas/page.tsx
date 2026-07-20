@@ -71,6 +71,7 @@ export default function SchemasPage() {
         </div>
       ) : (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead className="bg-slate-50 border-b border-slate-200">
               <tr>
@@ -100,6 +101,7 @@ export default function SchemasPage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 

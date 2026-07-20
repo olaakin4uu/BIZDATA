@@ -123,7 +123,7 @@ export default function SettingsPage() {
           <section className="mb-6">
             <h2 className="text-sm font-semibold text-slate-800 mb-1">Integration API keys</h2>
             <p className="text-xs text-slate-500 mb-3">
-              Keys for partner platforms (e.g. a taxpayer portal) that call the FINDATA taxpayer-integration API.
+              Keys for partner platforms (e.g. a taxpayer portal) that call the FinData taxpayer-integration API.
               A key is shown once at creation — copy it then.
             </p>
             <ApiKeysPanel />
@@ -315,6 +315,7 @@ function StatutoryPanel() {
 
       {showHistory && (
         <div className="pt-3 border-t border-slate-100">
+          <div className="overflow-x-auto">
           <table className="w-full text-xs">
             <thead>
               <tr className="text-left text-slate-400">
@@ -335,6 +336,7 @@ function StatutoryPanel() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
     </div>
@@ -394,6 +396,7 @@ function ApiKeysPanel() {
       </div>
 
       {keys.length > 0 && (
+        <div className="overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-left text-slate-400">
@@ -422,6 +425,7 @@ function ApiKeysPanel() {
             ))}
           </tbody>
         </table>
+        </div>
       )}
     </div>
   );

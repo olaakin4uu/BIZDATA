@@ -7,6 +7,7 @@ import Icon from '@/components/Icon';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
+import { APP_NAME } from '@/lib/appName';
 
 export default function NewProviderSubmissionPage() {
   const user = useProviderAuthStore((s) => s.user);
@@ -57,7 +58,7 @@ export default function NewProviderSubmissionPage() {
       <SubmissionUploader
         reportingFrequency={freq}
         submissionLinkPrefix="/provider/submissions"
-        description={`Your reporting frequency is set to ${freq}. Files up to 100 MB are accepted. Every row is validated against the ${providerType || 'FinData'} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
+        description={`Your reporting frequency is set to ${freq}. Files up to 100 MB are accepted. Every row is validated against the ${providerType || APP_NAME} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
         onUpload={(payload) => providerPortalApi.upload(payload)}
       />
     </div>

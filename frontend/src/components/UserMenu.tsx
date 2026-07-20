@@ -1,6 +1,8 @@
 'use client';
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { APP_NAME } from '@/lib/appName';
+import { APP_VERSION, APP_ENV, IS_PROD } from '@/lib/appMeta';
 
 export interface UserMenuUser {
   firstName?: string | null;
@@ -177,6 +179,11 @@ export default function UserMenu({ user, onSignOut, onUploadAvatar, variant = 'l
             </svg>
             Sign out
           </button>
+
+          <div className="flex items-center justify-between border-t border-slate-100 px-4 py-2 text-[10px] text-slate-400">
+            <span className="tnum font-mono">{APP_NAME} v{APP_VERSION}</span>
+            {!IS_PROD && <span className="uppercase tracking-wide text-amber-600">{APP_ENV}</span>}
+          </div>
         </div>
       )}
     </div>

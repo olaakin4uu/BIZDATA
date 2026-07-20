@@ -4,6 +4,8 @@ import Link from 'next/link';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ProviderUploadsModal from '@/components/providers/ProviderUploadsModal';
 import PasswordInput from '@/components/PasswordInput';
+import { Modal } from '@/components/Modal';
+import { Button } from '@/components/Button';
 import { providersApi, type Provider, type ProviderUserRecord } from '@/lib/api/providers';
 import { complianceApi, type ProviderCompliance, type PeriodStatus } from '@/lib/api/compliance';
 import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, formatDate, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
@@ -303,37 +305,42 @@ function ResetPasswordModal({ user, onClose, onDone }: { user: ProviderUserRecor
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-sm rounded-xl bg-white p-6 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-sm font-semibold text-slate-800">Reset password — {user.firstName} {user.lastName}</h3>
-        <p className="mt-1 text-xs text-slate-500">
-          Set a temporary password. {user.email} will be <strong>forced to change it</strong> on their next login.
-        </p>
-        {done ? (
-          <div className="mt-4">
-            <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-700">
-              Password reset. Share the temporary password securely — the user must change it on first login.
-            </div>
-            <button onClick={onDone} className="mt-3 w-full px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg">Done</button>
+    <Modal
+      open
+      onClose={onClose}
+      size="sm"
+      title={`Reset password — ${user.firstName} ${user.lastName}`}
+      footer={
+        done ? (
+          <div className="flex justify-end">
+            <Button onClick={onDone}>Done</Button>
           </div>
         ) : (
-          <div className="mt-4 space-y-3">
-            <div>
-              <label className="block text-[10px] font-medium text-slate-500 mb-1 uppercase">Temporary password</label>
-              <PasswordInput value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} minLength={8}
-                className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-            </div>
-            {err && <p className="text-xs text-rose-600">{err}</p>}
-            <div className="flex gap-2">
-              <button onClick={submit} disabled={busy || pw.length < 8} className="flex-1 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
-                {busy ? 'Resetting…' : 'Reset password'}
-              </button>
-              <button onClick={onClose} className="px-4 py-2 border border-slate-300 text-sm rounded-lg hover:bg-slate-50">Cancel</button>
-            </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="secondary" onClick={onClose}>Cancel</Button>
+            <Button onClick={submit} loading={busy} disabled={pw.length < 8}>Reset password</Button>
           </div>
-        )}
-      </div>
-    </div>
+        )
+      }
+    >
+      <p className="-mt-1 text-xs text-[var(--ink-3)]">
+        Set a temporary password. {user.email} will be <strong>forced to change it</strong> on their next login.
+      </p>
+      {done ? (
+        <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-700">
+          Password reset. Share the temporary password securely — the user must change it on first login.
+        </div>
+      ) : (
+        <div className="mt-4 space-y-3">
+          <div>
+            <label htmlFor="reset-temp-password" className="block text-[10px] font-medium text-slate-500 mb-1 uppercase">Temporary password</label>
+            <PasswordInput id="reset-temp-password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} minLength={8}
+              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
+          </div>
+          {err && <p className="text-xs text-rose-600">{err}</p>}
+        </div>
+      )}
+    </Modal>
   );
 }
 

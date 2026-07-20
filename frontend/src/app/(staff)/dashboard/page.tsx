@@ -17,20 +17,8 @@ import { complianceApi, type ComplianceSummary } from '@/lib/api/compliance';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { auditApi } from '@/lib/api/audit';
 import { crossStateApi, type Referral } from '@/lib/api/crossState';
-import { extractErrorMessage } from '@/lib/utils';
-
-/* ─── NAV TILES ───────────────────────────────────────────────────────────── */
-const NAV_TILES = [
-  { href: '/cases',        label: 'Cases',           desc: 'Underdeclaration worklist',    icon: '🚩', accent: 'from-rose-500 to-rose-600' },
-  { href: '/taxpayer-360', label: 'Taxpayer 360',    desc: 'Unified taxpayer view',         icon: '🧭', accent: 'from-indigo-500 to-violet-600' },
-  { href: '/scan',         label: 'Run a Scan',      desc: 'Underdeclaration analysis',     icon: '🔍', accent: 'from-teal-500 to-teal-700' },
-  { href: '/compliance',   label: 'Compliance',      desc: '§29 provider obligations',      icon: '📅', accent: 'from-sky-500 to-blue-600' },
-  { href: '/cross-state',  label: 'Cross-State',     desc: 'JRB §15 referrals',             icon: '🔗', accent: 'from-purple-500 to-purple-700' },
-  { href: '/metrics',      label: 'Model & Fairness',desc: 'Precision + disparate impact',  icon: '📈', accent: 'from-orange-400 to-amber-500' },
-  { href: '/governance',   label: 'Governance',      desc: 'Reports + MoU',                 icon: '🏛️', accent: 'from-slate-600 to-slate-800' },
-  { href: '/dpo',          label: 'Data Protection', desc: 'NDPA retention + DPO',          icon: '🛡️', accent: 'from-emerald-500 to-teal-600' },
-  { href: '/audit',        label: 'Audit Logs',      desc: 'Tamper-evident trail',          icon: '📜', accent: 'from-gray-500 to-gray-700' },
-];
+import { extractErrorMessage, formatDate } from '@/lib/utils';
+import { APP_LONG_NAME } from '@/lib/appName';
 
 /* ─── RISK COLOUR MAP ─────────────────────────────────────────────────────── */
 const RISK_META: Record<RiskLevel, { label: string; bar: string; text: string; badge: string }> = {
@@ -96,7 +84,7 @@ export default function StaffDashboardPage() {
         <div className="pointer-events-none absolute -bottom-8 right-24 h-32 w-32 rounded-full bg-indigo-500/10" />
         <div className="relative flex items-start justify-between flex-wrap gap-4">
           <div>
-            <p className="text-xs uppercase tracking-widest text-teal-300 mb-1">FINDATA — Bank Reports Intelligence System</p>
+            <p className="text-xs uppercase tracking-widest text-teal-300 mb-1">{APP_LONG_NAME}</p>
             <h1 className="text-2xl font-bold text-white">
               Welcome back, {user?.firstName ?? 'Analyst'}
             </h1>
@@ -117,10 +105,14 @@ export default function StaffDashboardPage() {
         </div>
       </div>
 
+      {/* ── Your work: personal, time-bound worklist (what needs YOU today) ── */}
+      <MyWorkBand userId={user?.id} firstName={user?.firstName} />
+
       {/* ── Money-first hero KPIs ─────────────────────────────────────────── */}
+      <SectionHeading text="Agency overview" />
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
         <HeroKpi
-          href="/cases"
+          href={`/cases?year=${year}`}
           label="Revenue at risk"
           value={stats ? formatNaira(stats.revenueAtRisk) : '—'}
           hint="Estimated recoverable tax · open cases"
@@ -128,7 +120,7 @@ export default function StaffDashboardPage() {
           icon={<ArrowUpIcon />}
         />
         <HeroKpi
-          href="/cases?status=RECOVERED"
+          href={`/cases?status=RECOVERED&year=${year}`}
           label="Recovered"
           value={stats ? formatNaira(stats.recovered) : '—'}
           hint={`${recoveryRate}% of estimated total`}
@@ -136,7 +128,7 @@ export default function StaffDashboardPage() {
           icon={<CheckCircleIcon />}
         />
         <HeroKpi
-          href="/cases?status=OPEN"
+          href={`/cases?status=OPEN&year=${year}`}
           label="Open cases"
           value={stats?.openCases?.toLocaleString() ?? '—'}
           hint={`${stats?.totalCases ?? 0} detected for ${year}`}
@@ -144,7 +136,7 @@ export default function StaffDashboardPage() {
           icon={<FolderIcon />}
         />
         <HeroKpi
-          href="/cases?riskLevel=CRITICAL"
+          href={`/cases?riskLevel=CRITICAL&year=${year}`}
           label="Critical risk"
           value={stats?.byRisk.find((r) => r.riskLevel === 'CRITICAL')?.count?.toLocaleString() ?? '0'}
           hint="Highest-confidence cases"
@@ -309,30 +301,6 @@ export default function StaffDashboardPage() {
             </table>
           </div>
         )}
-      </div>
-
-      {/* ── Navigation tiles ──────────────────────────────────────────────── */}
-      <SectionHeading text="Navigate" />
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-8">
-        {NAV_TILES.map((tile) => (
-          <Link
-            key={tile.href}
-            href={tile.href}
-            className="group relative overflow-hidden bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md transition-all hover:-translate-y-0.5"
-          >
-            {/* colour accent strip */}
-            <div className={`absolute inset-x-0 top-0 h-1 rounded-t-2xl bg-gradient-to-r ${tile.accent} opacity-0 group-hover:opacity-100 transition-opacity`} />
-            <div className="flex items-start gap-3">
-              <span className={`flex-none w-10 h-10 rounded-xl bg-gradient-to-br ${tile.accent} flex items-center justify-center text-lg shadow-sm`}>
-                {tile.icon}
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-slate-800 group-hover:text-teal-700 transition-colors">{tile.label}</p>
-                <p className="text-xs text-slate-500 mt-0.5 leading-snug">{tile.desc}</p>
-              </div>
-            </div>
-          </Link>
-        ))}
       </div>
 
       {/* ── AI analytics agents ───────────────────────────────────────────── */}
@@ -510,6 +478,121 @@ function AgentsPanel({ year }: { year: number }) {
         </div>
       )}
     </div>
+  );
+}
+
+/* ─── YOUR WORK: personal, time-bound worklist ───────────────────────────── */
+const ACTIVE_CASE_STATES = ['OPEN', 'UNDER_REVIEW', 'NOTICE_ISSUED', 'OBJECTION'];
+const DAY_MS = 86_400_000;
+
+interface Deadline {
+  case: UnderdeclarationCase;
+  kind: string;
+  section: string;
+  days: number; // negative = overdue
+}
+
+function MyWorkBand({ userId, firstName }: { userId?: string; firstName?: string | null }) {
+  const [myCases, setMyCases] = useState<UnderdeclarationCase[] | null>(null);
+
+  useEffect(() => {
+    if (!userId) {
+      setMyCases([]);
+      return;
+    }
+    casesApi
+      .list({ assignedToId: userId, limit: 100 })
+      .then((r) => setMyCases(r.cases))
+      .catch(() => setMyCases([]));
+  }, [userId]);
+
+  const active = (myCases ?? []).filter((c) => ACTIVE_CASE_STATES.includes(c.status));
+  const underReview = active.filter((c) => c.status === 'UNDER_REVIEW').length;
+
+  const now = Date.now();
+  const deadlines: Deadline[] = [];
+  for (const c of active) {
+    if (c.objectionDueAt) {
+      deadlines.push({ case: c, kind: 'Objection window', section: '§41', days: Math.ceil((new Date(c.objectionDueAt).getTime() - now) / DAY_MS) });
+    }
+    if (c.authorityResponseDueAt) {
+      deadlines.push({ case: c, kind: 'Authority response', section: '§41(6)', days: Math.ceil((new Date(c.authorityResponseDueAt).getTime() - now) / DAY_MS) });
+    }
+  }
+  const closing = deadlines.filter((d) => d.days <= 7).sort((a, b) => a.days - b.days).slice(0, 6);
+  const overdueCount = deadlines.filter((d) => d.days < 0).length;
+
+  return (
+    <section className="mb-8" aria-label="Your work">
+      <SectionHeading text={`Your work${firstName ? ` · ${firstName}` : ''}`} />
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1fr_1.6fr]">
+        {/* Assigned to me */}
+        <Link
+          href="/cases"
+          className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[var(--elev-1)] transition-shadow hover:shadow-[var(--elev-2)]"
+        >
+          <p className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">Assigned to me</p>
+          <p className="mt-2 text-3xl font-bold tabular-nums text-[var(--ink)]">
+            {myCases === null ? '—' : active.length}
+          </p>
+          <p className="mt-1 text-xs text-[var(--ink-2)]">
+            {myCases === null ? 'Loading…' : active.length === 0 ? 'No open cases assigned to you' : `${underReview} under review · open worklist`}
+          </p>
+        </Link>
+
+        {/* Statutory deadlines */}
+        <div className="rounded-2xl border border-[var(--line)] bg-[var(--surface)] p-5 shadow-[var(--elev-1)]">
+          <div className="mb-3 flex items-center justify-between">
+            <p className="text-xs font-medium uppercase tracking-wide text-[var(--ink-3)]">
+              Statutory deadlines · next 7 days
+            </p>
+            {overdueCount > 0 && (
+              <span className="rounded-full bg-[var(--bad-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--bad)]">
+                {overdueCount} overdue
+              </span>
+            )}
+          </div>
+          {myCases === null ? (
+            <p className="text-xs text-[var(--ink-3)]">Loading…</p>
+          ) : closing.length === 0 ? (
+            <p className="py-3 text-xs text-[var(--ink-2)]">
+              No objection or authority-response windows closing in the next 7 days. You’re clear.
+            </p>
+          ) : (
+            <ul className="divide-y divide-[var(--line-2)]">
+              {closing.map((d, i) => {
+                const overdue = d.days < 0;
+                const urgent = d.days >= 0 && d.days <= 3;
+                const due = d.case.objectionDueAt && d.kind === 'Objection window' ? d.case.objectionDueAt : d.case.authorityResponseDueAt;
+                return (
+                  <li key={`${d.case.id}-${i}`} className="flex items-center justify-between gap-3 py-2">
+                    <div className="min-w-0">
+                      <Link href={`/cases/${d.case.id}`} className="block truncate text-sm font-medium text-[var(--ink)] hover:text-teal-700">
+                        {caseDisplayName(d.case)}
+                      </Link>
+                      <p className="truncate text-xs text-[var(--ink-3)]">
+                        {d.kind} <span className="text-[var(--ink-3)]/70">({d.section})</span> · due {formatDate(due)}
+                      </p>
+                    </div>
+                    <span
+                      className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                        overdue
+                          ? 'bg-[var(--bad-soft)] text-[var(--bad)]'
+                          : urgent
+                            ? 'bg-[var(--warn-soft)] text-[var(--warn)]'
+                            : 'bg-[var(--surface-2)] text-[var(--ink-2)]'
+                      }`}
+                    >
+                      {overdue ? `${Math.abs(d.days)}d overdue` : d.days === 0 ? 'Due today' : `${d.days}d left`}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+      </div>
+    </section>
   );
 }
 

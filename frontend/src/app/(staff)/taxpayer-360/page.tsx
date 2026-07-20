@@ -2,6 +2,7 @@
 import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import SensitiveValue from '@/components/SensitiveValue';
+import { Button } from '@/components/Button';
 import { taxpayer360Api, type SearchResult, type Taxpayer360 } from '@/lib/api/taxpayer360';
 import { formatMoney, formatDate, extractErrorMessage } from '@/lib/utils';
 
@@ -36,8 +37,9 @@ export default function Taxpayer360Page() {
 
       <form onSubmit={search} className="flex gap-2 my-4">
         <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search taxpayers…"
+          aria-label="Search taxpayers by name, TIN, NIN, BVN or CAC number"
           className="flex-1 border border-slate-300 rounded-lg text-sm px-3 py-2 focus:outline-none focus:ring-2 focus:ring-teal-500" />
-        <button disabled={busy} className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">Search</button>
+        <Button type="submit" loading={busy}>Search</Button>
       </form>
 
       {err && (
@@ -45,6 +47,35 @@ export default function Taxpayer360Page() {
       )}
       {busy && (
         <p className="text-xs text-slate-400 mb-3 animate-pulse">Loading…</p>
+      )}
+
+      {/* Zero-state — shown before any search has run, so the page is never a blank canvas. */}
+      {!busy && !err && !results && !profile && (
+        <div className="mt-8 rounded-xl border border-dashed border-[var(--line)] bg-[var(--surface-2)] px-6 py-10 text-center">
+          <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--surface)] text-2xl ring-1 ring-[var(--line)]" aria-hidden>
+            🔎
+          </div>
+          <h2 className="text-sm font-semibold text-[var(--ink)]">Search a taxpayer to begin</h2>
+          <p className="mx-auto mt-1.5 max-w-md text-sm text-[var(--ink-2)]">
+            Look up any individual or company by name, TIN, NIN, BVN or CAC (RC) number to see one unified
+            view of declared income, observed flows, open cases and risk.
+          </p>
+          <div className="mx-auto mt-4 flex max-w-md flex-wrap justify-center gap-2">
+            {[
+              { k: 'Name', ex: 'e.g. Adebayo Okafor' },
+              { k: 'TIN', ex: '10 digits' },
+              { k: 'NIN', ex: '11 digits' },
+              { k: 'BVN', ex: '11 digits' },
+              { k: 'CAC / RC', ex: 'e.g. RC123456' },
+            ].map((t) => (
+              <span key={t.k} className="inline-flex items-center gap-1.5 rounded-full border border-[var(--line)] bg-[var(--surface)] px-3 py-1 text-xs text-[var(--ink-2)]">
+                <span className="font-medium text-[var(--ink)]">{t.k}</span>
+                <span className="text-[var(--ink-3)]">{t.ex}</span>
+              </span>
+            ))}
+          </div>
+          <p className="mt-4 text-xs text-[var(--ink-3)]">Tip: partial names work — start typing and pick from the matches.</p>
+        </div>
       )}
 
       {results && !profile && (

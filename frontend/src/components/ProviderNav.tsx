@@ -4,6 +4,7 @@ import { usePathname, useRouter } from 'next/navigation';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
 import UserMenu from '@/components/UserMenu';
 import { providerAuthApi } from '@/lib/api/auth';
+import { APP_NAME } from '@/lib/appName';
 
 const NAV = [
   { href: '/provider/dashboard', label: 'Dashboard' },
@@ -53,7 +54,7 @@ export default function ProviderNav() {
               <span className="text-[10px] uppercase tracking-[0.18em] text-teal-100/90">
                 Provider Portal
               </span>
-              <span className="text-lg font-bold tracking-tight mt-0.5">FinData</span>
+              <span className="text-lg font-bold tracking-tight mt-0.5">{APP_NAME}</span>
             </span>
           </Link>
           <nav className="flex items-center gap-1">
@@ -63,6 +64,7 @@ export default function ProviderNav() {
                 <Link
                   key={item.href}
                   href={item.href}
+                  aria-current={active ? 'page' : undefined}
                   className={`relative px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
                     active
                       ? 'text-white bg-white/12'

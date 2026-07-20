@@ -73,6 +73,7 @@ export default function CrossStatePage() {
         {candidates === null ? <p className="text-xs text-slate-400 p-4">Loading…</p> : candidates.length === 0 ? (
           <p className="text-xs text-slate-400 p-4">No outstanding candidates for {year} (all referred or FCT-resident).</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="py-2.5 px-4 font-medium">Taxpayer</th><th className="py-2.5 px-4 font-medium">State</th><th className="py-2.5 px-4 font-medium">Refer to</th><th className="py-2.5 px-4 font-medium text-right">Est. tax</th>
@@ -86,6 +87,7 @@ export default function CrossStatePage() {
               </tr>
             ))}</tbody>
           </table>
+          </div>
         )}
       </div>
 
@@ -94,6 +96,7 @@ export default function CrossStatePage() {
         {refs === null ? <p className="text-xs text-slate-400 p-4">Loading…</p> : refs.length === 0 ? (
           <p className="text-xs text-slate-400 p-4">No referrals yet.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="py-2.5 px-4 font-medium">Direction</th><th className="py-2.5 px-4 font-medium">From → To</th><th className="py-2.5 px-4 font-medium">State</th><th className="py-2.5 px-4 font-medium">Status</th><th className="py-2.5 px-4 font-medium">When</th><th className="py-2.5 px-4"></th>
@@ -113,6 +116,7 @@ export default function CrossStatePage() {
               </tr>
             ))}</tbody>
           </table>
+          </div>
         )}
       </div>
     </div>

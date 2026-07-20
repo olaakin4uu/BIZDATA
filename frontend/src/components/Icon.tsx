@@ -9,7 +9,8 @@ export type IconName =
   | 'dashboard' | 'providers' | 'taxpayers' | 'compass' | 'target' | 'chart'
   | 'document' | 'upload' | 'calendar' | 'link' | 'records' | 'scale'
   | 'flag' | 'search' | 'robot' | 'dna' | 'scroll' | 'bell' | 'trend'
-  | 'bank' | 'unlock' | 'shield' | 'folder' | 'users' | 'settings' | 'download';
+  | 'bank' | 'unlock' | 'shield' | 'folder' | 'users' | 'settings' | 'download'
+  | 'signal' | 'gavel' | 'menu';
 
 const PATHS: Record<IconName, React.ReactNode> = {
   dashboard: <><path d="M3.75 9.75 12 3l8.25 6.75" /><path d="M5.25 8.5V19a1 1 0 0 0 1 1H9.5v-5.25h5V20h3.25a1 1 0 0 0 1-1V8.5" /></>,
@@ -38,6 +39,9 @@ const PATHS: Record<IconName, React.ReactNode> = {
   users: <><circle cx="8.5" cy="9" r="3" /><path d="M3 19a5.5 5.5 0 0 1 11 0" /><path d="M15.5 6.2a3 3 0 0 1 0 5.6" /><path d="M16.5 14.2a5.5 5.5 0 0 1 4 4.8" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" /></>,
   download: <><path d="M12 4v10.5" /><path d="m8 11 4 4 4-4" /><path d="M5 19h14" /></>,
+  signal: <><path d="M4.5 9a10 10 0 0 1 15 0" /><path d="M7.5 12a6 6 0 0 1 9 0" /><path d="M12 18v-2.5" /><circle cx="12" cy="15" r="0.6" fill="currentColor" stroke="none" /></>,
+  gavel: <><path d="M9 11.5 4.3 16.2a1.6 1.6 0 0 0 2.3 2.3L11.3 14" /><path d="m8.2 8.7 5.6 5.6" /><path d="m11 5.9 5.6 5.6" /><path d="M13.8 3.1 19.4 8.7" /><path d="M13 20.5h7" /></>,
+  menu: <><path d="M4 7h16M4 12h16M4 17h16" /></>,
 };
 
 export default function Icon({ name, ...props }: { name: IconName } & SVGProps<SVGSVGElement>) {

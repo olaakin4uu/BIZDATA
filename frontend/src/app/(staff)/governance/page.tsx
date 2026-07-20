@@ -54,6 +54,7 @@ export default function GovernancePage() {
       {report && report.topCases.length > 0 && (
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
           <h3 className="text-sm font-semibold text-slate-800 mb-3">Top cases by recoverable tax</h3>
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100">
@@ -74,6 +75,7 @@ export default function GovernancePage() {
               ))}
             </tbody>
           </table>
+          </div>
         </div>
       )}
 
@@ -82,6 +84,7 @@ export default function GovernancePage() {
         {mous === null ? <p className="text-xs text-slate-400 p-6">Loading…</p> : mous.length === 0 ? (
           <p className="text-xs text-slate-400 p-6">No MoUs recorded yet.</p>
         ) : (
+          <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
               <th className="py-2.5 px-4 font-medium">Provider</th><th className="py-2.5 px-4 font-medium">Status</th><th className="py-2.5 px-4 font-medium">Channel</th><th className="py-2.5 px-4 font-medium">Contact</th>
@@ -97,6 +100,7 @@ export default function GovernancePage() {
               ))}
             </tbody>
           </table>
+          </div>
         )}
       </div>
 

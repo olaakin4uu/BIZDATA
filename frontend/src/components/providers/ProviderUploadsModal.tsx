@@ -7,6 +7,7 @@ import { accessAssignmentsApi, stepUpApi, grantTokenApi, type AccessGrantToken }
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { formatBytes, formatDate, formatDateTime, formatMoneyShort, extractErrorMessage } from '@/lib/utils';
 import PasswordInput from '@/components/PasswordInput';
+import { Modal } from '@/components/Modal';
 
 const RAW_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
@@ -172,19 +173,9 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-start justify-center bg-slate-900/50 p-4 overflow-y-auto" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-5xl my-8" onClick={(e) => e.stopPropagation()}>
-        {/* header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div>
-            <h2 className="text-base font-bold text-slate-900">Provider uploads</h2>
-            <p className="text-xs text-slate-500">{providerName}</p>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 text-xl leading-none">×</button>
-        </div>
-
-        <div className="p-6">
-          {/* uploads list */}
+    <Modal open onClose={onClose} size="xl" title="Provider uploads">
+      <p className="-mt-1 mb-4 text-xs text-slate-500">{providerName}</p>
+      {/* uploads list */}
           {loadingUploads ? (
             <p className="text-sm text-slate-400">Loading uploads…</p>
           ) : !uploads || uploads.submissions.length === 0 ? (
@@ -410,8 +401,6 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
               )}
             </div>
           )}
-        </div>
-      </div>
-    </div>
+    </Modal>
   );
 }

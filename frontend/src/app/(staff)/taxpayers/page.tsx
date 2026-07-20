@@ -4,7 +4,7 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { taxpayersApi, type Taxpayer } from '@/lib/api/taxpayers';
-import { TAXPAYER_TYPES, TAXPAYER_STATUSES, statusBadge } from '@/lib/utils';
+import { TAXPAYER_TYPES, TAXPAYER_STATUSES, statusBadge, extractErrorMessage } from '@/lib/utils';
 
 function nameOf(t: Taxpayer): string {
   if (t.type === 'INDIVIDUAL') return `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim() || '—';
@@ -26,14 +26,16 @@ export default function TaxpayersListPage() {
   const [type, setType] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const limit = 50;
 
   const load = () => {
     setLoading(true);
+    setError(null);
     taxpayersApi
       .list({ search: search || undefined, type: type || undefined, status: status || undefined, page, limit })
       .then((r) => { setRows(r.taxpayers); setTotal(r.total); })
-      .catch(() => { setRows([]); setTotal(0); })
+      .catch((e) => { setRows([]); setTotal(0); setError(extractErrorMessage(e)); })
       .finally(() => setLoading(false));
   };
 
@@ -121,6 +123,8 @@ export default function TaxpayersListPage() {
         rows={rows}
         rowKey={(r) => r.id}
         loading={loading}
+        error={error}
+        onRetry={load}
         emptyText="No taxpayers found — add one or import a CSV."
         total={total}
         page={page}

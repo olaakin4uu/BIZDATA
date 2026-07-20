@@ -92,6 +92,7 @@ export default function SubmissionDetailPage({ params }: { params: Params }) {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
@@ -117,6 +118,7 @@ export default function SubmissionDetailPage({ params }: { params: Params }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </section>

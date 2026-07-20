@@ -1,8 +1,11 @@
 'use client';
-import { useEffect, useState } from 'react';
+import { Suspense, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
+import { Button } from '@/components/Button';
+import { Input, Select } from '@/components/Field';
+import { StatusBadge } from '@/components/StatusBadge';
 import {
   casesApi,
   formatNaira,
@@ -12,6 +15,7 @@ import {
   type RiskLevel,
 } from '@/lib/api/cases';
 import { extractErrorMessage } from '@/lib/utils';
+import { useStaffAuthStore } from '@/store/staffAuthStore';
 
 const STATUS_LABEL: Record<CaseStatus, string> = {
   OPEN: 'Open',
@@ -26,10 +30,10 @@ const STATUS_LABEL: Record<CaseStatus, string> = {
 };
 
 const RISK_TEXT: Record<RiskLevel, string> = {
-  CRITICAL: 'text-red-700',
-  HIGH: 'text-orange-700',
-  MEDIUM: 'text-blue-700',
-  LOW: 'text-slate-600',
+  CRITICAL: 'text-[var(--bad)]',
+  HIGH: 'text-[var(--warn)]',
+  MEDIUM: 'text-[var(--ink-2)]',
+  LOW: 'text-[var(--ink-3)]',
 };
 
 const STATUSES: CaseStatus[] = ['OPEN', 'UNDER_REVIEW', 'NOTICE_ISSUED', 'OBJECTION', 'CONFIRMED', 'SETTLED', 'RECOVERED', 'DISMISSED'];
@@ -40,34 +44,59 @@ const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
 type SortKey = 'estimatedTaxDue' | 'confidence';
 
-export default function CasesListPage() {
+function CasesListInner() {
   const params = useSearchParams();
-  const [status, setStatus] = useState<CaseStatus | ''>((params?.get('status') as CaseStatus) || '');
-  const [riskLevel, setRiskLevel] = useState<RiskLevel | ''>((params?.get('riskLevel') as RiskLevel) || '');
-  const [year, setYear] = useState<number | ''>('');
+  const router = useRouter();
+  const userId = useStaffAuthStore((s) => s.user?.id);
+
+  // Hydrate the year/status/riskLevel filters from the URL on mount so dashboard
+  // drill-downs (e.g. ?status=OPEN&year=2026) land pre-filtered.
+  const [status, setStatus] = useState<CaseStatus | ''>((params.get('status') as CaseStatus) || '');
+  const [riskLevel, setRiskLevel] = useState<RiskLevel | ''>((params.get('riskLevel') as RiskLevel) || '');
+  const [year, setYear] = useState<number | ''>(params.get('year') ? Number(params.get('year')) : '');
   const [sort, setSort] = useState<SortKey>('estimatedTaxDue');
+  const [mine, setMine] = useState(false);
+  const [q, setQ] = useState('');
   const [page, setPage] = useState(1);
   const [cases, setCases] = useState<UnderdeclarationCase[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  // Reset to the first page whenever a filter/sort changes.
-  useEffect(() => { setPage(1); }, [status, riskLevel, year, sort]);
+  // Reset to the first page whenever a server-side filter/sort changes.
+  useEffect(() => { setPage(1); }, [status, riskLevel, year, sort, mine]);
 
   useEffect(() => {
+    let active = true;
     setCases(null); setError(null);
     casesApi
       .list({
         status: status || undefined,
         riskLevel: riskLevel || undefined,
         year: year || undefined,
+        assignedToId: mine ? userId : undefined,
         sort,
         page,
         limit: PAGE_SIZE,
       })
-      .then((r) => { setCases(r.cases); setTotal(r.total); })
-      .catch((e) => { setCases([]); setTotal(0); setError(extractErrorMessage(e)); });
-  }, [status, riskLevel, year, sort, page]);
+      .then((r) => { if (!active) return; setCases(r.cases); setTotal(r.total); })
+      .catch((e) => { if (!active) return; setCases(null); setTotal(0); setError(extractErrorMessage(e)); });
+    return () => { active = false; };
+  }, [status, riskLevel, year, sort, mine, page, userId, reloadKey]);
+
+  // Text search runs client-side over the loaded page: taxpayer names are plain,
+  // but TINs are encrypted at rest server-side, so the API can't search them —
+  // it narrows the current page by taxpayer name / TIN.
+  const term = q.trim().toLowerCase();
+  const filtered = useMemo(() => {
+    if (!cases) return [];
+    if (!term) return cases;
+    return cases.filter((c) => {
+      const name = caseDisplayName(c).toLowerCase();
+      const tin = (c.taxpayer?.tin ?? '').toLowerCase();
+      return name.includes(term) || tin.includes(term);
+    });
+  }, [cases, term]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -80,64 +109,96 @@ export default function CasesListPage() {
         subtitle="Prioritized worklist of taxpayers whose observed flows exceed their declared income."
       />
 
-      <div className="flex flex-wrap items-center gap-3 mb-5">
-        <select
+      <div className="flex flex-wrap items-end gap-3 mb-5">
+        <Input
+          label="Search"
+          type="search"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+          placeholder="Taxpayer name or TIN…"
+          wrapperClassName="w-60"
+        />
+        <Select
+          label="Status"
           value={status}
           onChange={(e) => setStatus(e.target.value as CaseStatus | '')}
-          className="border border-slate-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          wrapperClassName="w-44"
         >
           <option value="">All statuses</option>
           {STATUSES.map((s) => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
-        </select>
-        <select
+        </Select>
+        <Select
+          label="Risk level"
           value={riskLevel}
           onChange={(e) => setRiskLevel(e.target.value as RiskLevel | '')}
-          className="border border-slate-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          wrapperClassName="w-40"
         >
           <option value="">All risk levels</option>
           {RISKS.map((r) => <option key={r} value={r}>{r}</option>)}
-        </select>
-        <select
+        </Select>
+        <Select
+          label="Year"
           value={year}
           onChange={(e) => setYear(e.target.value ? Number(e.target.value) : '')}
-          className="border border-slate-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+          wrapperClassName="w-32"
         >
           <option value="">All years</option>
           {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
-        </select>
-        <select
+        </Select>
+        <Select
+          label="Sort"
           value={sort}
           onChange={(e) => setSort(e.target.value as SortKey)}
-          className="border border-slate-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
-          title="Sort order"
+          wrapperClassName="w-56"
         >
-          <option value="estimatedTaxDue">Sort: Est. tax (high→low)</option>
-          <option value="confidence">Sort: Confidence (high→low)</option>
-        </select>
-        {cases && !error && <span className="text-xs text-slate-400">{total} case{total === 1 ? '' : 's'}</span>}
+          <option value="estimatedTaxDue">Est. tax (high→low)</option>
+          <option value="confidence">Confidence (high→low)</option>
+        </Select>
+        <label className="inline-flex items-center gap-2 pb-2 text-sm text-[var(--ink-2)] select-none">
+          <input
+            type="checkbox"
+            checked={mine}
+            disabled={!userId}
+            onChange={(e) => setMine(e.target.checked)}
+            className="h-4 w-4 rounded border-[var(--line)] text-teal-600 disabled:opacity-50"
+          />
+          Assigned to me
+        </label>
+        {cases && !error && (
+          <span className="pb-2 text-xs text-[var(--ink-3)]">
+            {term
+              ? `${filtered.length} match${filtered.length === 1 ? '' : 'es'} on this page`
+              : `${total} case${total === 1 ? '' : 's'}`}
+          </span>
+        )}
       </div>
 
-      {error && (
-        <div className="mb-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
-          Couldn’t load cases: {error}
-        </div>
-      )}
-
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        {cases === null ? (
-          <p className="text-xs text-slate-400 p-6">Loading…</p>
-        ) : error ? (
-          <p className="text-sm text-slate-500 p-8 text-center">No data to show while the list can’t be loaded.</p>
-        ) : cases.length === 0 ? (
+      <div className="bg-[var(--surface)] rounded-xl border border-[var(--line)] shadow-sm overflow-hidden">
+        {error ? (
           <div className="p-8 text-center">
-            <p className="text-sm text-slate-500">No cases match these filters.</p>
-            <Link href="/scan" className="text-xs text-teal-700 hover:underline font-medium">Run a scan →</Link>
+            <p className="text-sm text-[var(--bad)]">Couldn’t load cases: {error}</p>
+            <Button variant="secondary" size="sm" className="mt-3" onClick={() => setReloadKey((k) => k + 1)}>
+              Try again
+            </Button>
+          </div>
+        ) : cases === null ? (
+          <p className="text-xs text-[var(--ink-3)] p-6">Loading…</p>
+        ) : filtered.length === 0 ? (
+          <div className="p-8 text-center">
+            {term ? (
+              <p className="text-sm text-[var(--ink-2)]">No cases on this page match “{q.trim()}”.</p>
+            ) : (
+              <>
+                <p className="text-sm text-[var(--ink-2)]">No cases match these filters.</p>
+                <Link href="/scan" className="text-xs text-teal-700 hover:underline font-medium">Run a scan →</Link>
+              </>
+            )}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
+                <tr className="text-left text-xs uppercase tracking-wide text-[var(--ink-3)] border-b border-[var(--line)] bg-[var(--surface-2)]">
                   <th className="py-2.5 px-4 font-medium">Taxpayer</th>
                   <th className="py-2.5 px-4 font-medium text-right">Observed</th>
                   <th className="py-2.5 px-4 font-medium text-right">Declared</th>
@@ -148,25 +209,32 @@ export default function CasesListPage() {
                 </tr>
               </thead>
               <tbody>
-                {cases.map((c) => (
-                  <tr key={c.id} className="border-b border-slate-50 hover:bg-slate-50">
+                {filtered.map((c) => (
+                  <tr
+                    key={c.id}
+                    onClick={() => router.push(`/cases/${c.id}`)}
+                    className="border-b border-[var(--line)] hover:bg-[var(--surface-2)] cursor-pointer"
+                  >
                     <td className="py-2.5 px-4">
-                      <Link href={`/cases/${c.id}`} className="font-medium text-slate-800 hover:text-teal-700">
+                      {/* Real anchor keeps the row keyboard-navigable; the row onClick makes the whole row clickable by mouse. */}
+                      <Link
+                        href={`/cases/${c.id}`}
+                        onClick={(e) => e.stopPropagation()}
+                        className="font-medium text-[var(--ink)] hover:text-teal-700"
+                      >
                         {caseDisplayName(c)}
                       </Link>
-                      <div className="text-xs text-slate-400">
+                      <div className="text-xs text-[var(--ink-3)]">
                         {c.taxpayer?.type} · {c.taxpayer?.stateOfResidence ?? '—'} · {c.year}
                       </div>
                     </td>
-                    <td className="py-2.5 px-4 text-right text-slate-600">{formatNaira(c.observedIncome)}</td>
-                    <td className="py-2.5 px-4 text-right text-slate-600">{formatNaira(c.declaredIncome)}</td>
-                    <td className="py-2.5 px-4 text-right font-semibold text-red-700">{formatNaira(c.estimatedTaxDue)}</td>
-                    <td className="py-2.5 px-4 text-center text-slate-600">{Math.round(Number(c.confidence) * 100)}%</td>
+                    <td className="py-2.5 px-4 text-right text-[var(--ink-2)]">{formatNaira(c.observedIncome)}</td>
+                    <td className="py-2.5 px-4 text-right text-[var(--ink-2)]">{formatNaira(c.declaredIncome)}</td>
+                    <td className="py-2.5 px-4 text-right font-semibold text-[var(--bad)]">{formatNaira(c.estimatedTaxDue)}</td>
+                    <td className="py-2.5 px-4 text-center text-[var(--ink-2)]">{Math.round(Number(c.confidence) * 100)}%</td>
                     <td className={`py-2.5 px-4 text-center font-medium ${RISK_TEXT[c.riskLevel]}`}>{c.riskLevel}</td>
                     <td className="py-2.5 px-4">
-                      <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-700">
-                        {STATUS_LABEL[c.status]}
-                      </span>
+                      <StatusBadge status={c.status} label={STATUS_LABEL[c.status]} />
                     </td>
                   </tr>
                 ))}
@@ -176,29 +244,31 @@ export default function CasesListPage() {
         )}
       </div>
 
-      {/* Pagination — only when there is more than one page of results */}
-      {cases && !error && total > PAGE_SIZE && (
+      {/* Pagination — server-side pages. Hidden while a text search narrows the
+          current page (the filter is client-side, so paging would be misleading). */}
+      {cases && !error && !term && total > PAGE_SIZE && (
         <div className="flex items-center justify-between mt-4 text-sm">
-          <span className="text-xs text-slate-500">Showing {from}–{to} of {total}</span>
+          <span className="text-xs text-[var(--ink-3)]">Showing {from}–{to} of {total}</span>
           <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-            >
+            <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.max(1, p - 1))} disabled={page <= 1}>
               Prev
-            </button>
-            <span className="text-xs text-slate-500">Page {page} of {totalPages}</span>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page >= totalPages}
-              className="px-3 py-1.5 rounded-lg border border-slate-300 text-slate-600 disabled:opacity-40 hover:bg-slate-50"
-            >
+            </Button>
+            <span className="text-xs text-[var(--ink-3)]">Page {page} of {totalPages}</span>
+            <Button variant="secondary" size="sm" onClick={() => setPage((p) => Math.min(totalPages, p + 1))} disabled={page >= totalPages}>
               Next
-            </button>
+            </Button>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+export default function CasesListPage() {
+  // useSearchParams requires a Suspense boundary (CSR bailout) in production.
+  return (
+    <Suspense fallback={<div className="p-6 text-xs text-[var(--ink-3)]">Loading…</div>}>
+      <CasesListInner />
+    </Suspense>
   );
 }

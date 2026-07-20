@@ -2,9 +2,48 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import PasswordInput from '@/components/PasswordInput';
+import { Field } from '@/components/Field';
+import { Button } from '@/components/Button';
 import { authApi } from '@/lib/api/auth';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
+
+// Shared staff password policy — kept identical to the self-service reset-password
+// page so the two flows enforce the same minimum and show the same strength cue.
+const MIN_PASSWORD = 10;
+function scorePassword(pw: string): number {
+  let s = 0;
+  if (pw.length >= MIN_PASSWORD) s++;
+  if (pw.length >= 14) s++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+  if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) s++;
+  return s; // 0–4
+}
+const STRENGTH = [
+  { label: 'Very weak', tone: 'var(--bad)' },
+  { label: 'Weak', tone: 'var(--bad)' },
+  { label: 'Fair', tone: 'var(--warn)' },
+  { label: 'Good', tone: 'var(--ok)' },
+  { label: 'Strong', tone: 'var(--ok)' },
+];
+function PasswordStrength({ value }: { value: string }) {
+  if (!value) return null;
+  const score = scorePassword(value);
+  const { label, tone } = STRENGTH[score];
+  return (
+    <div className="mt-1.5" aria-live="polite">
+      <div className="flex gap-1">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="h-1 flex-1 rounded-full transition-colors"
+            style={{ background: i < score ? tone : 'var(--line)' }} />
+        ))}
+      </div>
+      <p className="mt-1 text-[11px]" style={{ color: tone }}>
+        {label} · use 12+ characters with a mix of cases, numbers &amp; symbols
+      </p>
+    </div>
+  );
+}
 
 // Forced password change after an admin reset. The user signs in with the
 // temporary password the admin set (that's the "current" password here), then
@@ -22,7 +61,7 @@ export default function ChangePasswordPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErr(null);
-    if (form.newPassword.length < 8) { setErr('New password must be at least 8 characters'); return; }
+    if (form.newPassword.length < MIN_PASSWORD) { setErr(`New password must be at least ${MIN_PASSWORD} characters`); return; }
     if (form.newPassword !== form.confirm) { setErr('Passwords do not match'); return; }
     if (form.newPassword === form.currentPassword) { setErr('Choose a password different from the temporary one'); return; }
     setBusy(true);
@@ -55,30 +94,27 @@ export default function ChangePasswordPage() {
           ) : (
             <form onSubmit={submit} className="space-y-3">
               {err && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Temporary password</label>
-                <PasswordInput required autoComplete="current-password" value={form.currentPassword}
+              <Field id="current-password" label="Temporary password" hint="The one the administrator gave you to sign in.">
+                <PasswordInput id="current-password" required autoComplete="current-password" value={form.currentPassword}
                   onChange={(e) => setForm({ ...form, currentPassword: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                <p className="text-[11px] text-slate-400 mt-1">The one the administrator gave you to sign in.</p>
-              </div>
+                  className="w-full px-3 py-2 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface)] text-[var(--ink)]" />
+              </Field>
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">New password</label>
-                <PasswordInput required minLength={8} autoComplete="new-password" value={form.newPassword}
-                  onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                <p className="text-[11px] text-slate-400 mt-1">At least 8 characters.</p>
+                <Field id="new-password" label="New password">
+                  <PasswordInput id="new-password" required minLength={MIN_PASSWORD} autoComplete="new-password" value={form.newPassword}
+                    onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface)] text-[var(--ink)]" />
+                </Field>
+                <PasswordStrength value={form.newPassword} />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Confirm new password</label>
-                <PasswordInput required autoComplete="new-password" value={form.confirm}
+              <Field id="confirm-password" label="Confirm new password">
+                <PasswordInput id="confirm-password" required autoComplete="new-password" value={form.confirm}
                   onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-              </div>
-              <button type="submit" disabled={busy}
-                className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                  className="w-full px-3 py-2 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface)] text-[var(--ink)]" />
+              </Field>
+              <Button type="submit" size="lg" loading={busy} className="w-full">
                 {busy ? 'Updating…' : 'Set new password'}
-              </button>
+              </Button>
             </form>
           )}
         </div>

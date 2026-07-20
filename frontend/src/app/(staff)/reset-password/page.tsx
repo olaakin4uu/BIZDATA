@@ -3,8 +3,48 @@ import { Suspense, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import PasswordInput from '@/components/PasswordInput';
+import { Field } from '@/components/Field';
+import { Button } from '@/components/Button';
 import { authApi } from '@/lib/api/auth';
 import { extractErrorMessage } from '@/lib/utils';
+import { APP_NAME } from '@/lib/appName';
+
+// Shared staff password policy — kept identical to the admin-forced change-password
+// page so the two flows enforce the same minimum and show the same strength cue.
+const MIN_PASSWORD = 10;
+function scorePassword(pw: string): number {
+  let s = 0;
+  if (pw.length >= MIN_PASSWORD) s++;
+  if (pw.length >= 14) s++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+  if (/\d/.test(pw) || /[^A-Za-z0-9]/.test(pw)) s++;
+  return s; // 0–4
+}
+const STRENGTH = [
+  { label: 'Very weak', tone: 'var(--bad)' },
+  { label: 'Weak', tone: 'var(--bad)' },
+  { label: 'Fair', tone: 'var(--warn)' },
+  { label: 'Good', tone: 'var(--ok)' },
+  { label: 'Strong', tone: 'var(--ok)' },
+];
+function PasswordStrength({ value }: { value: string }) {
+  if (!value) return null;
+  const score = scorePassword(value);
+  const { label, tone } = STRENGTH[score];
+  return (
+    <div className="mt-1.5" aria-live="polite">
+      <div className="flex gap-1">
+        {[0, 1, 2, 3].map((i) => (
+          <span key={i} className="h-1 flex-1 rounded-full transition-colors"
+            style={{ background: i < score ? tone : 'var(--line)' }} />
+        ))}
+      </div>
+      <p className="mt-1 text-[11px]" style={{ color: tone }}>
+        {label} · use 12+ characters with a mix of cases, numbers &amp; symbols
+      </p>
+    </div>
+  );
+}
 
 // Staff password reset, reached from the emailed link (/reset-password?token=…).
 // On success the user signs in with the new password. Wrapped in Suspense
@@ -21,7 +61,7 @@ function StaffResetPasswordInner() {
     e.preventDefault();
     setErr(null);
     if (!token) { setErr('This reset link is invalid. Request a new one.'); return; }
-    if (form.newPassword.length < 8) { setErr('New password must be at least 8 characters'); return; }
+    if (form.newPassword.length < MIN_PASSWORD) { setErr(`New password must be at least ${MIN_PASSWORD} characters`); return; }
     if (form.newPassword !== form.confirm) { setErr('Passwords do not match'); return; }
     setBusy(true);
     try {
@@ -40,7 +80,7 @@ function StaffResetPasswordInner() {
       <div className="w-full max-w-md">
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-slate-200">
           <h1 className="text-lg font-semibold text-slate-800 mb-1">Choose a new password</h1>
-          <p className="text-xs text-slate-500 mb-5">Set a new password for your FinData account.</p>
+          <p className="text-xs text-slate-500 mb-5">Set a new password for your {APP_NAME} account.</p>
 
           {done ? (
             <div className="px-3 py-3 bg-emerald-50 border border-emerald-200 rounded-lg text-sm text-emerald-700">
@@ -55,22 +95,21 @@ function StaffResetPasswordInner() {
                 </div>
               )}
               <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">New password</label>
-                <PasswordInput required minLength={8} autoComplete="new-password" value={form.newPassword}
-                  onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-                <p className="text-[11px] text-slate-400 mt-1">At least 8 characters.</p>
+                <Field id="new-password" label="New password">
+                  <PasswordInput id="new-password" required minLength={MIN_PASSWORD} autoComplete="new-password" value={form.newPassword}
+                    onChange={(e) => setForm({ ...form, newPassword: e.target.value })}
+                    className="w-full px-3 py-2 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface)] text-[var(--ink)]" />
+                </Field>
+                <PasswordStrength value={form.newPassword} />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Confirm new password</label>
-                <PasswordInput required autoComplete="new-password" value={form.confirm}
+              <Field id="confirm-password" label="Confirm new password">
+                <PasswordInput id="confirm-password" required autoComplete="new-password" value={form.confirm}
                   onChange={(e) => setForm({ ...form, confirm: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
-              </div>
-              <button type="submit" disabled={busy || !token}
-                className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                  className="w-full px-3 py-2 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface)] text-[var(--ink)]" />
+              </Field>
+              <Button type="submit" size="lg" loading={busy} disabled={!token} className="w-full">
                 {busy ? 'Setting…' : 'Set new password'}
-              </button>
+              </Button>
               <div className="text-center">
                 <Link href="/login" className="text-xs text-slate-500 hover:text-slate-700">Back to sign in</Link>
               </div>

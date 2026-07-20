@@ -2,11 +2,16 @@
 import { useEffect, useState, useMemo, use as usePromise } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
+import { Button } from '@/components/Button';
+import { Select } from '@/components/Field';
+import { Modal } from '@/components/Modal';
+import { StatusBadge } from '@/components/StatusBadge';
 import { casesApi, caseDisplayName, type UnderdeclarationCase, type CaseStatus, type CaseDocument } from '@/lib/api/cases';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { agentsApi, AGENT_NAMES, type RiskSignal } from '@/lib/api/agents';
 import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { formatMoney, formatDate, formatDateTime, extractErrorMessage } from '@/lib/utils';
+import { useStaffAuthStore } from '@/store/staffAuthStore';
 
 // Mirror of the backend lifecycle state machine (cases.service.ts).
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
@@ -33,19 +38,12 @@ const ACTION_LABEL: Record<CaseStatus, string> = {
   CLOSED: 'Close case',
 };
 
-const STATUS_BADGE: Record<CaseStatus, string> = {
-  OPEN: 'bg-amber-100 text-amber-800',
-  UNDER_REVIEW: 'bg-blue-100 text-blue-800',
-  NOTICE_ISSUED: 'bg-indigo-100 text-indigo-800',
-  OBJECTION: 'bg-purple-100 text-purple-800',
-  CONFIRMED: 'bg-teal-100 text-teal-800',
-  SETTLED: 'bg-emerald-100 text-emerald-800',
-  RECOVERED: 'bg-emerald-200 text-emerald-900',
-  DISMISSED: 'bg-slate-200 text-slate-600',
-  CLOSED: 'bg-slate-200 text-slate-600',
-};
-
 const DANGER_TARGETS: CaseStatus[] = ['DISMISSED'];
+
+// Observed-flows ledger: providers render collapsed; each account reveals rows in
+// chunks so the initial DOM stays small even for very active taxpayers.
+const INITIAL_ROWS = 50;
+const ROW_STEP = 50;
 
 export default function CaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
@@ -60,6 +58,17 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const [busy, setBusy] = useState(false);
   const [staff, setStaff] = useState<StaffUserRecord[]>([]);
   const [assigning, setAssigning] = useState(false);
+  const currentUserId = useStaffAuthStore((s) => s.user?.id);
+  // Ledger interaction: which provider blocks are expanded, and how many rows
+  // each account currently reveals (keyed `${providerId}:${accountNumber}`).
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const [rowLimits, setRowLimits] = useState<Record<string, number>>({});
+  const toggleProvider = (pid: string) =>
+    setExpandedProviders((prev) => {
+      const next = new Set(prev);
+      next.has(pid) ? next.delete(pid) : next.add(pid);
+      return next;
+    });
   // In-app secured document viewer. The confidential report (evidence bundle /
   // tax report) is fetched WITH the auth token and rendered inside a sandboxed
   // same-origin iframe in a modal — it never leaves the authenticated session as
@@ -88,9 +97,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         setC(data);
         agentsApi.signals({ taxpayerId: data.taxpayerId, year: data.year }).then(setSignals).catch(() => setSignals([]));
         casesApi.listDocuments(id).then(setDocs).catch(() => setDocs([]));
-        // Pull every record for this identity across ALL providers (no providerId
+        // Pull records for this identity across ALL providers (no providerId
         // filter) so the observed-flows ledger is the full cross-provider picture.
-        return dataRecordsApi.list({ taxpayerId: data.taxpayerId, periodYear: data.year, limit: 5000 });
+        // Capped at a sane limit — providers render collapsed and accounts reveal
+        // rows in chunks, so we never need a multi-thousand-row payload on load.
+        return dataRecordsApi.list({ taxpayerId: data.taxpayerId, periodYear: data.year, limit: 500 });
       })
       .then((r) => setRecords(r?.records ?? []))
       .catch((e) => setError(extractErrorMessage(e)));
@@ -191,13 +202,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           >
             {reportLoading === 'Evidence Bundle' ? 'Loading…' : 'Evidence bundle'}
           </button>
-          <span className={`px-3 py-1 rounded-full text-xs font-semibold ${STATUS_BADGE[c.status]}`}>
-            {c.status.replace(/_/g, ' ')}
-          </span>
+          <StatusBadge status={c.status} className="px-3 py-1" />
         </div>
       </div>
 
-      {error && <div className="mb-4 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
+      {error && <div className="mb-4 px-3 py-2 bg-[var(--bad-soft)] border border-[var(--bad)] rounded-lg text-sm text-[var(--bad)]">{error}</div>}
 
       {/* Money summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -230,23 +239,31 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           {/* Why flagged */}
           <Card title={`Why this was flagged — confidence ${Math.round(Number(c.confidence) * 100)}%`}>
             {reasons.length === 0 ? (
-              <p className="text-xs text-slate-400">No reason codes recorded.</p>
+              <p className="text-xs text-[var(--ink-3)]">No reason codes recorded.</p>
             ) : (
-              <ul className="space-y-2">
-                {reasons.map((r) => (
-                  <li key={r.code} className="flex items-start justify-between gap-3 text-sm">
-                    <div>
-                      <span className="font-medium text-slate-800">{r.label}</span>
-                      <span className="ml-2 text-xs text-slate-400">{r.code}</span>
-                    </div>
-                    <span className={`text-xs font-medium ${r.weight >= 0 ? 'text-teal-700' : 'text-red-600'}`}>
-                      {r.weight >= 0 ? '+' : ''}{Math.round(r.weight * 100)}
-                    </span>
-                  </li>
-                ))}
-              </ul>
+              <>
+                <ul className="space-y-2">
+                  {reasons.map((r) => (
+                    <li key={r.code} className="flex items-start justify-between gap-3 text-sm">
+                      <div>
+                        <span className="font-medium text-[var(--ink)]">{r.label}</span>
+                        <span className="ml-2 text-xs text-[var(--ink-3)]">{r.code}</span>
+                      </div>
+                      <span
+                        title="Contribution to the confidence score (out of 100)"
+                        className={`text-xs font-medium tnum ${r.weight >= 0 ? 'text-[var(--ok)]' : 'text-[var(--bad)]'}`}
+                      >
+                        {r.weight >= 0 ? '+' : ''}{Math.round(r.weight * 100)}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-[var(--ink-3)] mt-2">
+                  Each figure is that signal’s contribution to the confidence score (out of 100) — positive raises it, negative lowers it.
+                </p>
+              </>
             )}
-            <p className="text-xs text-slate-400 mt-3 pt-3 border-t border-slate-100">
+            <p className="text-xs text-[var(--ink-3)] mt-3 pt-3 border-t border-[var(--line)]">
               Detection engine {c.scan?.engineVersion ?? c.engineVersion ?? '—'} · {c.providerCount} corroborating provider{c.providerCount === 1 ? '' : 's'} · threshold {c.scan ? `${(Number(c.scan.threshold) * 100).toFixed(0)}%` : '—'}
             </p>
           </Card>
@@ -257,66 +274,100 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
               consolidation. */}
           <Card title={`Observed flows · ${c.year} (${records.length} transaction${records.length === 1 ? '' : 's'}${providerGroups.length > 1 ? ` · ${providerGroups.length} providers` : ''})`}>
             {records.length === 0 ? (
-              <p className="text-xs text-slate-400">No linked records.</p>
+              <p className="text-xs text-[var(--ink-3)]">No linked records.</p>
             ) : (
               <div className="space-y-5">
                 {providerGroups.length > 1 && (
                   <p className="text-xs text-teal-700 bg-teal-50 border border-teal-100 rounded-lg px-3 py-2">
-                    Identity matched across {providerGroups.length} providers — transactions from each are consolidated below.
+                    Identity matched across {providerGroups.length} providers — transactions from each are consolidated below. Expand a provider to see its ledger.
                   </p>
                 )}
-                {providerGroups.map((g) => (
-                  <div key={g.providerId} className="rounded-lg border border-slate-200">
-                    {/* Provider header */}
-                    <div className="flex items-baseline justify-between bg-slate-50 border-b border-slate-200 px-3 py-2 rounded-t-lg">
-                      <span className="text-sm font-semibold text-slate-800">{g.providerName}</span>
-                      <span className="text-xs text-slate-500">
-                        {g.accounts.length} account{g.accounts.length === 1 ? '' : 's'} · {g.rows.length} txn{g.rows.length === 1 ? '' : 's'} · in {formatMoney(g.inflow)} · out {formatMoney(g.outflow)}
-                      </span>
-                    </div>
-                    {/* Accounts within the provider */}
-                    <div className="divide-y divide-slate-100">
-                      {g.accounts.map((a) => (
-                        <div key={a.accountNumber} className="px-3 py-2 overflow-x-auto">
-                          <div className="flex items-baseline justify-between mb-1">
-                            <span className="text-xs font-semibold text-slate-700">
-                              Acct <span className="tnum font-mono">{a.accountNumber}</span>
-                              {a.accountName && <span className="ml-2 font-normal text-slate-400">{a.accountName}</span>}
-                            </span>
-                            <span className="text-[11px] text-slate-500">
-                              {a.rows.length} txn{a.rows.length === 1 ? '' : 's'} · in {formatMoney(a.inflow)} · out {formatMoney(a.outflow)}
-                            </span>
-                          </div>
-                          <table className="w-full text-sm">
-                            <thead>
-                              <tr className="text-left text-[11px] uppercase tracking-wide text-slate-400 border-b border-slate-100">
-                                <th className="py-1.5 font-medium">Date</th>
-                                <th className="py-1.5 font-medium">Description</th>
-                                <th className="py-1.5 font-medium text-right">Inflow</th>
-                                <th className="py-1.5 font-medium text-right">Outflow</th>
-                                <th className="py-1.5 font-medium text-center">Type</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {a.rows.map((r) => {
-                                const pl = (r.payload ?? {}) as { transactionDate?: string; description?: string; transactionType?: string };
-                                return (
-                                  <tr key={r.id} className="border-b border-slate-50">
-                                    <td className="py-1.5 text-slate-600 whitespace-nowrap tnum">{pl.transactionDate ? formatDate(pl.transactionDate) : '—'}</td>
-                                    <td className="py-1.5 text-slate-500 max-w-[220px] truncate" title={pl.description ?? ''}>{pl.description ?? '—'}</td>
-                                    <td className="py-1.5 text-right text-slate-700 tnum">{formatMoney(r.totalInflow)}</td>
-                                    <td className="py-1.5 text-right text-slate-400 tnum">{formatMoney(r.totalOutflow)}</td>
-                                    <td className="py-1.5 text-center text-xs text-slate-400">{pl.transactionType ?? '—'}</td>
-                                  </tr>
-                                );
-                              })}
-                            </tbody>
-                          </table>
+                {providerGroups.map((g) => {
+                  const open = expandedProviders.has(g.providerId);
+                  return (
+                    <div key={g.providerId} className="rounded-lg border border-[var(--line)] overflow-hidden">
+                      {/* Provider header — click to expand its account ledgers (collapsed by default). */}
+                      <button
+                        type="button"
+                        onClick={() => toggleProvider(g.providerId)}
+                        aria-expanded={open}
+                        className="flex w-full items-center justify-between gap-3 bg-[var(--surface-2)] px-3 py-2 text-left transition-colors hover:brightness-95"
+                      >
+                        <span className="flex items-center gap-2 min-w-0">
+                          <svg
+                            viewBox="0 0 24 24" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={2.5}
+                            strokeLinecap="round" strokeLinejoin="round" aria-hidden
+                            className={`shrink-0 text-[var(--ink-3)] transition-transform ${open ? 'rotate-90' : ''}`}
+                          >
+                            <path d="M9 6l6 6-6 6" />
+                          </svg>
+                          <span className="truncate text-sm font-semibold text-[var(--ink)]">{g.providerName}</span>
+                        </span>
+                        <span className="shrink-0 text-xs text-[var(--ink-3)]">
+                          {g.accounts.length} account{g.accounts.length === 1 ? '' : 's'} · {g.rows.length} txn{g.rows.length === 1 ? '' : 's'} · in {formatMoney(g.inflow)} · out {formatMoney(g.outflow)}
+                        </span>
+                      </button>
+                      {/* Accounts within the provider — only mounted when expanded. */}
+                      {open && (
+                        <div className="divide-y divide-[var(--line)] border-t border-[var(--line)]">
+                          {g.accounts.map((a) => {
+                            const key = `${g.providerId}:${a.accountNumber}`;
+                            const shown = rowLimits[key] ?? INITIAL_ROWS;
+                            const visible = a.rows.slice(0, shown);
+                            const remaining = a.rows.length - visible.length;
+                            return (
+                              <div key={a.accountNumber} className="px-3 py-2 overflow-x-auto">
+                                <div className="flex items-baseline justify-between mb-1">
+                                  <span className="text-xs font-semibold text-[var(--ink-2)]">
+                                    Acct <span className="tnum font-mono">{a.accountNumber}</span>
+                                    {a.accountName && <span className="ml-2 font-normal text-[var(--ink-3)]">{a.accountName}</span>}
+                                  </span>
+                                  <span className="text-[11px] text-[var(--ink-3)]">
+                                    {a.rows.length} txn{a.rows.length === 1 ? '' : 's'} · in {formatMoney(a.inflow)} · out {formatMoney(a.outflow)}
+                                  </span>
+                                </div>
+                                <table className="w-full text-sm">
+                                  <thead>
+                                    <tr className="text-left text-[11px] uppercase tracking-wide text-[var(--ink-3)] border-b border-[var(--line)]">
+                                      <th className="py-1.5 font-medium">Date</th>
+                                      <th className="py-1.5 font-medium">Description</th>
+                                      <th className="py-1.5 font-medium text-right">Inflow</th>
+                                      <th className="py-1.5 font-medium text-right">Outflow</th>
+                                      <th className="py-1.5 font-medium text-center">Type</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody>
+                                    {visible.map((r) => {
+                                      const pl = (r.payload ?? {}) as { transactionDate?: string; description?: string; transactionType?: string };
+                                      return (
+                                        <tr key={r.id} className="border-b border-[var(--line)]">
+                                          <td className="py-1.5 text-[var(--ink-2)] whitespace-nowrap tnum">{pl.transactionDate ? formatDate(pl.transactionDate) : '—'}</td>
+                                          <td className="py-1.5 text-[var(--ink-3)] max-w-[220px] truncate" title={pl.description ?? ''}>{pl.description ?? '—'}</td>
+                                          <td className="py-1.5 text-right text-[var(--ink)] tnum">{formatMoney(r.totalInflow)}</td>
+                                          <td className="py-1.5 text-right text-[var(--ink-3)] tnum">{formatMoney(r.totalOutflow)}</td>
+                                          <td className="py-1.5 text-center text-xs text-[var(--ink-3)]">{pl.transactionType ?? '—'}</td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                                {remaining > 0 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => setRowLimits((m) => ({ ...m, [key]: shown + ROW_STEP }))}
+                                    className="mt-2 text-xs font-medium text-teal-700 hover:underline"
+                                  >
+                                    Show {Math.min(ROW_STEP, remaining)} more · {remaining} hidden
+                                  </button>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
-                      ))}
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </Card>
@@ -370,30 +421,56 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         {/* Right: lifecycle actions */}
         <div className="space-y-6">
           <Card title="Case actions">
+            {/* Assignment — first-class control at the top of the actions rail. */}
+            <div className="mb-4 pb-4 border-b border-[var(--line)] space-y-2">
+              <Select
+                label="Assigned to"
+                value={c.assignedTo?.id ?? ''}
+                disabled={assigning}
+                onChange={(e) => reassign(e.target.value || null)}
+              >
+                <option value="">Unassigned</option>
+                {staff.map((u) => (
+                  <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
+                ))}
+              </Select>
+              {currentUserId && c.assignedTo?.id !== currentUserId && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  className="w-full"
+                  loading={assigning}
+                  onClick={() => reassign(currentUserId)}
+                >
+                  Assign to me
+                </Button>
+              )}
+            </div>
+
             {c.noticeIssuedAt && (
-              <div className="mb-3 text-xs text-slate-500">
+              <div className="mb-3 text-xs text-[var(--ink-3)]">
                 Notice issued {formatDate(c.noticeIssuedAt)}
-                {c.objectionDueAt && <> · objection due <span className="font-medium text-slate-700">{formatDate(c.objectionDueAt)}</span></>}
+                {c.objectionDueAt && <> · objection due <span className="font-medium text-[var(--ink-2)]">{formatDate(c.objectionDueAt)}</span></>}
               </div>
             )}
             {c.recoveredAmount && (
-              <div className="mb-3 text-xs text-emerald-700">Recovered {formatMoney(c.recoveredAmount)}</div>
+              <div className="mb-3 text-xs text-[var(--ok)]">Recovered {formatMoney(c.recoveredAmount)}</div>
             )}
 
             {allowed.length === 0 ? (
-              <p className="text-xs text-slate-400">This case is closed — no further actions.</p>
+              <p className="text-xs text-[var(--ink-3)]">This case is closed — no further actions.</p>
             ) : pending ? (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-slate-800">{ACTION_LABEL[pending]}?</p>
+                <p className="text-sm font-medium text-[var(--ink)]">{ACTION_LABEL[pending]}?</p>
                 {(pending === 'RECOVERED' || pending === 'SETTLED') && (
                   <div>
-                    <label className="block text-xs text-slate-600 mb-1">Recovered amount (₦)</label>
+                    <label className="block text-xs text-[var(--ink-2)] mb-1">Recovered amount (₦)</label>
                     <input
                       type="number"
                       value={recovered}
                       onChange={(e) => setRecovered(e.target.value)}
                       placeholder={String(Math.round(Number(c.estimatedTaxDue)))}
-                      className="w-full border border-slate-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      className="w-full border border-[var(--line)] rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
                     />
                   </div>
                 )}
@@ -402,15 +479,15 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                   onChange={(e) => setNotes(e.target.value)}
                   placeholder="Notes (optional — recorded in the audit trail)"
                   rows={2}
-                  className="w-full border border-slate-300 rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
+                  className="w-full border border-[var(--line)] rounded-lg text-sm px-3 py-1.5 focus:outline-none focus:ring-2 focus:ring-teal-500"
                 />
                 <div className="flex gap-2">
-                  <button onClick={submit} disabled={busy} className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+                  <Button onClick={submit} loading={busy} className="flex-1">
                     {busy ? 'Saving…' : 'Confirm'}
-                  </button>
-                  <button onClick={() => { setPending(null); setNotes(''); setRecovered(''); }} className="px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 rounded-lg">
+                  </Button>
+                  <Button variant="ghost" onClick={() => { setPending(null); setNotes(''); setRecovered(''); }}>
                     Cancel
-                  </button>
+                  </Button>
                 </div>
               </div>
             ) : (
@@ -421,7 +498,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
                     onClick={() => setPending(t)}
                     className={`w-full py-2 text-sm font-medium rounded-lg border transition-colors ${
                       DANGER_TARGETS.includes(t)
-                        ? 'border-red-200 text-red-700 hover:bg-red-50'
+                        ? 'border-[var(--bad)] text-[var(--bad)] hover:bg-[var(--bad-soft)]'
                         : 'border-teal-200 text-teal-700 hover:bg-teal-50'
                     }`}
                   >
@@ -433,29 +510,14 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           </Card>
 
           <Card title="Details">
-            <dl className="text-xs space-y-1.5 text-slate-600">
+            <dl className="text-xs space-y-1.5 text-[var(--ink-2)]">
               <Row k="Risk level" v={`${c.riskLevel}${c.agentScore != null ? ' (incl. AI)' : ''}`} />
               <Row k="Detection confidence" v={`${Math.round(Number(c.confidence) * 100)}%`} />
               <Row k="AI corroboration" v={c.agentScore != null ? `${Math.round(Number(c.agentScore) * 100)}%` : '—'} />
               <Row k="Providers" v={String(c.providerCount)} />
               <Row k="Discrepancy %" v={`${Math.round(Number(c.discrepancyPct) * 100)}%`} />
-              <div className="flex items-start justify-between gap-3 pt-0.5">
-                <dt className="text-slate-400 shrink-0">Assigned to</dt>
-                <dd className="text-right">
-                  <select
-                    value={c.assignedTo?.id ?? ''}
-                    disabled={assigning}
-                    onChange={(e) => reassign(e.target.value || null)}
-                    className="max-w-[11rem] border border-slate-300 rounded-md text-xs px-2 py-1 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 disabled:opacity-50"
-                    title="Reassign this case"
-                  >
-                    <option value="">Unassigned</option>
-                    {staff.map((u) => (
-                      <option key={u.id} value={u.id}>{u.firstName} {u.lastName}</option>
-                    ))}
-                  </select>
-                </dd>
-              </div>
+              {/* Reassignment moved to a first-class control in the Case actions card. */}
+              <Row k="Assigned to" v={c.assignedTo ? `${c.assignedTo.firstName} ${c.assignedTo.lastName}` : 'Unassigned'} />
               <Row k="Detected" v={formatDateTime(c.createdAt)} />
               {c.notes && <Row k="Notes" v={c.notes} />}
             </dl>
@@ -464,40 +526,48 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {/* Secured in-app document viewer — the confidential report stays inside the
-          authenticated session, rendered in a sandboxed same-origin iframe. */}
-      {report && (
-        <div className="fixed inset-0 z-50 flex flex-col bg-slate-900/60 backdrop-blur-sm p-3 sm:p-6" onClick={() => setReport(null)}>
-          <div className="mx-auto flex h-full w-full max-w-5xl flex-col overflow-hidden rounded-xl bg-white shadow-2xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-slate-200 px-4 py-2.5">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex h-2 w-2 rounded-full bg-rose-500" />
-                <span className="text-sm font-semibold text-slate-800">{report.title}</span>
-                <span className="rounded bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700">Confidential · in secure session</span>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    const f = document.getElementById('report-frame') as HTMLIFrameElement | null;
-                    f?.contentWindow?.focus();
-                    f?.contentWindow?.print();
-                  }}
-                  className="rounded-lg bg-teal-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-700"
-                >
-                  🖨 Print / Save as PDF
-                </button>
-                <button onClick={() => setReport(null)} className="rounded-lg px-2 py-1 text-sm text-slate-500 hover:bg-slate-100">✕ Close</button>
-              </div>
-            </div>
-            <iframe
-              id="report-frame"
-              title={report.title}
-              srcDoc={report.html}
-              sandbox="allow-same-origin allow-modals"
-              className="flex-1 w-full bg-slate-100"
-            />
+          authenticated session, rendered in a sandboxed same-origin iframe. The
+          shared Modal supplies the focus trap, Escape-to-close and focus restore. */}
+      <Modal
+        open={!!report}
+        onClose={() => setReport(null)}
+        title={
+          <span className="flex items-center gap-2">
+            <span className="inline-flex h-2 w-2 rounded-full bg-[var(--bad)]" />
+            {report?.title}
+            <span className="rounded bg-[var(--bad-soft)] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[var(--bad)]">
+              Confidential · in secure session
+            </span>
+          </span>
+        }
+        size="xl"
+        footer={
+          <div className="flex items-center justify-end gap-2">
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={() => {
+                const f = document.getElementById('report-frame') as HTMLIFrameElement | null;
+                f?.contentWindow?.focus();
+                f?.contentWindow?.print();
+              }}
+            >
+              🖨 Print / Save as PDF
+            </Button>
+            <Button variant="ghost" size="sm" onClick={() => setReport(null)}>Close</Button>
           </div>
-        </div>
-      )}
+        }
+      >
+        {report && (
+          <iframe
+            id="report-frame"
+            title={report.title}
+            srcDoc={report.html}
+            sandbox="allow-same-origin allow-modals"
+            className="h-[68vh] w-full rounded-lg border border-[var(--line)] bg-[var(--surface-2)]"
+          />
+        )}
+      </Modal>
     </div>
   );
 }

@@ -156,6 +156,7 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
             <span className="text-[11px] text-[var(--ink-3)]">Account &amp; BVN are masked for privacy.</span>
           </div>
           <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--elev-1)]">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="border-b border-[var(--line)] bg-[var(--surface-2)]">
                 <tr>
@@ -180,6 +181,7 @@ export default function ProviderSubmissionDetailPage({ params }: { params: Param
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         </section>
       )}

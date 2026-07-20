@@ -3,6 +3,8 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { authApi } from '@/lib/api/auth';
 import { extractErrorMessage } from '@/lib/utils';
+import { Button } from '@/components/Button';
+import { Input } from '@/components/Field';
 
 // Staff "forgot password" request. Always shows the same confirmation whether
 // or not the email maps to an account (the backend never reveals which) — so
@@ -46,16 +48,11 @@ export default function StaffForgotPasswordPage() {
           ) : (
             <form onSubmit={submit} className="space-y-4">
               {err && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{err}</div>}
-              <div>
-                <label className="block text-xs font-medium text-slate-700 mb-1">Email</label>
-                <input type="email" autoComplete="email" required autoFocus value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-              </div>
-              <button type="submit" disabled={busy}
-                className="w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg disabled:opacity-50">
+              <Input label="Email" type="email" autoComplete="email" required autoFocus value={email}
+                onChange={(e) => setEmail(e.target.value)} />
+              <Button type="submit" size="lg" loading={busy} className="w-full">
                 {busy ? 'Sending…' : 'Send reset link'}
-              </button>
+              </Button>
               <div className="text-center">
                 <Link href="/login" className="text-xs text-slate-500 hover:text-slate-700">Back to sign in</Link>
               </div>

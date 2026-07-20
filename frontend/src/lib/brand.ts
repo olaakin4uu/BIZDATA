@@ -20,6 +20,29 @@ function mix([r, g, b]: RGB, [r2, g2, b2]: RGB, t: number): RGB {
 const WHITE: RGB = [255, 255, 255];
 const BLACK: RGB = [0, 0, 0];
 
+// WCAG relative luminance + contrast ratio, used to guarantee that the
+// text-bearing shades stay legible on white no matter which brand hex a tenant
+// supplies (a bright brand colour would otherwise push text-teal-700 below AA).
+function luminance([r, g, b]: RGB): number {
+  const f = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * f(r) + 0.7152 * f(g) + 0.0722 * f(b);
+}
+function contrastOnWhite(rgb: RGB): number {
+  const l = luminance(rgb);
+  return (1.0 + 0.05) / (l + 0.05);
+}
+/** Darken toward black until the colour clears `min` contrast on white (AA 4.5). */
+function ensureContrast(rgb: RGB, min = 4.5): RGB {
+  let out = rgb;
+  for (let i = 0; i < 20 && contrastOnWhite(out) < min; i++) {
+    out = mix(out, BLACK, 0.06);
+  }
+  return out;
+}
+
 // shade → [mix-target, amount]; 600 is the anchor (the configured colour).
 const RAMP: Record<number, [RGB, number]> = {
   50: [WHITE, 0.93], 100: [WHITE, 0.85], 200: [WHITE, 0.7], 300: [WHITE, 0.55],
@@ -34,7 +57,11 @@ export function applyBrandColor(hex?: string | null) {
   if (!base) return;
   const root = document.documentElement;
   for (const [shade, [target, t]] of Object.entries(RAMP)) {
-    const [r, g, b] = mix(base, target, t);
+    let rgb = mix(base, target, t);
+    // Shades used for text/icons on white (600–950) are clamped to AA contrast
+    // so a light tenant brand can never make body text illegible.
+    if (Number(shade) >= 600) rgb = ensureContrast(rgb);
+    const [r, g, b] = rgb;
     root.style.setProperty(`--color-teal-${shade}`, `rgb(${r} ${g} ${b})`);
   }
 }

@@ -126,10 +126,11 @@ export const STATUS_BADGE_CLASS: Record<string, string> = {
   // provider
   ACTIVE: 'bg-emerald-100 text-emerald-700',
   SUSPENDED: 'bg-red-100 text-red-700',
-  PENDING_ONBOARDING: 'bg-amber-100 text-amber-700',
-  // review
+  PENDING_ONBOARDING: 'bg-amber-100 text-amber-800',
+  // review — CLEARED is a POSITIVE outcome, so it gets an emerald tone distinct
+  // from the neutral-grey intake states; all "pending" share one amber pair.
   PENDING_REVIEW: 'bg-amber-100 text-amber-800',
-  CLEARED: 'bg-slate-100 text-slate-700',
+  CLEARED: 'bg-emerald-100 text-emerald-700',
   CONFIRMED: 'bg-red-100 text-red-700',
   // scan
   RUNNING: 'bg-blue-100 text-blue-700',

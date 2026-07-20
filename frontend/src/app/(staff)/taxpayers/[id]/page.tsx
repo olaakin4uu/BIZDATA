@@ -97,6 +97,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
         <h2 className="text-sm font-semibold text-slate-800 mb-3">Declared income</h2>
         {tp.declaredIncomes && tp.declaredIncomes.length > 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
@@ -116,6 +117,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm py-8 text-center text-xs text-slate-400">
@@ -132,6 +134,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
           </div>
         ) : (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-slate-50 border-b border-slate-200">
                 <tr>
@@ -163,6 +166,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
                 ))}
               </tbody>
             </table>
+            </div>
           </div>
         )}
       </section>

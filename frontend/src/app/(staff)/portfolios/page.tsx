@@ -4,6 +4,9 @@ import { portfoliosApi, type Portfolio, type Workload, type PortfolioScope } fro
 import { usersApi } from '@/lib/api/users';
 import { providersApi } from '@/lib/api/providers';
 import { PROVIDER_TYPES, formatMoneyShort, extractErrorMessage } from '@/lib/utils';
+import { Modal } from '@/components/Modal';
+import { Button } from '@/components/Button';
+import { Select } from '@/components/Field';
 
 const SECTORS = ['PROFESSIONAL_SERVICES', 'TRADING', 'REAL_ESTATE', 'HOSPITALITY', 'CONSTRUCTION', 'TECH', 'OTHER'];
 
@@ -182,49 +185,51 @@ function AssignModal({ onClose, onDone }: { onClose: () => void; onDone: (msg: s
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4" onClick={onClose}>
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <div className="px-6 py-4 border-b border-slate-100">
-          <h2 className="text-base font-bold text-slate-900">Assign a portfolio</h2>
-          <p className="text-xs text-slate-500">New cases in this book of work will route to the analyst automatically.</p>
+    <Modal
+      open
+      onClose={onClose}
+      title="Assign a portfolio"
+      footer={
+        <div className="flex justify-end gap-2">
+          <Button variant="secondary" onClick={onClose}>Cancel</Button>
+          <Button onClick={submit} loading={busy}>Assign</Button>
         </div>
-        <div className="p-6 space-y-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Analyst</label>
-            <select value={staffId} onChange={(e) => setStaffId(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-              <option value="">Choose a staff member…</option>
-              {staff.map((s) => <option key={s.id} value={s.id}>{s.firstName} {s.lastName} — {s.email}</option>)}
-            </select>
+      }
+    >
+      <p className="-mt-1 mb-3 text-xs text-[var(--ink-3)]">
+        New cases in this book of work will route to the analyst automatically.
+      </p>
+      <div className="space-y-4">
+        <Select label="Analyst" value={staffId} onChange={(e) => setStaffId(e.target.value)}>
+          <option value="">Choose a staff member…</option>
+          {staff.map((s) => <option key={s.id} value={s.id}>{s.firstName} {s.lastName} — {s.email}</option>)}
+        </Select>
+        <div>
+          <p className="mb-1 block text-xs font-medium text-[var(--ink-2)]">Scope</p>
+          <div className="flex gap-2" role="group" aria-label="Portfolio scope">
+            {(['PROVIDER', 'PROVIDER_TYPE', 'SECTOR'] as PortfolioScope[]).map((sc) => (
+              <Button
+                key={sc}
+                variant={scope === sc ? 'primary' : 'secondary'}
+                size="sm"
+                className="flex-1"
+                onClick={() => setScope(sc)}
+              >
+                {SCOPE_META[sc].label}
+              </Button>
+            ))}
           </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">Scope</label>
-            <div className="flex gap-2">
-              {(['PROVIDER', 'PROVIDER_TYPE', 'SECTOR'] as PortfolioScope[]).map((sc) => (
-                <button key={sc} onClick={() => setScope(sc)}
-                  className={`flex-1 px-3 py-2 text-xs font-medium rounded-lg border ${scope === sc ? 'bg-purple-600 text-white border-purple-600' : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'}`}>
-                  {SCOPE_META[sc].label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1">
-              {scope === 'PROVIDER' ? 'Which provider' : scope === 'PROVIDER_TYPE' ? 'Which provider type' : 'Which sector'}
-            </label>
-            <select value={targetValue} onChange={(e) => setTargetValue(e.target.value)} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
-              <option value="">Choose…</option>
-              {targetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-            </select>
-          </div>
-          {error && <p className="text-xs text-rose-600">{error}</p>}
         </div>
-        <div className="px-6 py-4 border-t border-slate-100 flex justify-end gap-2">
-          <button onClick={onClose} className="px-4 py-2 text-sm border border-slate-300 rounded-lg hover:bg-slate-50">Cancel</button>
-          <button onClick={submit} disabled={busy} className="px-4 py-2 text-sm font-semibold bg-purple-600 hover:bg-purple-700 text-white rounded-lg disabled:opacity-50">
-            {busy ? 'Assigning…' : 'Assign'}
-          </button>
-        </div>
+        <Select
+          label={scope === 'PROVIDER' ? 'Which provider' : scope === 'PROVIDER_TYPE' ? 'Which provider type' : 'Which sector'}
+          value={targetValue}
+          onChange={(e) => setTargetValue(e.target.value)}
+        >
+          <option value="">Choose…</option>
+          {targetOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Select>
+        {error && <p className="text-xs text-rose-600">{error}</p>}
       </div>
-    </div>
+    </Modal>
   );
 }

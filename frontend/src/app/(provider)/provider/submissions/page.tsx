@@ -6,6 +6,7 @@ import DataTable, { type Column } from '@/components/DataTable';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import type { Submission } from '@/lib/api/submissions';
 import { SUBMISSION_STATUSES, formatDate, formatBytes, statusBadge, extractErrorMessage } from '@/lib/utils';
+import { APP_NAME } from '@/lib/appName';
 
 export default function ProviderSubmissionsPage() {
   const [rows, setRows] = useState<Submission[]>([]);
@@ -53,7 +54,7 @@ export default function ProviderSubmissionsPage() {
     <div className="rise-in">
       <PageHeader
         title="Submissions"
-        subtitle="History of files you have uploaded to FinData."
+        subtitle={`History of files you have uploaded to ${APP_NAME}.`}
         icon="document"
         actions={
           <Link href="/provider/submissions/new"

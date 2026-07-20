@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { STAFF_ROLES, formatDateTime } from '@/lib/utils';
+import { APP_NAME } from '@/lib/appName';
 
 export default function UsersListPage() {
   const [rows, setRows] = useState<StaffUserRecord[]>([]);
@@ -44,7 +45,7 @@ export default function UsersListPage() {
     <div className="p-6 max-w-6xl mx-auto">
       <PageHeader
         title="Staff users"
-        subtitle="People who can sign in to the FinData back office."
+        subtitle={`People who can sign in to the ${APP_NAME} back office.`}
         actions={
           <Link href="/users/new" className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg">
             + New user

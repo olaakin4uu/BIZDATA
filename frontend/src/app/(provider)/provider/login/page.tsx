@@ -8,6 +8,8 @@ import { useProviderAuthStore } from '@/store/providerAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
 import { tenantApi } from '@/lib/api/tenant';
 import PasswordInput from '@/components/PasswordInput';
+import { Button } from '@/components/Button';
+import { APP_NAME } from '@/lib/appName';
 
 export default function ProviderLoginPage() {
   const router = useRouter();
@@ -77,7 +79,7 @@ export default function ProviderLoginPage() {
             </span>
           )}
           <p className="text-[10px] uppercase tracking-[0.22em] text-teal-100/90">Provider Portal</p>
-          <h1 className="text-3xl font-bold text-white mt-0.5 tracking-tight">FinData</h1>
+          <h1 className="text-3xl font-bold text-white mt-0.5 tracking-tight">{APP_NAME}</h1>
         </div>
 
         <div className="rounded-2xl border border-white/60 bg-white/95 p-6 shadow-2xl ring-1 ring-black/5 backdrop-blur-xl">
@@ -93,25 +95,25 @@ export default function ProviderLoginPage() {
               </div>
             )}
             <div>
-              <label className="block text-xs font-medium text-[var(--ink-2)] mb-1.5">Email</label>
-              <input type="email" required autoComplete="email" value={email}
+              <label htmlFor="provider-email" className="block text-xs font-medium text-[var(--ink-2)] mb-1.5">Email</label>
+              <input id="provider-email" type="email" required autoComplete="email" value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3.5 py-2.5 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface-2)] transition-shadow focus:outline-none focus:ring-2 focus:ring-teal-500/60 focus:border-teal-400 focus:bg-white" />
             </div>
             <div>
               <div className="flex items-center justify-between mb-1.5">
-                <label className="block text-xs font-medium text-[var(--ink-2)]">Password</label>
+                <label htmlFor="provider-password" className="block text-xs font-medium text-[var(--ink-2)]">Password</label>
                 <Link href="/provider/forgot-password" className="text-xs text-teal-700 hover:text-teal-800 hover:underline font-medium">Forgot password?</Link>
               </div>
-              <PasswordInput required autoComplete="current-password" value={password}
+              <PasswordInput id="provider-password" required autoComplete="current-password" value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 className="w-full px-3.5 py-2.5 border border-[var(--line)] rounded-lg text-sm bg-[var(--surface-2)] transition-shadow focus:outline-none focus:ring-2 focus:ring-teal-500/60 focus:border-teal-400 focus:bg-white" />
             </div>
-            <button type="submit" disabled={busy}
-              className="w-full py-2.5 text-white text-sm font-semibold rounded-lg transition-all hover:brightness-110 active:scale-[0.99] disabled:opacity-50 disabled:hover:brightness-100"
+            <Button type="submit" size="lg" loading={busy}
+              className="w-full transition-all hover:brightness-110 active:scale-[0.99] disabled:hover:brightness-100"
               style={{ backgroundImage: 'var(--brand-grad)', boxShadow: 'var(--elev-brand)' }}>
               {busy ? 'Signing in…' : 'Sign in'}
-            </button>
+            </Button>
           </form>
           <p className="text-xs text-[var(--ink-3)] text-center mt-4">
             Are you a regulator?{' '}

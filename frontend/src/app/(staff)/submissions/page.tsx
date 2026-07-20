@@ -6,7 +6,7 @@ import DataTable, { type Column } from '@/components/DataTable';
 import SubmissionUploader from '@/components/SubmissionUploader';
 import { submissionsApi, type Submission } from '@/lib/api/submissions';
 import { providersApi, type Provider } from '@/lib/api/providers';
-import { SUBMISSION_STATUSES, formatDate, formatBytes, statusBadge } from '@/lib/utils';
+import { SUBMISSION_STATUSES, formatDate, formatBytes, statusBadge, extractErrorMessage } from '@/lib/utils';
 
 export default function SubmissionsPage() {
   const [rows, setRows] = useState<Submission[]>([]);
@@ -16,6 +16,7 @@ export default function SubmissionsPage() {
   const [status, setStatus] = useState('');
   const [periodYear, setPeriodYear] = useState<number | ''>('');
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [providers, setProviders] = useState<Provider[]>([]);
   const [showUpload, setShowUpload] = useState(false);
   const limit = 50;
@@ -28,10 +29,11 @@ export default function SubmissionsPage() {
 
   const load = () => {
     setLoading(true);
+    setError(null);
     submissionsApi
       .list({ providerId: providerId || undefined, status: status || undefined, periodYear: periodYear || undefined, page, limit })
       .then((r) => { setRows(r.submissions); setTotal(r.total); })
-      .catch(() => { setRows([]); setTotal(0); })
+      .catch((e) => { setRows([]); setTotal(0); setError(extractErrorMessage(e)); })
       .finally(() => setLoading(false));
   };
 
@@ -137,6 +139,8 @@ export default function SubmissionsPage() {
         rows={rows}
         rowKey={(r) => r.id}
         loading={loading}
+        error={error}
+        onRetry={load}
         emptyText="No submissions match the filter."
         total={total}
         page={page}
