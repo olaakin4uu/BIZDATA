@@ -217,7 +217,7 @@ export default function IrisPage() {
   );
 
   return (
-    <div>
+    <div className="mx-auto flex h-[calc(100dvh-6rem)] max-w-7xl flex-col p-4 sm:p-6">
       <PageHeader
         title="IRIS"
         icon="robot"
@@ -237,7 +237,7 @@ export default function IrisPage() {
         }
       />
 
-      <div className="flex h-[calc(100dvh-11rem)] gap-4">
+      <div className="mt-4 flex min-h-0 flex-1 gap-4">
         <aside className="hidden w-56 shrink-0 flex-col rounded-xl border border-slate-200 bg-white md:flex">
           <p className="border-b border-slate-100 px-3 py-2.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Conversations</p>
           <nav aria-label="Conversation history" className="flex-1 overflow-y-auto p-2">
