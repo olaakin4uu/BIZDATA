@@ -73,6 +73,18 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
           <Info label="NIN" value={<SensitiveValue value={tp.nin} />} />
           <Info label="BVN" value={<SensitiveValue value={(tp as { bvn?: string | null }).bvn} />} />
           <Info label="CAC RC" value={tp.cacRcNumber ?? '—'} />
+          {tp.type !== 'INDIVIDUAL' && (
+            <Info label="Legal form" value={
+              tp.isLimitedLiability ? (
+                <span title="Income tax is federal (FIRS); the state does not assess it. Pursue PAYE / CGT / WHT.">
+                  <span className="inline-flex px-2 py-0.5 text-xs font-medium rounded-full bg-slate-100 text-slate-700">Limited company</span>
+                  <span className="ml-1 text-xs text-slate-400">not income-assessed{tp.llcSource ? ` · ${tp.llcSource === 'MANUAL' ? 'set by staff' : 'from name'}` : ''}</span>
+                </span>
+              ) : (
+                <span className="text-xs text-slate-600">Assessable entity</span>
+              )
+            } />
+          )}
           <Info label="TIN" value={tp.tin ?? '—'} />
           <Info label="Phone" value={tp.phone ?? '—'} />
           <Info label="Email" value={tp.email ?? '—'} />
@@ -179,6 +191,7 @@ function EditForm({ tp, onSaved }: { tp: Taxpayer; onSaved: (t: Taxpayer) => voi
     address: tp.address ?? '',
     stateOfResidence: tp.stateOfResidence ?? '',
     status: tp.status,
+    isLimitedLiability: !!tp.isLimitedLiability,
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -187,7 +200,11 @@ function EditForm({ tp, onSaved }: { tp: Taxpayer; onSaved: (t: Taxpayer) => voi
     e.preventDefault();
     setBusy(true); setError(null);
     try {
-      const updated = await taxpayersApi.update(tp.id, form);
+      // Only send the LLC override for entities that can be one — sending it for an
+      // individual would needlessly stamp a MANUAL source on a meaningless field.
+      const { isLimitedLiability, ...rest } = form;
+      const payload = tp.type === 'INDIVIDUAL' ? rest : form;
+      const updated = await taxpayersApi.update(tp.id, payload);
       onSaved(updated);
     } catch (err) {
       setError(extractErrorMessage(err));
@@ -206,7 +223,23 @@ function EditForm({ tp, onSaved }: { tp: Taxpayer; onSaved: (t: Taxpayer) => voi
             <Text label="Middle name" value={form.middleName} onChange={(v) => setForm({ ...form, middleName: v })} />
           </>
         ) : (
-          <Text label="Business name" value={form.businessName} onChange={(v) => setForm({ ...form, businessName: v })} className="md:col-span-2" />
+          <>
+            <Text label="Business name" value={form.businessName} onChange={(v) => setForm({ ...form, businessName: v })} className="md:col-span-2" />
+            <label className="md:col-span-2 flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.isLimitedLiability}
+                onChange={(e) => setForm({ ...form, isLimitedLiability: e.target.checked })}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-teal-600 focus:ring-teal-500"
+              />
+              <span className="text-xs text-slate-600">
+                <span className="font-medium text-slate-800">Limited company (LTD / Limited / PLC)</span><br />
+                Income tax is federal (FIRS) — the state does not assess it. When ticked, the scan raises no
+                income case; the party is pursued for PAYE / CGT / WHT remittance instead. Overrides the
+                automatic name-based detection.
+              </span>
+            </label>
+          </>
         )}
         <Text label="TIN" value={form.tin} onChange={(v) => setForm({ ...form, tin: v })} />
         <Text label="Phone" value={form.phone} onChange={(v) => setForm({ ...form, phone: v })} />

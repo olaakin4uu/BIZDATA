@@ -204,7 +204,24 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
         <Metric label="Observed income" value={formatMoney(c.observedIncome)} />
         <Metric label="Declared income" value={formatMoney(c.declaredIncome)} />
         <Metric label="Discrepancy" value={formatMoney(c.discrepancyAmount)} tone="amber" />
-        <Metric label="Estimated tax due" value={formatMoney(c.estimatedTaxDue)} tone="red" />
+        {c.taxBasis === 'NOT_ASSESSED_LLC' ? (
+          <Metric
+            label="Estimated tax due"
+            value="Not state-assessed"
+            hint="Limited company — income tax is federal (FIRS). Pursue PAYE / CGT / WHT remittance."
+          />
+        ) : (
+          <Metric
+            label="Estimated tax due"
+            value={formatMoney(c.estimatedTaxDue)}
+            tone="red"
+            hint={
+              c.altTaxDue != null
+                ? `Graduated (NTA). Flat @ ${Math.round(Number(c.altTaxRate ?? 0) * 100)}%: ${formatMoney(c.altTaxDue)}`
+                : 'Graduated Nigeria Tax Act bands'
+            }
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -485,12 +502,13 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   );
 }
 
-function Metric({ label, value, tone = 'default' }: { label: string; value: string; tone?: 'default' | 'amber' | 'red' }) {
+function Metric({ label, value, tone = 'default', hint }: { label: string; value: string; tone?: 'default' | 'amber' | 'red'; hint?: string }) {
   const color = tone === 'red' ? 'text-red-700' : tone === 'amber' ? 'text-amber-700' : 'text-slate-800';
   return (
     <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`text-lg font-bold mt-1 ${color}`}>{value}</p>
+      {hint && <p className="text-xs text-slate-500 mt-1">{hint}</p>}
     </div>
   );
 }

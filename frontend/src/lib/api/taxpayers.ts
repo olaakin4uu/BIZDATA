@@ -15,6 +15,8 @@ export interface Taxpayer {
   email?: string | null;
   address?: string | null;
   stateOfResidence?: string | null;
+  isLimitedLiability?: boolean;    // limited company (LTD/Limited/PLC) — not state income-assessed
+  llcSource?: string | null;       // 'NAME_SUFFIX' | 'MANUAL' — how the flag was set
   riskScore: number;
   riskLevel: string;
   riskComputedAt?: string | null;

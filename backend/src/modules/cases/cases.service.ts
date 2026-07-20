@@ -405,6 +405,14 @@ export class CasesService {
       if (!current.caseAccessToken) {
         data.caseAccessToken = `cat_${randomBytes(24).toString('hex')}`;
       }
+      // A limited company must never receive a STATE income-tax demand — CIT is
+      // federal. Such cases are not created by the scan; guard anyway so a stray
+      // one can't be assessed into an ultra vires notice.
+      if (current.taxBasis === 'NOT_ASSESSED_LLC') {
+        throw new BadRequestException(
+          'This taxpayer is a limited company; the state does not assess its income tax (CIT is federal). Pursue PAYE/CGT/WHT remittance instead.',
+        );
+      }
       // §35 Best-of-Judgement assessment: tax on the discrepancy + penalty.
       const assessedTax = Number(current.estimatedTaxDue);
       const penalty = assessedTax * cfg.latePaymentPenaltyRate;
@@ -420,6 +428,14 @@ export class CasesService {
         declaredIncome: Number(current.declaredIncome),
         discrepancy: Number(current.discrepancyAmount),
         assessedTax,
+        taxBasis: current.taxBasis ?? 'PIT_GRADUATED',
+        // Flat-rate comparison (configurable, seeded from CIT) recorded beside the
+        // graduated figure so the assessment shows both were considered.
+        comparison: current.altTaxDue != null ? {
+          method: 'FLAT_RATE',
+          rate: Number(current.altTaxRate ?? cfg.citRate),
+          tax: Number(current.altTaxDue),
+        } : null,
         penaltyRate: cfg.latePaymentPenaltyRate,
         penalty,
         total,

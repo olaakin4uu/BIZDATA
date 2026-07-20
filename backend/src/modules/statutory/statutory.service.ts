@@ -19,6 +19,8 @@ export interface StatutoryValues {
   defaultScanThreshold: number;
   reportingThresholdIndividual: number; // ₦ per period an individual must reach to be reportable
   reportingThresholdCorporate: number;  // ₦ per period a corporate must reach to be reportable
+  providerPenaltyFirstMonth: number;    // NTAA s.101 — fine for the first month of default
+  providerPenaltyPerMonth: number;      // NTAA s.101 — fine for each subsequent month
   /**
    * Date the phased-in compulsory submission fields (sector / businessType /
    * customerType) become hard-required. ISO 'YYYY-MM-DD', or null to fall back
@@ -40,6 +42,8 @@ const DEFAULTS: StatutoryValues = {
   defaultScanThreshold: 0.2,
   reportingThresholdIndividual: 50_000_000,
   reportingThresholdCorporate: 250_000_000,
+  providerPenaltyFirstMonth: 100_000, // NTAA s.101
+  providerPenaltyPerMonth: 50_000,    // NTAA s.101
   fieldEnforcementDate: null, // null → schema default (COMPULSORY_FIELD_ENFORCE_FROM)
 };
 
@@ -64,6 +68,8 @@ export class StatutoryService {
           defaultScanThreshold: DEFAULTS.defaultScanThreshold,
           reportingThresholdIndividual: DEFAULTS.reportingThresholdIndividual,
           reportingThresholdCorporate: DEFAULTS.reportingThresholdCorporate,
+          providerPenaltyFirstMonth: DEFAULTS.providerPenaltyFirstMonth,
+          providerPenaltyPerMonth: DEFAULTS.providerPenaltyPerMonth,
           fieldEnforcementDate: null,
         },
       });
@@ -100,6 +106,12 @@ export class StatutoryService {
           citSmallCoThreshold: next.citSmallCoThreshold,
           cgtRate: next.cgtRate,
           defaultScanThreshold: next.defaultScanThreshold,
+          // Carry these forward explicitly — omitting them would silently reset a
+          // new version to the schema defaults.
+          reportingThresholdIndividual: next.reportingThresholdIndividual,
+          reportingThresholdCorporate: next.reportingThresholdCorporate,
+          providerPenaltyFirstMonth: next.providerPenaltyFirstMonth,
+          providerPenaltyPerMonth: next.providerPenaltyPerMonth,
           fieldEnforcementDate: next.fieldEnforcementDate ? new Date(next.fieldEnforcementDate) : null,
         },
       });
@@ -127,6 +139,8 @@ export class StatutoryService {
       defaultScanThreshold: Number(r.defaultScanThreshold),
       reportingThresholdIndividual: Number(r.reportingThresholdIndividual),
       reportingThresholdCorporate: Number(r.reportingThresholdCorporate),
+      providerPenaltyFirstMonth: Number(r.providerPenaltyFirstMonth),
+      providerPenaltyPerMonth: Number(r.providerPenaltyPerMonth),
       fieldEnforcementDate: r.fieldEnforcementDate
         ? (r.fieldEnforcementDate as Date).toISOString().slice(0, 10)
         : null,
@@ -150,6 +164,8 @@ function sanitize(p: Partial<StatutoryValues>): Partial<StatutoryValues> {
   if (p.defaultScanThreshold != null) out.defaultScanThreshold = rate(p.defaultScanThreshold);
   if (p.reportingThresholdIndividual != null) out.reportingThresholdIndividual = money(p.reportingThresholdIndividual);
   if (p.reportingThresholdCorporate != null) out.reportingThresholdCorporate = money(p.reportingThresholdCorporate);
+  if (p.providerPenaltyFirstMonth != null) out.providerPenaltyFirstMonth = money(p.providerPenaltyFirstMonth);
+  if (p.providerPenaltyPerMonth != null) out.providerPenaltyPerMonth = money(p.providerPenaltyPerMonth);
   // Enforcement date: undefined = leave unchanged; '' / null = clear to null
   // (revert to schema default); a valid YYYY-MM-DD = set it.
   if (p.fieldEnforcementDate !== undefined) {

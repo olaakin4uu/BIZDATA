@@ -9,6 +9,7 @@ import {
   ENGINE_VERSION,
   normalizeInflow,
   estimateAdditionalTax,
+  isLlcName,
   scoreCase,
   confidenceToRisk,
 } from './detection-engine';
@@ -113,13 +114,25 @@ export class ScanService {
         (await this.prisma.sectorThreshold.findMany()).map((o) => [o.sector, Number(o.threshold)]),
       );
 
+      // Active statutory config — supplies the configurable flat comparison rate
+      // (seeded from citRate) that the graduated NTA estimate is checked against.
+      const cfg = await this.statutory.active();
+
       for (const [taxpayerId, agg] of byTaxpayer) {
         if (!reportableIds.has(taxpayerId)) continue; // below statutory reporting threshold
         const taxpayer = await this.prisma.taxpayer.findUnique({
           where: { id: taxpayerId },
-          select: { type: true, sector: true },
+          select: { type: true, sector: true, businessName: true, isLimitedLiability: true },
         });
         if (!taxpayer) continue;
+
+        // Limited-liability companies (LTD/Limited/PLC) are not income-assessed by
+        // a State IRS — CIT is federal. Trust a stored/staff-set flag first, else
+        // fall back to the business-name suffix. Such parties raise NO income case;
+        // they are pursued on the PAYE/remittance track (Tax Net), so we skip them
+        // here entirely (no estimate, no case) rather than assert a naira figure.
+        const isLlc = taxpayer.isLimitedLiability || isLlcName(taxpayer.businessName);
+        if (isLlc) continue;
 
         // A per-sector override (if any) wins over the scan's global threshold.
         const effectiveThreshold = (taxpayer.sector && sectorOverrides.get(taxpayer.sector)) ?? threshold;
@@ -169,11 +182,16 @@ export class ScanService {
           passThroughDiscount,
           hasDeclaration,
         });
-        const estimatedTaxDue = estimateAdditionalTax({
+        // Graduated Nigeria Tax Act estimate + flat-rate comparison (CIT-seeded).
+        // LLCs were already skipped above, so this always assesses here.
+        const estimate = estimateAdditionalTax({
           taxpayerType: taxpayer.type as any,
           declaredIncome: declaredAmount,
           observedIncome,
+          isLimitedLiability: false,
+          flatRate: cfg.citRate,
         });
+        const estimatedTaxDue = estimate.tax;
 
         totalFlagged++;
         totalEstimatedTax += estimatedTaxDue;
@@ -190,6 +208,9 @@ export class ScanService {
           discrepancyAmount: new Prisma.Decimal(Math.max(0, discrepancy).toFixed(2)),
           discrepancyPct: new Prisma.Decimal(Math.max(0, discrepancyPct).toFixed(4)),
           estimatedTaxDue: new Prisma.Decimal(estimatedTaxDue.toFixed(2)),
+          taxBasis: estimate.basis,
+          altTaxRate: estimate.flatRate != null ? new Prisma.Decimal(estimate.flatRate.toFixed(4)) : null,
+          altTaxDue: estimate.flatTax != null ? new Prisma.Decimal(estimate.flatTax.toFixed(2)) : null,
           confidence: new Prisma.Decimal(confidence.toFixed(2)),
           reasons: reasons as any,
           providerCount: agg.providers.size,

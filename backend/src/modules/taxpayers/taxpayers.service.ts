@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
+import { isLlcName } from '../scan/detection-engine';
 
 @Injectable()
 export class TaxpayersService {
@@ -13,6 +14,21 @@ export class TaxpayersService {
     private crypto: CryptoService,
     private pii: PiiAccessService,
   ) {}
+
+  /**
+   * Derive the limited-liability flag from a business name unless staff set it
+   * explicitly. Returns the columns to persist ({} when there's nothing to set —
+   * e.g. an individual with no override — so an update leaves the value alone).
+   */
+  private deriveLlc(dto: { businessName?: string | null; isLimitedLiability?: boolean }) {
+    if (dto.isLimitedLiability != null) {
+      return { isLimitedLiability: dto.isLimitedLiability, llcSource: 'MANUAL' };
+    }
+    if (dto.businessName && isLlcName(dto.businessName)) {
+      return { isLimitedLiability: true, llcSource: 'NAME_SUFFIX' };
+    }
+    return {};
+  }
 
   /** Build the encrypted-storage + blind-index columns from plaintext identifiers. */
   private encodeIdentifiers(src: { nin?: string | null; bvn?: string | null; tin?: string | null }) {
@@ -60,6 +76,7 @@ export class TaxpayersService {
         email: dto.email,
         address: dto.address,
         stateOfResidence: dto.stateOfResidence,
+        ...this.deriveLlc(dto),
       },
     });
 
@@ -139,6 +156,8 @@ export class TaxpayersService {
         stateOfResidence: dto.stateOfResidence ?? undefined,
         ...(dto.tin !== undefined ? { tinEnc: this.crypto.encrypt(dto.tin), tinIndex: this.crypto.blindIndex(dto.tin) } : {}),
         status: dto.status ?? undefined,
+        // Re-derive from a changed name, or honour an explicit staff override.
+        ...this.deriveLlc({ businessName: dto.businessName ?? before.businessName, isLimitedLiability: dto.isLimitedLiability }),
       },
     });
 
@@ -188,6 +207,7 @@ export class TaxpayersService {
           phone: row.phone || null,
           email: row.email || null,
           stateOfResidence: row.stateofresidence || null,
+          ...this.deriveLlc({ businessName: row.businessname || null }),
         };
 
         const ninIndex = this.crypto.blindIndex(row.nin);

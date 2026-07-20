@@ -32,6 +32,9 @@ export interface UnderdeclarationCase {
   discrepancyAmount: string;
   discrepancyPct: string;
   estimatedTaxDue: string;
+  taxBasis?: string | null;        // 'PIT_GRADUATED' | 'NOT_ASSESSED_LLC'
+  altTaxRate?: string | null;      // configurable flat comparison rate (seeded from CIT)
+  altTaxDue?: string | null;       // the gap taxed at altTaxRate
   confidence: string;
   agentScore?: string | null;
   reasons?: CaseReason[] | null;

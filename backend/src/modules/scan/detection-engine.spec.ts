@@ -1,6 +1,7 @@
 import {
   progressivePit,
   estimateAdditionalTax,
+  isLlcName,
   normalizeInflow,
   scoreCase,
   confidenceToRisk,
@@ -8,7 +9,6 @@ import {
   compositeConfidence,
   PIT_BANDS,
   CIT_RATE,
-  CIT_SMALL_CO_THRESHOLD,
 } from './detection-engine';
 
 describe('progressivePit', () => {
@@ -40,23 +40,57 @@ describe('progressivePit', () => {
   });
 });
 
+describe('isLlcName', () => {
+  it('matches trailing LTD / Limited / PLC, with or without a full stop', () => {
+    for (const n of ['Acme Ltd', 'Acme Ltd.', 'ACME LIMITED', 'Acme (Nigeria) PLC', 'Foo plc']) {
+      expect(isLlcName(n)).toBe(true);
+    }
+  });
+  it('does not match individuals, enterprises or lookalike words', () => {
+    for (const n of ['John Doe', 'Acme Ventures', 'Bright Enterprises', 'Unlimited Stores', 'Limitless Foods', null, undefined, '']) {
+      expect(isLlcName(n as any)).toBe(false);
+    }
+  });
+});
+
 describe('estimateAdditionalTax', () => {
+  it('limited companies are NOT income-assessed by the state (CIT is federal)', () => {
+    const e = estimateAdditionalTax({ taxpayerType: 'CORPORATE', declaredIncome: 20_000_000, observedIncome: 120_000_000, isLimitedLiability: true });
+    expect(e.assessed).toBe(false);
+    expect(e.tax).toBe(0);
+    expect(e.basis).toBe('NOT_ASSESSED_LLC');
+    expect(e.flatTax).toBeNull();
+  });
+
   it('is zero when observed does not exceed declared', () => {
-    expect(estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 5_000_000, observedIncome: 5_000_000 })).toBe(0);
-    expect(estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 5_000_000, observedIncome: 4_000_000 })).toBe(0);
+    expect(estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 5_000_000, observedIncome: 5_000_000 }).tax).toBe(0);
+    expect(estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 5_000_000, observedIncome: 4_000_000 }).tax).toBe(0);
   });
 
-  it('individuals: marginal PIT on the gap', () => {
-    const t = estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 1_000_000, observedIncome: 3_000_000 });
-    expect(t).toBeCloseTo(progressivePit(3_000_000) - progressivePit(1_000_000), 2);
+  it('individuals: marginal graduated PIT on the gap', () => {
+    const e = estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 1_000_000, observedIncome: 3_000_000 });
+    expect(e.assessed).toBe(true);
+    expect(e.basis).toBe('PIT_GRADUATED');
+    expect(e.tax).toBeCloseTo(progressivePit(3_000_000) - progressivePit(1_000_000), 2);
   });
 
-  it('companies: CIT on the undeclared slice, small-co exempt', () => {
-    // Below the small-company threshold → exempt.
-    expect(estimateAdditionalTax({ taxpayerType: 'CORPORATE', declaredIncome: 0, observedIncome: CIT_SMALL_CO_THRESHOLD })).toBe(0);
-    // Above → 30% of the gap.
-    const t = estimateAdditionalTax({ taxpayerType: 'CORPORATE', declaredIncome: 20_000_000, observedIncome: 120_000_000 });
-    expect(t).toBeCloseTo((120_000_000 - 20_000_000) * CIT_RATE, 2);
+  it('non-LLC corporates (enterprises) are graduated like individuals — not flat CIT', () => {
+    const e = estimateAdditionalTax({ taxpayerType: 'CORPORATE', declaredIncome: 1_000_000, observedIncome: 3_000_000, isLimitedLiability: false });
+    expect(e.assessed).toBe(true);
+    expect(e.basis).toBe('PIT_GRADUATED');
+    expect(e.tax).toBeCloseTo(progressivePit(3_000_000) - progressivePit(1_000_000), 2);
+  });
+
+  it('also returns a flat-rate comparison on the gap (default = CIT rate)', () => {
+    const e = estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 20_000_000, observedIncome: 120_000_000 });
+    expect(e.flatRate).toBeCloseTo(CIT_RATE, 5);
+    expect(e.flatTax).toBeCloseTo((120_000_000 - 20_000_000) * CIT_RATE, 2);
+  });
+
+  it('honours a configurable flat rate over the CIT default', () => {
+    const e = estimateAdditionalTax({ taxpayerType: 'INDIVIDUAL', declaredIncome: 0, observedIncome: 10_000_000, flatRate: 0.05 });
+    expect(e.flatRate).toBeCloseTo(0.05, 5);
+    expect(e.flatTax).toBeCloseTo(10_000_000 * 0.05, 2);
   });
 });
 

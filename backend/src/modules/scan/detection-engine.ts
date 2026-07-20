@@ -22,9 +22,22 @@
  * The tax bands below reflect the Nigeria Tax Act 2025 schedule but are
  * declared as constants so the revenue authority can confirm/override them.
  * They MUST be validated against the prevailing law before production use.
+ *
+ * STATE-vs-FEDERAL SCOPE (v2.1)
+ * -----------------------------
+ * This engine serves a STATE Internal Revenue Service. Companies Income Tax
+ * (CIT) and VAT are FEDERAL taxes (FIRS) — a State IRS has no power to assess
+ * them. Asserting a naira income-tax figure against a limited-liability company
+ * would be ultra vires and indefensible on appeal. We therefore DO NOT estimate
+ * income tax for limited-liability companies (names ending LTD / Limited / PLC);
+ * they are routed to the PAYE / CGT / WHT remittance-verification track instead
+ * (see Tax Net), because those ARE state-collected. All other parties
+ * (individuals and unincorporated/enterprise "corporates") are assessed on the
+ * graduated Nigeria Tax Act bands, additionally compared against a configurable
+ * flat rate (seeded from the CIT rate) the service may adjust over time.
  */
 
-export const ENGINE_VERSION = 'v2.0';
+export const ENGINE_VERSION = 'v2.1';
 
 // ─── Tax parameters (CONFIRM against prevailing Nigeria Tax Act) ─────────────
 
@@ -48,6 +61,20 @@ export const PIT_BANDS: TaxBand[] = [
 export const CIT_SMALL_CO_THRESHOLD = 50_000_000;
 export const CIT_RATE = 0.3;
 
+/**
+ * Is this business name a limited-liability company? A State IRS does not assess
+ * income tax on these (CIT is federal). Matches a trailing LTD / LIMITED / PLC
+ * legal-form suffix (with or without a full stop), case-insensitively:
+ *   "Acme Ltd", "Acme Ltd.", "ACME LIMITED", "Acme (Nigeria) PLC".
+ * `\b` word boundaries avoid false hits inside words (e.g. "Unlimited",
+ * "Limitless", the abbreviation in "Split Ltd Partners" is still caught — a
+ * conservative, over-inclusive choice that a staff override can correct).
+ */
+export function isLlcName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  return /\b(ltd|limited|plc)\b\.?/i.test(name);
+}
+
 /** Progressive PIT on a given annual income. */
 export function progressivePit(income: number, bands: TaxBand[] = PIT_BANDS): number {
   if (income <= 0) return 0;
@@ -63,25 +90,67 @@ export function progressivePit(income: number, bands: TaxBand[] = PIT_BANDS): nu
   return tax;
 }
 
+/** How a case's recoverable-tax figure was derived — stored for defensibility. */
+export type TaxBasis =
+  | 'PIT_GRADUATED' // graduated Nigeria Tax Act bands (individuals / unincorporated)
+  | 'NOT_ASSESSED_LLC'; // limited company — income tax is federal, not state-assessed
+
+export interface TaxEstimate {
+  /** Whether the STATE assessed income tax at all (false for LLCs). */
+  assessed: boolean;
+  /** Additional income tax recoverable on the gap (0 when not assessed). */
+  tax: number;
+  /** Which methodology produced `tax`. */
+  basis: TaxBasis;
+  /**
+   * Comparison figure: the gap taxed at a single configurable flat rate (seeded
+   * from the CIT rate). Presented alongside the graduated figure so an officer
+   * can sense-check the marginal computation. null when not assessed.
+   */
+  flatRate: number | null;
+  flatTax: number | null;
+}
+
 /**
- * Estimate the ADDITIONAL tax recoverable on undeclared income.
- * For individuals this is marginal: PIT(observed) − PIT(declared).
- * For companies it is CIT on the undeclared turnover slice (small-co exempt).
+ * Estimate the ADDITIONAL income tax recoverable on undeclared income.
+ *
+ * Limited-liability companies (LTD/Limited/PLC) are NOT income-assessed by a
+ * State IRS — CIT is federal. They return `{ assessed: false }` and are handled
+ * on the PAYE/remittance track instead.
+ *
+ * Everyone else is assessed on the graduated Nigeria Tax Act bands
+ * (marginal: PIT(observed) − PIT(declared)), and the same gap is ALSO taxed at
+ * a single configurable flat rate for side-by-side comparison.
  */
 export function estimateAdditionalTax(opts: {
   taxpayerType: 'INDIVIDUAL' | 'CORPORATE' | 'GOVERNMENT';
   declaredIncome: number;
   observedIncome: number;
-}): number {
-  const { taxpayerType, declaredIncome, observedIncome } = opts;
-  if (observedIncome <= declaredIncome) return 0;
+  /** True when the taxpayer is a limited company (name suffix or staff override). */
+  isLimitedLiability?: boolean;
+  /** Configurable flat comparison rate, seeded from CIT (default 0.30). */
+  flatRate?: number;
+}): TaxEstimate {
+  const { taxpayerType, declaredIncome, observedIncome, isLimitedLiability } = opts;
+  const rate = opts.flatRate ?? CIT_RATE;
 
-  if (taxpayerType === 'CORPORATE') {
-    if (observedIncome <= CIT_SMALL_CO_THRESHOLD) return 0;
-    return (observedIncome - declaredIncome) * CIT_RATE;
+  // Limited companies: income tax is a FEDERAL (FIRS) matter — do not assess.
+  if (isLimitedLiability) {
+    return { assessed: false, tax: 0, basis: 'NOT_ASSESSED_LLC', flatRate: null, flatTax: null };
   }
-  // INDIVIDUAL / GOVERNMENT → progressive PIT, marginal additional tax
-  return Math.max(0, progressivePit(observedIncome) - progressivePit(declaredIncome));
+
+  const gap = Math.max(0, observedIncome - declaredIncome);
+  if (gap <= 0) {
+    return { assessed: true, tax: 0, basis: 'PIT_GRADUATED', flatRate: rate, flatTax: 0 };
+  }
+
+  // Graduated Nigeria Tax Act bands — marginal additional tax on the gap.
+  // NOTE: `taxpayerType` no longer branches to CIT here; a "CORPORATE" that is
+  // NOT a limited company (an enterprise / business name) is assessable by the
+  // state and is treated on the graduated bands like an individual.
+  const tax = Math.max(0, progressivePit(observedIncome) - progressivePit(declaredIncome));
+  const flatTax = gap * rate;
+  return { assessed: true, tax, basis: 'PIT_GRADUATED', flatRate: rate, flatTax };
 }
 
 // ─── Inflow normalization ─────────────────────────────────────────────────

@@ -196,7 +196,6 @@ const STAT_FIELDS: { key: keyof StatutoryConfig; label: string; hint: string; ki
   { key: 'authorityResponseDays', label: 'Authority response (days)',             hint: '§41(6) — else objection deemed upheld', kind: 'days' },
   { key: 'latePaymentPenaltyRate',label: 'Late-payment penalty rate',             hint: 'Fraction, e.g. 0.10 = 10%', kind: 'rate' },
   { key: 'citRate',               label: 'Company income tax rate',               hint: 'Fraction, e.g. 0.30 = 30%', kind: 'rate' },
-  { key: 'citSmallCoThreshold',   label: 'Small-company CIT threshold (₦)',       hint: 'Turnover below which CIT is nil', kind: 'money' },
   { key: 'cgtRate',               label: 'Capital-gains tax rate',                hint: 'NTA §50 — fraction, e.g. 0.10 = 10%', kind: 'rate' },
   { key: 'defaultScanThreshold',  label: 'Default scan threshold',                hint: 'Discrepancy fraction to flag, e.g. 0.20', kind: 'rate' },
 ];
@@ -385,7 +384,7 @@ function ApiKeysPanel() {
       <div className="flex items-end gap-2">
         <div className="flex-1">
           <label className="block text-xs font-medium text-slate-700 mb-1">Partner name</label>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. FCT-IRS Taxpayer Portal"
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. KIRS eTax Taxpayer Portal"
             className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         </div>
         <button onClick={create} disabled={busy || !name.trim()}
