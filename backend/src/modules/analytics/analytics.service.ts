@@ -20,7 +20,11 @@ export class AnalyticsService {
       select: { id: true, name: true, providerType: true, providerCode: true },
     });
 
-    const recWhere = year ? { periodYear: year } : {};
+    // Exclude ₦0 account-opening records so per-provider record counts are real.
+    const recWhere: any = {
+      ...(year ? { periodYear: year } : {}),
+      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
+    };
 
     // Records + observed inflow + identity completeness per provider.
     const [recAgg, taxpayerAgg, flaggedAgg, submissionAgg] = await Promise.all([
@@ -106,7 +110,11 @@ export class AnalyticsService {
       select: { id: true, sector: true, type: true, tinIndex: true, cacRcNumber: true },
     });
 
-    const recWhere = year ? { periodYear: year } : {};
+    // Exclude ₦0 account-opening records so per-provider record counts are real.
+    const recWhere: any = {
+      ...(year ? { periodYear: year } : {}),
+      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
+    };
     const [inflowAgg, flaggedTps, cases] = await Promise.all([
       this.prisma.dataRecord.groupBy({
         by: ['taxpayerId'],

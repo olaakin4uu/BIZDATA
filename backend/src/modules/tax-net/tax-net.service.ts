@@ -51,7 +51,12 @@ export class TaxNetService {
     // Observed inflow per taxpayer (all records, or a given year).
     const inflowRows = await this.prisma.dataRecord.groupBy({
       by: ['taxpayerId'],
-      where: { taxpayerId: { not: null }, ...(opts.year ? { periodYear: opts.year } : {}) },
+      where: {
+        taxpayerId: { not: null },
+        ...(opts.year ? { periodYear: opts.year } : {}),
+        // exclude ₦0 account-opening rows so the per-taxpayer "records" count is real
+        NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
+      },
       _sum: { totalInflow: true },
       _count: { _all: true },
     });

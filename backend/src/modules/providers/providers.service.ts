@@ -227,7 +227,9 @@ export class ProvidersService {
           taxpayer: { select: { id: true, ninEnc: true, bvnEnc: true, tinEnc: true } },
         },
       }),
-      this.prisma.dataRecord.count({ where: { submissionId } }),
+      this.prisma.dataRecord.count({
+        where: { submissionId, NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } } },
+      }),
     ]);
 
     // Step-up already authorised the reveal — decrypt the linked taxpayer identifiers.

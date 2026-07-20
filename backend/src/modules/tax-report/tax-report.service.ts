@@ -116,7 +116,13 @@ export class TaxReportService {
     const name = tp.businessName || [tp.firstName, tp.middleName, tp.lastName].filter(Boolean).join(' ') || 'Unknown';
 
     // ── Income: observed (provider) per year, declared, undeclared ──
-    const recWhere = { taxpayerId, ...(opts.year ? { periodYear: opts.year } : {}) };
+    // Exclude ₦0 account-opening rows so the per-year record counts are real
+    // transactions (their inflow is already 0, so sums are unaffected either way).
+    const recWhere = {
+      taxpayerId,
+      ...(opts.year ? { periodYear: opts.year } : {}),
+      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
+    };
     const obs = await this.prisma.dataRecord.groupBy({
       by: ['periodYear'], where: recWhere, _sum: { totalInflow: true, totalOutflow: true }, _count: { _all: true },
     });

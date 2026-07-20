@@ -151,7 +151,7 @@ export class ProviderPortalService {
   async dashboard(providerId: string) {
     const [submissions, records, accepted, flagged] = await Promise.all([
       this.prisma.dataSubmission.count({ where: { providerId } }),
-      this.prisma.dataRecord.count({ where: { providerId } }),
+      this.prisma.dataRecord.count({ where: { providerId, NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } } } }),
       this.prisma.dataSubmission.count({ where: { providerId, status: 'ACCEPTED' } }),
       this.prisma.dataRecord.count({ where: { providerId, flaggedAsUnderdeclared: true } }),
     ]);

@@ -57,6 +57,9 @@ export class DataRecordsService {
       ...(query.flagged === 'true' ? { flaggedAsUnderdeclared: true } : {}),
       ...(query.flagged === 'false' ? { flaggedAsUnderdeclared: false } : {}),
       ...(query.reviewStatus ? { reviewStatus: query.reviewStatus } : {}),
+      // Account-opening records carry ₦0 inflow (identity graph only) — exclude them
+      // from this money-oriented list/count so they don't inflate record totals.
+      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
     };
     const [records, total] = await Promise.all([
       this.prisma.dataRecord.findMany({
@@ -142,9 +145,13 @@ export class DataRecordsService {
   }
 
   async stats() {
-    // Reportable-taxpayer records only (statutory threshold).
+    // Reportable-taxpayer records only (statutory threshold). Exclude ₦0
+    // account-opening records so counts reflect real transactions.
     const ids = [...(await this.reportable.reportableTaxpayerIds())];
-    const tp = { taxpayerId: { in: ids } } as Prisma.DataRecordWhereInput;
+    const tp = {
+      taxpayerId: { in: ids },
+      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
+    } as Prisma.DataRecordWhereInput;
     const [total, flagged, pendingReview, confirmed, cleared] = await Promise.all([
       this.prisma.dataRecord.count({ where: tp }),
       this.prisma.dataRecord.count({ where: { ...tp, flaggedAsUnderdeclared: true } }),

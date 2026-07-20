@@ -60,6 +60,10 @@ export class ReportableService {
              FROM data_records dr
              JOIN taxpayers t ON t.id = dr."taxpayerId"
             WHERE dr."taxpayerId" IS NOT NULL ${yearFilter}
+              -- Account-opening records (₦0, identity-only) never count toward the
+              -- statutory threshold. IS DISTINCT FROM also keeps legacy rows whose
+              -- payload has no recordKind key (NULL) — those remain reportable.
+              AND (dr.payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
             GROUP BY dr."taxpayerId", dr."periodLabel", t.type
          ) q
         WHERE (q.type = 'INDIVIDUAL' AND q.q_inflow >= ${indiv})
