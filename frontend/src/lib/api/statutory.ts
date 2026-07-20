@@ -12,6 +12,7 @@ export interface StatutoryConfig {
   defaultScanThreshold: number;
   providerPenaltyFirstMonth: number; // NTAA s.101 — first month of default
   providerPenaltyPerMonth: number;   // NTAA s.101 — each subsequent month
+  providerPenaltyPaymentDays: number; // days to settle a penalty demand (deadline on the notice)
   /** Penalty commencement date (YYYY-MM-DD) or null → enforce from every due date. */
   providerPenaltyEffectiveFrom: string | null;
   /** Date the phased-in compulsory fields become mandatory (YYYY-MM-DD) or null. */

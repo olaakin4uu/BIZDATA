@@ -30,6 +30,33 @@ export function s101Penalty(months: number, firstMonth: number, perMonth: number
 }
 
 /**
+ * Whole number → English words (for the amount-in-words on a demand letter, so
+ * the figure cannot be altered by a stray digit). Handles 0 … 999,999,999,999.
+ * Title-cased words joined without commas, e.g. 950000 → "Nine Hundred and Fifty Thousand".
+ */
+export function numberToWords(n: number): string {
+  n = Math.floor(Math.abs(n));
+  if (n === 0) return 'Zero';
+  const ones = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+    'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+  const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+  const below1000 = (x: number): string => {
+    let s = '';
+    if (x >= 100) { s += ones[Math.floor(x / 100)] + ' Hundred'; x %= 100; if (x) s += ' and '; }
+    if (x >= 20) { s += tens[Math.floor(x / 10)]; if (x % 10) s += '-' + ones[x % 10]; }
+    else if (x > 0) { s += ones[x]; }
+    return s;
+  };
+  const scales = [[1_000_000_000, 'Billion'], [1_000_000, 'Million'], [1_000, 'Thousand']] as const;
+  const parts: string[] = [];
+  for (const [value, label] of scales) {
+    if (n >= value) { parts.push(below1000(Math.floor(n / value)) + ' ' + label); n %= value; }
+  }
+  if (n > 0) parts.push(below1000(n));
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+}
+
+/**
  * §29 / §6.6 obligation tracking: for each provider, derive the periods it is
  * obliged to report (per its reporting frequency), the statutory due date
  * (period end + the configured reporting-due days), and whether a compliant
@@ -283,10 +310,21 @@ export class ProviderComplianceService {
     });
     if (!p) throw new NotFoundException('Penalty not found');
 
-    const tenant = await this.prisma.tenant.findFirst({ select: { name: true, shortName: true, logoUrl: true } });
+    const tenant = await this.prisma.tenant.findFirst({ select: { name: true, shortName: true, logoUrl: true, address: true, contactEmail: true, contactPhone: true } });
     const orgName = tenant?.name || 'Internal Revenue Service';
     const orgShort = tenant?.shortName || 'IRS';
     const orgLogo = tenant?.logoUrl || null;
+
+    // Payment window from the active statutory config → the demand deadline.
+    const cfg = await this.statutory.active();
+    const paymentDays = cfg.providerPenaltyPaymentDays;
+
+    // The officer serving the notice signs it.
+    const officer = await this.prisma.user.findUnique({
+      where: { id: staff.id }, select: { firstName: true, lastName: true, role: true },
+    });
+    const officerName = officer ? [officer.firstName, officer.lastName].filter(Boolean).join(' ') : null;
+    const officerRole = officer?.role ? String(officer.role).replace(/_/g, ' ') : null;
 
     // First service marks it NOTIFIED (keep a later PAID/WAIVED untouched).
     if (p.status === 'ASSESSED') {
@@ -303,14 +341,24 @@ export class ProviderComplianceService {
 
     const ngn = (v: any) => '₦' + Number(v ?? 0).toLocaleString();
     const esc = (s: any) => String(s ?? '').replace(/[<>&]/g, (ch) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[ch]!));
+    const fmtDate = (d: Date) => d.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
+    // Amount → words (naira), so the demand cannot be altered by a digit.
+    const inWords = (n: number) => `${numberToWords(Math.round(n))} naira only`;
     const now = new Date();
     const ref = esc(p.noticeRef ?? p.id.slice(0, 8).toUpperCase());
-    const genDate = now.toLocaleDateString('en-GB', { day: '2-digit', month: 'long', year: 'numeric' });
-    const genTime = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    const reasonLabel = p.reason === 'MISSING' ? 'Failure to file a return' : 'Late filing of a return';
+    const letterDate = fmtDate(now);
+    const dueDate = fmtDate(p.dueAt);
+    const deadline = new Date(now.getTime() + paymentDays * 86_400_000);
+    const deadlineDate = fmtDate(deadline);
+    const reasonLabel = p.reason === 'MISSING' ? 'failure to file a return' : 'late filing of a return';
     const first = Number(p.firstMonthAmount);
     const per = Number(p.perMonthAmount);
     const subsequent = Math.max(0, p.monthsInDefault - 1);
+    const total = Number(p.amount);
+    const providerName = esc(p.provider.name);
+    const providerAddr = p.provider.address ? esc(p.provider.address) : null;
+    const orgAddr = tenant?.address ? esc(tenant.address) : null;
+    const orgContacts = [tenant?.contactEmail, tenant?.contactPhone].filter(Boolean).map((x) => esc(x)).join(' · ');
 
     const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Penalty Notice ${ref}</title>
 <style>
@@ -324,79 +372,108 @@ export class ProviderComplianceService {
  .logo-img{height:56px;width:auto;max-width:220px;object-fit:contain}
  .lh h1{font-size:17px;margin:0;color:var(--ink)} .lh .sub{font-size:11px;color:var(--soft);margin-top:2px}
  .class-band{background:var(--brand);color:#fff;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;text-align:center;padding:5px;margin:16px 0 4px;border-radius:3px}
- .doctitle{text-align:center;margin:20px 0 4px} .doctitle h2{font-size:19px;margin:0;letter-spacing:.02em} .doctitle .ref{font-size:11px;color:var(--soft);margin-top:4px}
- h3{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--brand);border-bottom:1px solid var(--line);padding-bottom:5px;margin:26px 0 10px}
- .grid{display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:12px}
- .grid .k{color:var(--soft)} .grid .v{font-weight:600}
- table{width:100%;border-collapse:collapse;margin-top:6px;table-layout:fixed;font-size:11.5px}
+ .org-addr{font-size:10.5px;color:var(--soft);margin-top:2px;line-height:1.4}
+ .meta{display:flex;justify-content:space-between;align-items:flex-start;gap:24px;margin-top:22px}
+ .addr{font-size:12px;line-height:1.5} .addr .lbl{font-size:9.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--soft);margin-bottom:3px}
+ .addr .name{font-weight:700} .refbox{text-align:right;font-size:11px;color:var(--soft);white-space:nowrap}
+ .refbox .r{font-family:Consolas,monospace;color:var(--ink);font-weight:700}
+ .subject{margin:22px 0 6px;font-weight:700;font-size:13px;text-decoration:underline;text-underline-offset:3px}
+ p.body{font-size:12px;margin:11px 0;text-align:justify}
+ ol.clauses{margin:12px 0;padding-left:20px} ol.clauses li{margin:9px 0;font-size:12px;text-align:justify}
+ table{width:100%;border-collapse:collapse;margin:10px 0;table-layout:fixed;font-size:11.5px}
  th,td{text-align:left;padding:7px 8px;border-bottom:1px solid var(--line);overflow-wrap:anywhere;vertical-align:top}
- th{font-size:9.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--soft);background:var(--bg)}
  .num{text-align:right;font-variant-numeric:tabular-nums} tr.tot td{font-weight:800;color:var(--bad);border-top:2px solid var(--ink);border-bottom:none;background:#fef2f2}
- p.body{font-size:12px;margin:10px 0}
- .note{font-size:10.5px;color:var(--soft);margin-top:8px}
- .sig{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:44px}
- .sig .line{border-top:1px solid var(--ink);padding-top:5px;font-size:11px;color:var(--soft)}
- .foot{margin-top:36px;border-top:1px solid var(--line);padding-top:10px;font-size:9.5px;color:var(--soft)}
+ .demand{border:1.5px solid var(--bad);background:#fef2f2;border-radius:6px;padding:12px 16px;margin:16px 0;font-size:12.5px}
+ .demand strong{color:var(--bad)}
+ .note{font-size:10.5px;color:var(--soft);margin-top:6px}
+ .sig{margin-top:40px} .sig .who{font-weight:700;font-size:12px} .sig .role{font-size:11px;color:var(--soft)}
+ .sig .rule{width:230px;border-top:1px solid var(--ink);margin:36px 0 5px}
+ .foot{margin-top:34px;border-top:1px solid var(--line);padding-top:10px;font-size:9.5px;color:var(--soft)}
  .toolbar{position:fixed;top:14px;right:14px;z-index:10;display:flex;gap:8px}
  .btn{background:var(--brand);color:#fff;border:none;border-radius:7px;padding:9px 16px;font-size:12px;font-weight:600;cursor:pointer;box-shadow:0 2px 6px rgba(15,23,42,.2)}
- .btn.ghost{background:#fff;color:var(--ink);border:1px solid var(--line)}
- @media print{ @page{size:A4;margin:14mm} body{background:#fff} .sheet{box-shadow:none;margin:0;max-width:none;padding:0} .toolbar,.noprint{display:none!important} }
+ @media print{ @page{size:A4;margin:16mm} body{background:#fff} .sheet{box-shadow:none;margin:0;max-width:none;padding:0} .toolbar,.noprint{display:none!important} }
 </style></head><body>
  <div class="toolbar noprint"><button class="btn" onclick="window.print()">Print / Save PDF</button></div>
  <div class="sheet"><div class="content">
    <div class="lh">
      ${orgLogo ? `<img class="logo-img" src="${esc(orgLogo)}" alt="${esc(orgName)}">` : `<div class="crest">${esc(orgShort)}</div>`}
-     <div><h1>${esc(orgName)}</h1><div class="sub">Third-Party Reporting Compliance · Provider Enforcement</div></div>
-   </div>
-   <div class="class-band">Notice of administrative penalty · NTAA 2025 §101</div>
-
-   <div class="doctitle">
-     <h2>Provider Penalty Notice</h2>
-     <div class="ref">Ref: <strong>${ref}</strong> · Period ${esc(p.periodLabel)} · Issued ${genDate} ${genTime}</div>
+     <div>
+       <h1>${esc(orgName)}</h1>
+       <div class="sub">Third-Party Reporting Compliance · Provider Enforcement Unit</div>
+       ${orgAddr || orgContacts ? `<div class="org-addr">${[orgAddr, orgContacts].filter(Boolean).join('<br>')}</div>` : ''}
+     </div>
    </div>
 
-   <h3>Reporting entity</h3>
-   <div class="grid">
-     <div><span class="k">Provider:</span> <span class="v">${esc(p.provider.name)}</span></div>
-     <div><span class="k">Type:</span> <span class="v">${esc(String(p.provider.providerType).replace(/_/g, ' '))}</span></div>
-     <div><span class="k">Contact:</span> <span class="v">${esc(p.provider.contactEmail ?? '—')}</span></div>
-     <div><span class="k">Address:</span> <span class="v">${esc(p.provider.address ?? '—')}</span></div>
+   <div class="meta">
+     <div class="addr">
+       <div class="lbl">To</div>
+       <div class="name">The Managing Director / Chief Compliance Officer</div>
+       <div>${providerName}</div>
+       ${providerAddr ? `<div>${providerAddr}</div>` : ''}
+       ${p.provider.contactEmail ? `<div>${esc(p.provider.contactEmail)}</div>` : ''}
+     </div>
+     <div class="refbox">
+       Our Ref: <span class="r">${ref}</span><br>
+       Date: ${letterDate}
+     </div>
    </div>
+
+   <p class="body">Dear Sir/Madam,</p>
+
+   <div class="subject">RE: NOTICE AND DEMAND FOR ADMINISTRATIVE PENALTY — LATE / NON-FILING OF STATUTORY RETURN FOR ${esc(p.periodLabel).toUpperCase()} (NTAA 2025, §101)</div>
 
    <p class="body">
-     Records held by ${esc(orgName)} show that the statutory return for the period
-     <strong>${esc(p.periodLabel)}</strong> was, as at the date of this notice,
-     <strong>${esc(reasonLabel.toLowerCase())}</strong>. The return fell due on
-     <strong>${esc(p.dueAt.toDateString())}</strong> (NTAA 2025 §29). An administrative
-     penalty is accordingly assessed under NTAA 2025 §101.
+     Under the Nigeria Tax Administration Act, 2025 (the &ldquo;Act&rdquo;), your organisation is obliged as a
+     designated reporting institution to file periodic statutory returns with this Authority within the time
+     prescribed by §29 of the Act. The records maintained by this Authority disclose that the return for the
+     reporting period <strong>${esc(p.periodLabel)}</strong>, which fell due on <strong>${dueDate}</strong>, is in
+     default on the ground of <strong>${reasonLabel}</strong> as at the date of this letter.
    </p>
 
-   <h3>Penalty assessment — NTAA 2025 §101</h3>
+   <p class="body">
+     <strong>TAKE NOTICE</strong> that, by reason of the said default, an administrative penalty has been assessed
+     against your organisation under §101 of the Act, computed as follows:
+   </p>
+
    <table>
-    <tr><td>Basis of default</td><td class="num">${esc(reasonLabel)}</td></tr>
-    <tr><td>Return due date (§29)</td><td class="num">${esc(p.dueAt.toDateString())}</td></tr>
+    <tr><td>Reporting period in default</td><td class="num">${esc(p.periodLabel)}</td></tr>
+    <tr><td>Statutory due date (§29)</td><td class="num">${dueDate}</td></tr>
     <tr><td>Whole months in default</td><td class="num">${p.monthsInDefault}</td></tr>
-    <tr><td>First month of default</td><td class="num">${ngn(first)}</td></tr>
-    <tr><td>Subsequent months (${subsequent} × ${ngn(per)})</td><td class="num">${ngn(subsequent * per)}</td></tr>
-    <tr class="tot"><td>Total penalty payable</td><td class="num">${ngn(p.amount)}</td></tr>
+    <tr><td>Penalty — first month of default</td><td class="num">${ngn(first)}</td></tr>
+    <tr><td>Penalty — ${subsequent} subsequent month${subsequent === 1 ? '' : 's'} (at ${ngn(per)} each)</td><td class="num">${ngn(subsequent * per)}</td></tr>
+    <tr class="tot"><td>Total penalty now payable</td><td class="num">${ngn(total)}</td></tr>
    </table>
-   <p class="note">Computed as the first-month fine plus a further fine for each subsequent month the default continues
-   (§101). Statutory config version ${p.statutoryVersion ?? '—'}. The penalty continues to accrue until the return is filed.</p>
+   <p class="note">Assessed under NTAA 2025 §101 (first-month fine plus a further fine for each subsequent month of continuing default). Statutory parameters version ${p.statutoryVersion ?? '—'}.</p>
+
+   <div class="demand">
+     <strong>YOU ARE HEREBY REQUIRED</strong> to pay the sum of <strong>${ngn(total)}</strong>
+     (<strong>${esc(inWords(total))}</strong>) to ${esc(orgName)} on or before <strong>${deadlineDate}</strong>
+     (being ${paymentDays} days from the date of this notice).
+   </div>
+
+   <p class="body"><strong>AND FURTHER TAKE NOTICE</strong> as follows:</p>
+   <ol class="clauses">
+     <li>This penalty is <strong>separate from and additional to</strong> your obligation to file the outstanding return. The return remains due and must be filed.</li>
+     <li>The penalty <strong>continues to accrue</strong> at ${ngn(per)} for each further month the return remains unfiled, until it is filed. Prompt filing limits your liability.</li>
+     <li>Payment must be made through the payment channels prescribed by ${esc(orgName)}, quoting the reference <strong>${ref}</strong> on all correspondence and remittances.</li>
+     <li>Should the sum demanded remain unpaid after <strong>${deadlineDate}</strong>, this Authority shall proceed to <strong>recover the amount as a debt due</strong>, together with any further accrued penalty, by the enforcement and recovery measures available to it under the Act, without further notice to you.</li>
+   </ol>
 
    <p class="body">
-     To resolve this notice, file the outstanding return without further delay and settle the penalty above through
-     the channels prescribed by ${esc(orgName)}. Filing the return stops further monthly accrual. If you believe this
-     notice is issued in error, contact the authority quoting the reference above.
+     Kindly treat this matter with the urgency it deserves. Any enquiry regarding this notice should be directed to
+     this Authority quoting the reference above.
    </p>
 
    <div class="sig">
-     <div class="line">Authorised officer, ${esc(orgName)}</div>
-     <div class="line">Date of service</div>
+     <p class="body" style="margin-bottom:0">Yours faithfully,</p>
+     <div class="rule"></div>
+     <div class="who">${officerName ? esc(officerName) : 'Authorised Officer'}</div>
+     <div class="role">${officerRole ? esc(officerRole) + ', ' : 'For: '}${esc(orgName)}</div>
    </div>
 
    <div class="foot">
-     This is an official notice generated by ${esc(orgName)}. Ref ${ref}. Served ${genDate} ${genTime}.
-     NTAA 2025 §101 (failure/late filing of returns) · §29 (reporting obligation).
+     This is an official demand notice issued by ${esc(orgName)} under the Nigeria Tax Administration Act, 2025
+     (§29 reporting obligation; §101 penalty). Reference ${ref}. Issued ${letterDate}.
    </div>
  </div></div>
 </body></html>`;

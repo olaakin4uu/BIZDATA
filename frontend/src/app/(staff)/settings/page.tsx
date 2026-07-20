@@ -200,6 +200,7 @@ const STAT_FIELDS: { key: keyof StatutoryConfig; label: string; hint: string; ki
   { key: 'defaultScanThreshold',  label: 'Default scan threshold',                hint: 'Discrepancy fraction to flag, e.g. 0.20', kind: 'rate' },
   { key: 'providerPenaltyFirstMonth', label: 'Provider penalty — first month (₦)', hint: 'NTAA §101 — fine for the first month of default', kind: 'money' },
   { key: 'providerPenaltyPerMonth',   label: 'Provider penalty — each month after (₦)', hint: 'NTAA §101 — fine for each subsequent month', kind: 'money' },
+  { key: 'providerPenaltyPaymentDays', label: 'Penalty payment window (days)', hint: 'Days a provider is given to settle a penalty demand — printed on the notice', kind: 'days' },
 ];
 
 function StatutoryPanel() {

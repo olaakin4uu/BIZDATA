@@ -777,6 +777,9 @@ model StatutoryConfig {
   // gazetted figures over time. Seeded from s.101 (₦100k first / ₦50k each after).
   providerPenaltyFirstMonth Decimal @default(100000) @db.Decimal(18, 2)
   providerPenaltyPerMonth   Decimal @default(50000)  @db.Decimal(18, 2)
+  // Days a provider is given to settle a penalty demand, counted from the notice
+  // date. Printed on the formal demand letter as the payment deadline.
+  providerPenaltyPaymentDays Int @default(30)
   // Commencement date for provider penalties. A period is penalised only if its
   // statutory due date falls on/after this date — so nothing accrues before the
   // authority formally begins enforcement. Null → enforce from every due date.
