@@ -7,7 +7,8 @@ export interface IrisCard {
   kind: string;
   title: string;
   summary: string;
-  details?: Record<string, unknown>;
+  details?: { label: string; value: string }[];
+  body?: string;
 }
 
 export interface IrisChatResponse {
@@ -48,17 +49,20 @@ export const irisApi = {
 
 export interface IrisStreamHandlers {
   onThinking?: (text: string) => void;
+  onTool?: (name: string) => void;
   onDelta: (text: string) => void;
   onDone: (r: { conversationId: string; reply: string; cards: IrisCard[] }) => void;
   onError: (message: string) => void;
+  onStopped?: () => void;
 }
 
-/** Stream a reply over SSE (delta → done). Reads the POST body stream directly
- *  since apiFetch parses JSON. */
+/** Stream a reply over SSE (thinking → tool → delta → done). Reads the POST
+ *  body stream directly since apiFetch parses JSON. Pass an AbortSignal to stop. */
 export async function chatStream(
   message: string,
   conversationId: string | undefined,
   h: IrisStreamHandlers,
+  signal?: AbortSignal,
 ): Promise<void> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
   let res: Response;
@@ -67,9 +71,11 @@ export async function chatStream(
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify({ message, conversationId }),
+      signal,
     });
   } catch {
-    h.onError('Network error.');
+    if (signal?.aborted) h.onStopped?.();
+    else h.onError('Network error.');
     return;
   }
   if (!res.ok || !res.body) {
@@ -79,25 +85,31 @@ export async function chatStream(
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
   let buf = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += decoder.decode(value, { stream: true });
-    const parts = buf.split('\n\n');
-    buf = parts.pop() ?? '';
-    for (const part of parts) {
-      const line = part.trim();
-      if (!line.startsWith('data:')) continue;
-      try {
-        const e = JSON.parse(line.slice(5).trim());
-        if (e.type === 'thinking') h.onThinking?.(e.text);
-        else if (e.type === 'delta') h.onDelta(e.text);
-        else if (e.type === 'done') h.onDone(e);
-        else if (e.type === 'error') h.onError(e.message);
-      } catch {
-        /* ignore partial frame */
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      const parts = buf.split('\n\n');
+      buf = parts.pop() ?? '';
+      for (const part of parts) {
+        const line = part.trim();
+        if (!line.startsWith('data:')) continue;
+        try {
+          const e = JSON.parse(line.slice(5).trim());
+          if (e.type === 'thinking') h.onThinking?.(e.text);
+          else if (e.type === 'tool') h.onTool?.(e.name);
+          else if (e.type === 'delta') h.onDelta(e.text);
+          else if (e.type === 'done') h.onDone(e);
+          else if (e.type === 'error') h.onError(e.message);
+        } catch {
+          /* ignore partial frame */
+        }
       }
     }
+  } catch {
+    if (signal?.aborted) h.onStopped?.();
+    else h.onError('Stream interrupted.');
   }
 }
 

@@ -20,7 +20,8 @@ export class DraftProposer {
       title: string;
       summary: string;
       payload: Record<string, unknown>;
-      details?: Record<string, unknown>;
+      details?: { label: string; value: string }[];
+      body?: string;
     },
   ): Promise<ConfirmRequired> {
     const draft = await this.prisma.irisDraft.create({
@@ -41,6 +42,7 @@ export class DraftProposer {
         title: input.title,
         summary: input.summary,
         details: input.details,
+        body: input.body,
       },
     };
   }

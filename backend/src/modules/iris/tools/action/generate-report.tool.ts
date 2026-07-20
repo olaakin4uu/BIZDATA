@@ -58,7 +58,12 @@ export class GenerateReportTool implements ActionTool {
       title: `Generate ${format.toUpperCase()} case report`,
       summary: `Generate an encrypted ${format.toUpperCase()} report of ${Math.min(count, REPORT_CAP)} underdeclaration case(s) (${scope}${args.status ? `, status ${args.status}` : ''}). Only you will be able to download it.`,
       payload: { format, year: args.year ?? null, status: args.status ?? null },
-      details: { format, matchingCases: count, capped: count > REPORT_CAP ? REPORT_CAP : count },
+      details: [
+        { label: 'Format', value: format.toUpperCase() },
+        { label: 'Cases in report', value: String(Math.min(count, REPORT_CAP)) },
+        ...(args.year ? [{ label: 'Year', value: String(args.year) }] : []),
+        ...(args.status ? [{ label: 'Status', value: String(args.status) }] : []),
+      ],
     });
   }
 

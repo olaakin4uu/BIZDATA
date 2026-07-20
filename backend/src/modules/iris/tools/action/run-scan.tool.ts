@@ -47,7 +47,10 @@ export class RunScanTool implements ActionTool {
         (threshold != null ? `at a ${Math.round(threshold * 100)}% discrepancy threshold` : 'at the statutory default threshold') +
         '. This re-scans all reportable taxpayers and updates their cases.',
       payload: { year, threshold: threshold ?? null },
-      details: { year, threshold: threshold ?? 'statutory default' },
+      details: [
+        { label: 'Year', value: String(year) },
+        { label: 'Threshold', value: threshold != null ? `${Math.round(threshold * 100)}%` : 'Statutory default' },
+      ],
     });
   }
 

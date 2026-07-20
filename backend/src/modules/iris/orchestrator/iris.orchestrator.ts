@@ -19,6 +19,7 @@ export interface IrisTurnResult {
 export interface IrisStreamEvents {
   onDelta?: (text: string) => void; // restored (real-name) answer text
   onThinking?: (text: string) => void; // restored summarised reasoning
+  onTool?: (name: string) => void; // a tool is about to run (for a progress hint)
 }
 
 function stripThinking(content: unknown): unknown {
@@ -118,6 +119,7 @@ export class IrisOrchestrator {
       const toolUses = res.content.filter((b): b is Anthropic.ToolUseBlock => b.type === 'tool_use');
       const toolResults: Anthropic.ToolResultBlockParam[] = [];
       for (const use of toolUses) {
+        input.events?.onTool?.(use.name);
         const realInput = pseudo.restoreValue(use.input ?? {}) as Record<string, unknown>;
         const r = await this.executor.run(use.id, use.name, realInput, input.ctx);
         if (r.raw) pseudo.scanValue(r.raw);

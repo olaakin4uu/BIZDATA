@@ -29,7 +29,10 @@ export interface ConfirmRequired {
     kind: string; // 'report' | 'scan' | 'notice'
     title: string;
     summary: string;
-    details?: Record<string, unknown>;
+    // Human-readable, pre-formatted key facts for the confirm card (label + value).
+    details?: { label: string; value: string }[];
+    // Long-form text shown as a block (e.g. a drafted §35 cover narrative).
+    body?: string;
   };
 }
 

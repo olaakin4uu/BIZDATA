@@ -15,6 +15,7 @@ export interface IrisChatResult {
 
 export type IrisStreamEvent =
   | { type: 'thinking'; text: string }
+  | { type: 'tool'; name: string }
   | { type: 'delta'; text: string }
   | { type: 'done'; conversationId: string; reply: string; cards: unknown[] }
   | { type: 'error'; message: string };
@@ -112,6 +113,7 @@ export class IrisService {
         events: {
           onDelta: (text) => emit({ type: 'delta', text }),
           onThinking: (text) => emit({ type: 'thinking', text }),
+          onTool: (name) => emit({ type: 'tool', name }),
         },
       });
       await this.persistTurn(convo, history, result, staff);

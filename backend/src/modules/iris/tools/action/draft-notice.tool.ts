@@ -66,14 +66,14 @@ export class DraftNoticeTool implements ActionTool {
         `Estimated tax due ₦${Math.round(num(c.estimatedTaxDue)).toLocaleString()}; a 10% late-payment penalty is added and a 30-day objection window opens on confirmation.` +
         readyNote,
       payload: { caseId: c.id, coverText },
-      details: {
-        taxpayer,
-        year: c.year,
-        estimatedTaxDue: num(c.estimatedTaxDue),
-        confidencePct: Math.round(num(c.confidence) * 100),
-        currentStatus: c.status,
-        ...(coverText ? { coverNarrative: coverText } : {}),
-      },
+      details: [
+        { label: 'Taxpayer', value: taxpayer },
+        { label: 'Year', value: String(c.year) },
+        { label: 'Estimated tax', value: `₦${Math.round(num(c.estimatedTaxDue)).toLocaleString('en-NG')}` },
+        { label: 'Confidence', value: `${Math.round(num(c.confidence) * 100)}%` },
+        { label: 'Current status', value: c.status },
+      ],
+      body: coverText || undefined,
     });
   }
 
