@@ -30,6 +30,10 @@ export class ProviderUsersService {
         phone: dto.phone,
         role: dto.role || 'COMPLIANCE_OFFICER',
         isActive: dto.isActive !== false,
+        // New provider accounts are created with an admin-set password, so force
+        // the provider to set their own on first login (mirrors the tightening
+        // applied to imported provider logins). Cannot be disabled.
+        mustChangePassword: true,
       },
     });
 

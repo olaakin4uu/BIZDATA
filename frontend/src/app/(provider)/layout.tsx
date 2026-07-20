@@ -14,11 +14,16 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
     pathname === '/provider/forgot-password' ||
     pathname === '/provider/reset-password';
 
+  // A provider forced to change their password may only reach the profile page
+  // until they do — no navigating around it to the dashboard etc.
+  const mustChange = !!user?.mustChangePassword;
+  const onProfile = pathname === '/provider/profile';
+
   useEffect(() => {
-    if (!isPublicAuthRoute && (!token || !user)) {
-      router.replace('/provider/login');
-    }
-  }, [isPublicAuthRoute, token, user, router]);
+    if (isPublicAuthRoute) return;
+    if (!token || !user) { router.replace('/provider/login'); return; }
+    if (mustChange && !onProfile) router.replace('/provider/profile');
+  }, [isPublicAuthRoute, token, user, mustChange, onProfile, router]);
 
   if (isPublicAuthRoute) return <>{children}</>;
 
@@ -27,6 +32,16 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
       <div className="flex min-h-screen items-center justify-center gap-2 text-[var(--ink-3)] text-sm">
         <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
         Redirecting to sign in…
+      </div>
+    );
+  }
+
+  // Block everything but the profile page while a password change is mandatory.
+  if (mustChange && !onProfile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center gap-2 text-[var(--ink-3)] text-sm">
+        <span className="inline-block h-4 w-4 animate-spin rounded-full border-2 border-teal-500 border-t-transparent" />
+        Please set a new password to continue…
       </div>
     );
   }

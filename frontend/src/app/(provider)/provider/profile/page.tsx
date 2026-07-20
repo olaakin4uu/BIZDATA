@@ -37,6 +37,9 @@ export default function ProviderProfilePage() {
       await providerPortalApi.changePassword(pwForm.currentPassword, pwForm.newPassword);
       setPwMsg('Password updated.');
       setPwForm({ currentPassword: '', newPassword: '', confirm: '' });
+      // Clear the forced-change flag locally so the layout guard releases the
+      // provider to the rest of the portal (the backend already cleared it).
+      if (me?.mustChangePassword) setUser({ ...me, mustChangePassword: false });
     } catch (err) {
       setPwErr(extractErrorMessage(err));
     } finally {
