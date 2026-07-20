@@ -89,3 +89,6 @@ erev_backup_*.sql
 /*.gif
 /*.mp4
 /*.mov
+
+# Local scratch notes (may contain secrets — never commit)
+/note.md
