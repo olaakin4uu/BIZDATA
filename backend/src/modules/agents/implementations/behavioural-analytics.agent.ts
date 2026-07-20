@@ -205,11 +205,27 @@ export function periodOrder(rec: ProfileRecord): number {
   const yearBase = (rec.periodYear || 0) * 100;
   const label = (rec.periodLabel || '').toLowerCase();
 
+  // Quarter form "YYYY-Qn" / "Qn" — map to month-of-quarter-start so it orders
+  // and interleaves correctly with monthly labels. IMPORTANT: match the quarter
+  // digit specifically; a naive \d+ would grab the YEAR out of "2025-q1" and
+  // collapse every quarter of a year onto the same order key (which silently
+  // flattened multi-quarter taxpayers to a single period).
+  const q = label.match(/q\s*([1-4])/);
+  if (q) return yearBase + (Number(q[1]) - 1) * 3 + 1; // Q1->1, Q2->4, Q3->7, Q4->10
+
   const month = MONTHS.findIndex((m) => label.includes(m));
   if (month >= 0) return yearBase + (month + 1);
 
-  const num = label.match(/\d+/);
-  if (num) return yearBase + Number(num[0]);
+  // "YYYY-MM" numeric month form: take the MONTH (the 1-2 digit group after the
+  // year), not the year. Fall back to the last number in the label otherwise.
+  const ym = label.match(/^\d{4}[-/](\d{1,2})/);
+  if (ym) return yearBase + Number(ym[1]);
+  const nums = label.match(/\d+/g);
+  if (nums) {
+    // ignore a leading 4-digit year token; use the next number as the ordinal.
+    const rel = nums.find((n) => !(n.length === 4 && Number(n) === (rec.periodYear || 0)));
+    if (rel) return yearBase + Number(rel);
+  }
 
   return yearBase;
 }
