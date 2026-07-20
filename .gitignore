@@ -92,3 +92,8 @@ erev_backup_*.sql
 
 # Local scratch notes (may contain secrets — never commit)
 /note.md
+
+# Bank-filing import data (PII — never commit; transfer to VM out-of-band)
+backend/scripts/import_records.jsonl
+backend/scripts/staging_records.jsonl
+backend/scripts/provider-map.json
