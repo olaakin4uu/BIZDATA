@@ -104,8 +104,8 @@ export class ScanService {
       let totalFlagged = 0;
       let totalEstimatedTax = 0;
 
-      // STATUTORY REPORTING THRESHOLD — only taxpayers whose cumulative inflow in
-      // a quarter meets their type's threshold may be reported. Everyone else is
+      // STATUTORY REPORTING THRESHOLD — only taxpayers whose §29 cumulative inflow
+      // in a month meets their type's threshold may be reported. Everyone else is
       // never scanned/flagged/cased, no matter how much data was uploaded.
       const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
 

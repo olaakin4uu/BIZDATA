@@ -59,6 +59,13 @@ export interface BenchmarkContext {
 
 export interface AgentContext {
   benchmarks: BenchmarkContext;
+  /**
+   * NTAA 2025 §29 reporting thresholds (NGN) by taxpayer type, from the active
+   * StatutoryConfig (authoritative gazette: ₦50m individual / ₦250m corporate).
+   * Used by structuring detection so the "just under the line" heuristic tracks
+   * the real statutory thresholds instead of a hardcoded copy.
+   */
+  section29Thresholds: Record<TaxpayerType, number>;
 }
 
 export interface AgentSignal {

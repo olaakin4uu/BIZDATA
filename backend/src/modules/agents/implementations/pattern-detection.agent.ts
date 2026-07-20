@@ -10,16 +10,21 @@ import {
 } from '../agent.types';
 
 /**
- * §29 reporting thresholds (NGN) above which a financial institution must file a
- * report. Structuring is the practice of keeping individual flows just BELOW the
- * applicable threshold to avoid triggering that report.
+ * Fallback §29 reporting thresholds (NGN) above which a financial institution
+ * must file a report — the authoritative gazette figures (₦50m individual /
+ * ₦250m corporate, NTAA 2025 §29). Structuring is keeping individual flows just
+ * BELOW the applicable threshold to avoid triggering that report.
+ *
+ * These are only a fallback: at runtime the agent uses the live, configurable
+ * thresholds passed in via AgentContext.section29Thresholds (sourced from
+ * StatutoryConfig), so a change in the law is a settings change, not a code edit.
  */
 export const SECTION_29_THRESHOLDS: Record<TaxpayerType, number> = {
-  INDIVIDUAL: 25_000_000,
-  CORPORATE: 100_000_000,
+  INDIVIDUAL: 50_000_000,
+  CORPORATE: 250_000_000,
   // Government bodies are not the target of §29 structuring; treat as corporate
   // band so the heuristic still runs without special-casing the caller.
-  GOVERNMENT: 100_000_000,
+  GOVERNMENT: 250_000_000,
 };
 
 /** A value within [floor, threshold) — i.e. clustering just under the line. */
@@ -102,8 +107,11 @@ export class PatternDetectionAgent implements AnalyticsAgent {
   readonly key = 'pattern';
   readonly name = 'Pattern Detection';
 
-  analyze(profile: TaxpayerProfile, _ctx: AgentContext): AgentSignal | null {
-    const threshold = SECTION_29_THRESHOLDS[profile.type] ?? SECTION_29_THRESHOLDS.CORPORATE;
+  analyze(profile: TaxpayerProfile, ctx: AgentContext): AgentSignal | null {
+    // Prefer the live, configurable §29 thresholds from StatutoryConfig; fall
+    // back to the gazette constants if the context didn't supply them.
+    const thresholds = ctx.section29Thresholds ?? SECTION_29_THRESHOLDS;
+    const threshold = thresholds[profile.type] ?? thresholds.CORPORATE;
     const floor = threshold * STRUCTURING_FLOOR;
     const records = profile.records ?? [];
 

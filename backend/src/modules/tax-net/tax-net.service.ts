@@ -77,7 +77,7 @@ export class TaxNetService {
     }
 
     // STATUTORY REPORTING THRESHOLD — Tax Net only concerns parties that are
-    // reportable (cumulative quarterly inflow >= their type threshold). Below-
+    // reportable (§29 cumulative monthly inflow >= their type threshold). Below-
     // threshold parties are never shown, however much data was uploaded.
     const reportableIds = await this.reportable.reportableTaxpayerIds({ year: opts.year });
 

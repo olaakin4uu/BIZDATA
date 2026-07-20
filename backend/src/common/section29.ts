@@ -4,9 +4,10 @@ import { BadRequestException } from '@nestjs/common';
  * NTAA 2025 §29 scope — financial-institution data submission.
  *
  * §29 places the reporting obligation on FINANCIAL INSTITUTIONS: they must file
- * quarterly returns of any customer whose transactions in the quarter exceed the
- * §29 thresholds (₦25m individual / ₦100m corporate). This platform therefore
- * only accepts data from provider types that ARE §29 financial institutions —
+ * annual returns of any customer whose cumulative transactions IN A MONTH reach
+ * the §29 thresholds (₦50m individual / ₦250m corporate — authoritative gazette
+ * No. 117 of 26 Jun 2025). This platform therefore only accepts data from
+ * provider types that ARE §29 financial institutions —
  * CBN-regulated deposit-takers / account holders / financial-transaction
  * processors, plus insurers.
  *

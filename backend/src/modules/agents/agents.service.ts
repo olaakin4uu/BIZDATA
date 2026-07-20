@@ -91,7 +91,18 @@ export class AgentsService {
   async run(year: number, staffId?: string) {
     this.logger.log(`Running ${AGENTS.length} analytics agents for ${year}`);
     const profiles = await this.buildProfiles(year);
-    const ctx: AgentContext = { benchmarks: this.benchmarking.build(profiles) };
+    // §29 thresholds from the active StatutoryConfig (authoritative ₦50m/₦250m),
+    // so structuring detection tracks the real statutory lines. GOVERNMENT reuses
+    // the corporate line (it is not the target of §29 structuring).
+    const t29 = await this.reportable.thresholds();
+    const ctx: AgentContext = {
+      benchmarks: this.benchmarking.build(profiles),
+      section29Thresholds: {
+        INDIVIDUAL: t29.individual,
+        CORPORATE: t29.corporate,
+        GOVERNMENT: t29.corporate,
+      },
+    };
 
     // Persist the inferred sector back to each taxpayer so sector-by-sector
     // analytics has data to work with. Runs for ALL profiles (not just those the

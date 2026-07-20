@@ -6,13 +6,24 @@ import { StatutoryService } from '../../modules/statutory/statutory.service';
  * STATUTORY REPORTING THRESHOLD — the single source of truth for "who may be
  * reported at all".
  *
- * By law a party only becomes reportable once its cumulative inflow within a
- * reporting period (a quarter, matching how providers submit) reaches:
+ * NTAA 2025 §29 (authoritative gazette, No. 117 of 26 Jun 2025) makes a party
+ * reportable once its cumulative transactions IN A MONTH reach:
  *   - individuals: reportingThresholdIndividual (default ₦50m)
  *   - corporates:  reportingThresholdCorporate  (default ₦250m)
  * Both figures live in StatutoryConfig and are configurable.
  *
- * A taxpayer is reportable if they cross the threshold in AT LEAST ONE quarter
+ * The trigger is MONTHLY-cumulative. Records carry a `periodLabel` of YYYY-MM
+ * (monthly), YYYY-Qn (quarterly) or YYYY (annual). We evaluate the threshold per
+ * (taxpayer, period) using the finest period each record was submitted at:
+ *   - monthly data  → exact §29 monthly trigger;
+ *   - coarser data (a quarter/year total) → compared against the same monthly
+ *     threshold. This is CONSERVATIVE: a coarse total ≥ the monthly threshold
+ *     makes the party reportable, and a coarse total cannot be split into months
+ *     without finer data, so we never under-capture. (It can slightly over-
+ *     capture a party whose coarse total clears the line but no single month
+ *     does — acceptable, and avoidable only by submitting monthly data.)
+ *
+ * A taxpayer is reportable if they cross the threshold in AT LEAST ONE period
  * (once reportable, all of their data is in scope). Every reporting surface —
  * scan, cases, flagged, tax-net, analytics, agents, taxpayer/record lists —
  * filters through `reportableTaxpayerIds()` so below-threshold parties never
@@ -26,18 +37,21 @@ export class ReportableService {
   ) {}
 
   /**
-   * The set of taxpayer ids that are reportable. Optionally scoped to a year
-   * (quarters within that year); otherwise every quarter on record is considered.
-   * Uses one grouped-SQL pass over (taxpayer, quarter) sums — cheap and exact.
+   * The set of taxpayer ids that are reportable. Optionally scoped to a year;
+   * otherwise every period on record is considered. Uses one grouped-SQL pass
+   * over (taxpayer, period) sums — cheap and exact. The §29 trigger is monthly;
+   * grouping by `periodLabel` gives the exact monthly cumulative for monthly
+   * data and a conservative approximation for coarser periods (see class docs).
    */
   async reportableTaxpayerIds(opts: { year?: number } = {}): Promise<Set<string>> {
     const cfg = await this.statutory.active();
     const indiv = cfg.reportingThresholdIndividual;
     const corp = cfg.reportingThresholdCorporate;
 
-    // Sum inflow per (taxpayer, quarter), keep taxpayers whose type-specific
-    // threshold is met in any quarter. Raw SQL so the threshold comparison and
-    // the type join happen in one grouped query.
+    // Sum inflow per (taxpayer, period), keep taxpayers whose type-specific §29
+    // threshold is met in any period. `periodLabel` is the finest granularity the
+    // data was submitted at (YYYY-MM / YYYY-Qn / YYYY). Raw SQL so the threshold
+    // comparison and the type join happen in one grouped query.
     const yearFilter = opts.year ? `AND dr."periodYear" = ${Number(opts.year)}` : '';
     const rows = await this.prisma.$queryRawUnsafe<{ taxpayerId: string }[]>(
       `SELECT q."taxpayerId"

@@ -770,11 +770,12 @@ model StatutoryConfig {
 
   // Detection default
   defaultScanThreshold  Decimal  @default(0.20) @db.Decimal(5, 4) // discrepancy % to flag
-  // Statutory REPORTING thresholds: a taxpayer is only reportable (appears in any
-  // report/case/flag/scan/tax-net) once its cumulative inflow within a reporting
-  // period (quarter) reaches these amounts. Below-threshold parties are hidden.
-  reportingThresholdIndividual Decimal @default(50000000)  @db.Decimal(18, 2) // 50m per period, individuals
-  reportingThresholdCorporate  Decimal @default(250000000) @db.Decimal(18, 2) // 250m per period, corporates
+  // Statutory REPORTING thresholds (NTAA 2025 §29, gazette No. 117 of 26 Jun
+  // 2025): a taxpayer is only reportable (appears in any report/case/flag/scan/
+  // tax-net) once its cumulative transactions IN A MONTH reach these amounts.
+  // Below-threshold parties are hidden.
+  reportingThresholdIndividual Decimal @default(50000000)  @db.Decimal(18, 2) // §29 monthly, individuals
+  reportingThresholdCorporate  Decimal @default(250000000) @db.Decimal(18, 2) // §29 monthly, corporates
 
   // Provider late/failure-to-file penalty (NTAA 2025 s.101). A provider that
   // files a statutory return late, or misses it entirely, incurs a fixed fine
