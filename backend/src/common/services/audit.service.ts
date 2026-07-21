@@ -16,9 +16,16 @@ export interface AuditLogOptions {
 }
 
 /** Deterministic JSON with recursively sorted keys — so a Postgres jsonb
- *  round-trip (which reorders keys) still hashes identically. */
+ *  round-trip (which reorders keys) still hashes identically.
+ *
+ *  A Date must serialize to its ISO string here, because that is exactly what
+ *  jsonb stores it as. Without this, a caller passing a live `Date` in
+ *  before/afterJson hashes it as `{}` at write time (a Date has no enumerable
+ *  own keys) but reads back as the ISO string at verify time — a hash mismatch
+ *  that falsely reports the whole chain as tampered. Match the stored form. */
 export function stableStringify(v: any): string {
   if (v === null || v === undefined) return 'null';
+  if (v instanceof Date) return JSON.stringify(v.toISOString());
   if (typeof v !== 'object') return JSON.stringify(v);
   if (Array.isArray(v)) return '[' + v.map(stableStringify).join(',') + ']';
   const keys = Object.keys(v).sort();

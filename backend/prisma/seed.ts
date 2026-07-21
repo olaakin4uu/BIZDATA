@@ -171,15 +171,29 @@ async function main() {
       declared: 15_000_000, flows: [ { code: 'CBN-PSTK', inflow: 28_000_000, outflow: 9_000_000 } ] },
     { cacRcNumber: 'RC-1005', tin: '2000000005', type: 'CORPORATE', businessName: 'Capital Tech Holdings', stateOfResidence: 'Abuja',
       declared: 60_000_000, flows: [ { code: 'NAICOM-AIICO', inflow: 62_000_000, outflow: 20_000_000 } ] }, // clean
+
+    // ── §29-reportable taxpayers that produce real cases ──────────────────────
+    // The rows above were authored before the §29 reporting gate (indiv ≥ ₦50m /
+    // corp ≥ ₦250m per period); none of them clear it, so no case is ever raised.
+    // These do: each crosses its threshold in the 2025 period AND is NON-LLC
+    // (corporate names avoid Ltd/Limited/PLC), so the state assesses PIT on the gap.
+    // Individuals — must reach ₦50m of observed inflow in the period.
+    { nin: '12345678906', bvn: '22200000006', tin: '1000000006', type: 'INDIVIDUAL', firstName: 'Ngozi', lastName: 'Eze', stateOfResidence: 'Lagos',
+      declared: 12_000_000, flows: [ { code: 'CBN-057', inflow: 55_000_000, outflow: 18_000_000 }, { code: 'CBN-058', inflow: 22_000_000, outflow: 6_000_000 } ] }, // CRITICAL: ₦77m observed vs ₦12m declared, 2 providers
+    { nin: '12345678907', bvn: '22200000007', tin: '1000000007', type: 'INDIVIDUAL', firstName: 'Bala', lastName: 'Mohammed', stateOfResidence: 'Kaduna',
+      declared: null, flows: [ { code: 'NCC-OPAY', inflow: 58_000_000, outflow: 9_000_000 } ] }, // HIGH: no declaration at all, ₦58m observed
+    { nin: '12345678908', bvn: '22200000008', tin: '1000000008', type: 'INDIVIDUAL', firstName: 'Yetunde', lastName: 'Bakare', stateOfResidence: 'Ogun',
+      declared: 45_000_000, flows: [ { code: 'CBN-058', inflow: 64_000_000, outflow: 20_000_000 } ] }, // MEDIUM: ₦64m vs ₦45m (~42% gap)
+    // Corporates — must reach ₦250m of observed inflow; names deliberately NON-LLC.
+    { cacRcNumber: 'RC-1006', tin: '2000000006', type: 'CORPORATE', businessName: 'Kano Grain Merchants', stateOfResidence: 'Kano',
+      declared: 90_000_000, flows: [ { code: 'CBN-057', inflow: 210_000_000, outflow: 70_000_000 }, { code: 'CBN-PSTK', inflow: 120_000_000, outflow: 30_000_000 } ] }, // CRITICAL: ₦330m observed vs ₦90m declared
+    { cacRcNumber: 'RC-1007', tin: '2000000007', type: 'CORPORATE', businessName: 'Delta Agro Ventures', stateOfResidence: 'Delta',
+      declared: 220_000_000, flows: [ { code: 'CBN-058', inflow: 300_000_000, outflow: 110_000_000 } ] }, // MEDIUM: ₦300m vs ₦220m (~36% gap)
   ];
 
   // Provider lookup by code
   const provRows = await prisma.dataProvider.findMany({ select: { id: true, providerCode: true, providerType: true } });
   const provByCode = new Map(provRows.map((p) => [p.providerCode, p]));
-
-  // Only seed observed flows once (idempotent guard)
-  const existingRecordCount = await prisma.dataRecord.count();
-  const seedFlows = existingRecordCount === 0;
 
   for (const tp of taxpayers) {
     const where: any = tp.nin ? { ninIndex: blindIndex(tp.nin) } : { cacRcNumber: tp.cacRcNumber };
@@ -208,7 +222,11 @@ async function main() {
       });
     }
 
-    if (seedFlows) {
+    // Seed observed flows per-taxpayer, but only if this taxpayer has none yet.
+    // (Per-taxpayer guard so re-running seed adds flows for newly-added taxpayers
+    // without duplicating flows for ones already carrying records.)
+    const alreadyHasRecords = await prisma.dataRecord.count({ where: { taxpayerId: row.id } });
+    if (alreadyHasRecords === 0) {
       const accountName = tp.businessName || `${tp.firstName} ${tp.lastName}`;
       for (const flow of tp.flows) {
         const prov = provByCode.get(flow.code);
@@ -244,7 +262,7 @@ async function main() {
       }
     }
   }
-  console.log(`  Taxpayers seeded: ${taxpayers.length}${seedFlows ? ' (with observed flows)' : ' (flows already present)'}`);
+  console.log(`  Taxpayers seeded: ${taxpayers.length} (observed flows added for any taxpayer missing them)`);
   console.log('Done.');
 }
 
