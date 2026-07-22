@@ -1,6 +1,5 @@
 'use client';
 import { useEffect, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { providerAuthApi } from '@/lib/api/auth';
@@ -121,18 +120,6 @@ export default function ProviderLoginPage() {
           </p>
         </div>
 
-        <div className="mt-4 flex flex-col items-center justify-center gap-1.5">
-          <span className="text-[10px] uppercase tracking-[0.22em] text-teal-100/80">
-            Powered by
-          </span>
-          <Image
-            src="/manam-logo.jpeg"
-            alt="MANAM — Advisory / Tax / Secretarial Services"
-            width={150}
-            height={59}
-            className="rounded-lg bg-white px-3 py-1.5 shadow-lg ring-1 ring-white/25"
-          />
-        </div>
       </div>
     </div>
   );

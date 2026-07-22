@@ -305,6 +305,19 @@ export default function StaffSidebar({ open = false, onClose }: { open?: boolean
           ))}
         </nav>
 
+        {/* Powered-by mark (moved off the login screens). Hidden when collapsed. */}
+        <div className={`border-t border-white/5 px-3 pt-3 ${collapsed ? 'lg:hidden' : ''}`}>
+          <div className="flex flex-col items-center gap-1.5">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-slate-500">Powered by</span>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/manam-logo-mark.jpeg"
+              alt="MANAM"
+              className="h-6 w-auto rounded bg-white px-2 py-1"
+            />
+          </div>
+        </div>
+
         {/* Utility footer: version + desktop collapse toggle */}
         <div className="border-t border-white/5 px-3 py-3">
           <div className={`flex items-center ${collapsed ? 'lg:justify-center' : 'justify-between'}`}>
