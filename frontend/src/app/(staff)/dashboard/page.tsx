@@ -12,7 +12,7 @@ import {
   type RiskLevel,
 } from '@/lib/api/cases';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
-import { agentsApi, AGENT_NAMES, type RiskSignal } from '@/lib/api/agents';
+import { agentsApi, AGENT_NAMES } from '@/lib/api/agents';
 import { complianceApi, type ComplianceSummary } from '@/lib/api/compliance';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { auditApi } from '@/lib/api/audit';
@@ -398,11 +398,14 @@ function Skeleton() {
 
 /* ─── AGENTS PANEL ───────────────────────────────────────────────────────── */
 function AgentsPanel({ year }: { year: number }) {
-  const [signals, setSignals] = useState<RiskSignal[] | null>(null);
+  // Per-agent counts come from the SUMMARY endpoint (a DB groupBy over ALL
+  // reportable signals) — not from agentsApi.signals(), which returns only the
+  // top-200 by score and made agents outside that slice read "0 signals".
+  const [summary, setSummary] = useState<Awaited<ReturnType<typeof agentsApi.summary>> | null>(null);
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const load = () => { agentsApi.signals({ year }).then(setSignals).catch(() => setSignals([])); };
+  const load = () => { agentsApi.summary(year).then(setSummary).catch(() => setSummary(null)); };
   useEffect(load, [year]);
 
   const run = async () => {
@@ -416,11 +419,8 @@ function AgentsPanel({ year }: { year: number }) {
     } finally { setRunning(false); }
   };
 
-  const perAgent: Record<string, { count: number; high: number }> = {};
-  (signals ?? []).forEach((s) => {
-    const a = (perAgent[s.agentKey] ??= { count: 0, high: 0 });
-    a.count++; if (s.severity === 'HIGH') a.high++;
-  });
+  const perAgent: Record<string, { count: number }> = {};
+  (summary?.byAgent ?? []).forEach((a) => { perAgent[a.agentKey] = { count: a.count }; });
 
   const AGENT_COLORS = [
     'bg-teal-50 border-teal-200',
@@ -456,10 +456,10 @@ function AgentsPanel({ year }: { year: number }) {
           {msg}
         </p>
       )}
-      {signals === null ? <Skeleton /> : (
+      {summary === null ? <Skeleton /> : (
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {Object.keys(AGENT_NAMES).map((key, i) => {
-            const a = perAgent[key] ?? { count: 0, high: 0 };
+            const a = perAgent[key] ?? { count: 0 };
             return (
               <Link
                 key={key}
@@ -469,8 +469,7 @@ function AgentsPanel({ year }: { year: number }) {
               >
                 <p className="text-xs font-semibold text-slate-700">{AGENT_NAMES[key]}</p>
                 <p className="text-xs text-slate-500 mt-1">
-                  <span className="font-bold text-slate-700">{a.count}</span> signal{a.count === 1 ? '' : 's'}
-                  {a.high > 0 && <span className="ml-1.5 text-rose-600 font-bold">· {a.high} high</span>}
+                  <span className="font-bold text-slate-700">{a.count.toLocaleString()}</span> signal{a.count === 1 ? '' : 's'}
                 </p>
               </Link>
             );
