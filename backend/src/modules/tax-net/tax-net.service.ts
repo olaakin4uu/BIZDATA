@@ -48,11 +48,20 @@ export class TaxNetService {
     const page = Math.max(1, opts.page ?? 1);
     const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
 
-    // Observed inflow per taxpayer (all records, or a given year).
-    const inflowRows = await this.prisma.dataRecord.groupBy({
+    // STATUTORY REPORTING THRESHOLD — Tax Net only concerns parties that are
+    // reportable (§29 cumulative monthly inflow >= their type threshold). Below-
+    // threshold parties are never shown, however much data was uploaded.
+    // Compute this FIRST and scope every subsequent record read to it — the old
+    // version aggregated inflow + loaded a distinct taxpayer/provider list across
+    // the WHOLE ~2M-row universe before filtering, OOM-crashing the backend.
+    const reportableIds = await this.reportable.reportableTaxpayerIds({ year: opts.year });
+    const reportableIdList = [...reportableIds];
+
+    // Observed inflow per taxpayer — scoped to reportable taxpayers only.
+    const inflowRows = reportableIdList.length === 0 ? [] : await this.prisma.dataRecord.groupBy({
       by: ['taxpayerId'],
       where: {
-        taxpayerId: { not: null },
+        taxpayerId: { in: reportableIdList },
         ...(opts.year ? { periodYear: opts.year } : {}),
         // exclude ₦0 account-opening rows so the per-taxpayer "records" count is real
         NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
@@ -67,9 +76,9 @@ export class TaxNetService {
       });
     }
 
-    // Which provider(s) each taxpayer's data was pulled from.
-    const provLinks = await this.prisma.dataRecord.findMany({
-      where: { taxpayerId: { not: null }, ...(opts.year ? { periodYear: opts.year } : {}) },
+    // Which provider(s) each taxpayer's data was pulled from — reportable only.
+    const provLinks = reportableIdList.length === 0 ? [] : await this.prisma.dataRecord.findMany({
+      where: { taxpayerId: { in: reportableIdList }, ...(opts.year ? { periodYear: opts.year } : {}) },
       select: { taxpayerId: true, provider: { select: { name: true } } },
       distinct: ['taxpayerId', 'providerId'],
     });
@@ -80,11 +89,6 @@ export class TaxNetService {
       if (l.provider?.name) set.add(l.provider.name);
       providersByTp.set(l.taxpayerId, set);
     }
-
-    // STATUTORY REPORTING THRESHOLD — Tax Net only concerns parties that are
-    // reportable (§29 cumulative monthly inflow >= their type threshold). Below-
-    // threshold parties are never shown, however much data was uploaded.
-    const reportableIds = await this.reportable.reportableTaxpayerIds({ year: opts.year });
 
     // Reportable taxpayers only (identity fields — no PII decryption to classify).
     const taxpayers = await this.prisma.taxpayer.findMany({
@@ -203,7 +207,21 @@ export class TaxNetService {
    * taxpayer (INVISIBLE or UNVERIFIED individuals with no TIN). Optionally scoped
    * to a list of ids, a minimum observed inflow, or a cap on how many to process.
    */
+  // Hard ceiling on a single auto-register run. This mutates taxpayers (assigns
+  // TINs) irreversibly, so a caller that omits ids/limit must NOT be able to
+  // sweep the whole ~1.5M-individual universe in one unbounded, un-audited-per-
+  // batch mutation. Callers register in explicit, capped batches instead.
+  private static readonly AUTO_REGISTER_MAX = 5000;
+  private static readonly AUTO_REGISTER_DEFAULT = 1000;
+
   async autoRegister(staffId: string, opts: { ids?: string[]; minInflow?: number; limit?: number } = {}) {
+    // Resolve a bounded cap up front and push it into the query so we never even
+    // LOAD more than the cap (the old code loaded every TIN-less individual).
+    const cap = Math.min(
+      TaxNetService.AUTO_REGISTER_MAX,
+      Math.max(1, opts.limit && opts.limit > 0 ? opts.limit : TaxNetService.AUTO_REGISTER_DEFAULT),
+    );
+
     // Candidates: individuals without a TIN (corporates are captured via RC).
     let candidates = await this.prisma.taxpayer.findMany({
       where: {
@@ -212,6 +230,9 @@ export class TaxNetService {
         ...(opts.ids?.length ? { id: { in: opts.ids } } : {}),
       },
       select: { id: true },
+      // When a min-inflow gate is set we over-fetch (cap*4) then filter down to
+      // cap below; otherwise take exactly the cap.
+      take: opts.minInflow && opts.minInflow > 0 ? cap * 4 : cap,
     });
 
     // Optional min-inflow gate — only register those actually receiving money above a floor.
@@ -225,7 +246,8 @@ export class TaxNetService {
       candidates = candidates.filter((c) => ok.has(c.id));
     }
 
-    if (opts.limit && opts.limit > 0) candidates = candidates.slice(0, opts.limit);
+    // Final hard cap regardless of path.
+    candidates = candidates.slice(0, cap);
 
     let registered = 0;
     const assigned: { id: string; tin: string }[] = [];
