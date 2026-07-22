@@ -401,11 +401,11 @@ function AgentsPanel({ year }: { year: number }) {
   // Per-agent counts come from the SUMMARY endpoint (a DB groupBy over ALL
   // reportable signals) — not from agentsApi.signals(), which returns only the
   // top-200 by score and made agents outside that slice read "0 signals".
-  const [summary, setSummary] = useState<Awaited<ReturnType<typeof agentsApi.summary>> | null>(null);
+  const [summary, setSummary] = useState<Awaited<ReturnType<typeof agentsApi.signalSummary>> | null>(null);
   const [running, setRunning] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
 
-  const load = () => { agentsApi.summary(year).then(setSummary).catch(() => setSummary(null)); };
+  const load = () => { agentsApi.signalSummary(year).then(setSummary).catch(() => setSummary(null)); };
   useEffect(load, [year]);
 
   const run = async () => {
