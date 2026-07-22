@@ -27,18 +27,32 @@ export class AnalyticsService {
     };
 
     // Records + observed inflow + identity completeness per provider.
-    const [recAgg, taxpayerAgg, flaggedAgg, submissionAgg] = await Promise.all([
+    // NOTE: distinct-taxpayer + identity-completeness per provider is computed in
+    // SQL (COUNT(DISTINCT ...)) rather than by loading every matching row into
+    // Node and building JS Sets — the old findMany materialised ~1M rows in heap
+    // and OOM-crashed the backend when the /analytics page loaded (year='').
+    const yearClause = year ? `AND "periodYear" = ${Number(year)}` : '';
+    const [recAgg, tpAggRaw, flaggedAgg, submissionAgg] = await Promise.all([
       this.prisma.dataRecord.groupBy({
         by: ['providerId'],
         where: recWhere,
         _count: { _all: true },
         _sum: { totalInflow: true },
       }),
-      // distinct taxpayers per provider
-      this.prisma.dataRecord.findMany({
-        where: { ...recWhere, taxpayerId: { not: null } },
-        select: { providerId: true, taxpayerId: true, bvn: true, nin: true },
-      }),
+      // distinct taxpayers + identity completeness per provider — aggregated in DB
+      this.prisma.$queryRawUnsafe<
+        { providerId: string; distinctTps: bigint; total: bigint; withId: bigint }[]
+      >(
+        `SELECT "providerId",
+                COUNT(DISTINCT "taxpayerId") AS "distinctTps",
+                COUNT(*)                     AS "total",
+                COUNT(*) FILTER (WHERE "bvn" IS NOT NULL OR "nin" IS NOT NULL) AS "withId"
+         FROM data_records
+         WHERE "taxpayerId" IS NOT NULL
+           AND (payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
+           ${yearClause}
+         GROUP BY "providerId"`,
+      ),
       // flagged records per provider (enforcement yield)
       this.prisma.dataRecord.groupBy({
         by: ['providerId'],
@@ -57,15 +71,13 @@ export class AnalyticsService {
     const flaggedByProv = new Map(flaggedAgg.map((r) => [r.providerId, r._count._all]));
     const subByProv = new Map(submissionAgg.map((r) => [r.providerId, r]));
 
-    // Distinct taxpayers + identity completeness per provider.
-    const tpByProv = new Map<string, { tps: Set<string>; withId: number; total: number }>();
-    for (const r of taxpayerAgg) {
-      const a = tpByProv.get(r.providerId) ?? { tps: new Set<string>(), withId: 0, total: 0 };
-      if (r.taxpayerId) a.tps.add(r.taxpayerId);
-      a.total += 1;
-      if (r.bvn || r.nin) a.withId += 1;
-      tpByProv.set(r.providerId, a);
-    }
+    // Distinct taxpayers + identity completeness per provider (from the SQL agg).
+    const tpByProv = new Map<string, { distinctTps: number; withId: number; total: number }>(
+      tpAggRaw.map((r) => [
+        r.providerId,
+        { distinctTps: Number(r.distinctTps), withId: Number(r.withId), total: Number(r.total) },
+      ]),
+    );
 
     const rows = providers.map((p) => {
       const rec = recByProv.get(p.id);
@@ -78,7 +90,7 @@ export class AnalyticsService {
       return {
         provider: { id: p.id, name: p.name, providerType: p.providerType, providerCode: p.providerCode },
         records,
-        taxpayers: tp?.tps.size ?? 0,
+        taxpayers: tp?.distinctTps ?? 0,
         observedInflow,
         flaggedRecords: flaggedByProv.get(p.id) ?? 0,
         rejectionRate: totalRecords > 0 ? Math.round((rejected / totalRecords) * 100) : 0,
@@ -106,70 +118,67 @@ export class AnalyticsService {
    * observed value per economic sector.
    */
   async bySector(year?: number) {
-    const taxpayers = await this.prisma.taxpayer.findMany({
-      select: { id: true, sector: true, type: true, tinIndex: true, cacRcNumber: true },
+    // Aggregate entirely in SQL, grouped by sector. The old version loaded ALL
+    // ~1.6M taxpayers into Node (plus per-taxpayer maps) to bucket them in JS —
+    // that OOM-crashed the backend on the /analytics page. Per-taxpayer inflow,
+    // flagged status and estimated-tax are joined as CTEs so nothing but the
+    // per-sector result rows (a handful) crosses the wire.
+    const recFilter = `"taxpayerId" IS NOT NULL AND (payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'`;
+    const recYear = year ? `AND "periodYear" = ${Number(year)}` : '';
+    const caseYear = year ? `WHERE "year" = ${Number(year)}` : '';
+
+    const rowsRaw = await this.prisma.$queryRawUnsafe<
+      {
+        sector: string; taxpayers: bigint; captured: bigint; flagged: bigint;
+        observedInflow: number | string | null; estimatedTax: number | string | null;
+      }[]
+    >(
+      `WITH inflow AS (
+         SELECT "taxpayerId", SUM("totalInflow") AS inflow
+         FROM data_records WHERE ${recFilter} ${recYear}
+         GROUP BY "taxpayerId"),
+       flagged AS (
+         SELECT DISTINCT "taxpayerId" FROM data_records
+         WHERE "flaggedAsUnderdeclared" = true AND ${recFilter} ${recYear}),
+       taxdue AS (
+         SELECT "taxpayerId", SUM("estimatedTaxDue") AS tax
+         FROM underdeclaration_cases ${caseYear} GROUP BY "taxpayerId")
+       SELECT COALESCE(t.sector, 'UNCLASSIFIED') AS sector,
+              COUNT(*) AS taxpayers,
+              COUNT(*) FILTER (WHERE CASE WHEN t.type = 'CORPORATE' THEN t."cacRcNumber" IS NOT NULL ELSE t."tinIndex" IS NOT NULL END) AS captured,
+              COUNT(*) FILTER (WHERE f."taxpayerId" IS NOT NULL) AS flagged,
+              COALESCE(SUM(i.inflow), 0) AS "observedInflow",
+              COALESCE(SUM(td.tax), 0)   AS "estimatedTax"
+       FROM taxpayers t
+       LEFT JOIN inflow i  ON i."taxpayerId"  = t.id
+       LEFT JOIN flagged f ON f."taxpayerId"  = t.id
+       LEFT JOIN taxdue td ON td."taxpayerId" = t.id
+       GROUP BY COALESCE(t.sector, 'UNCLASSIFIED')`,
+    );
+
+    const rows = rowsRaw.map((r) => {
+      const taxpayers = Number(r.taxpayers);
+      const captured = Number(r.captured);
+      const flagged = Number(r.flagged);
+      return {
+        sector: r.sector,
+        taxpayers,
+        flaggedTaxpayers: flagged,
+        observedInflow: Number(r.observedInflow ?? 0),
+        estimatedTax: Number(r.estimatedTax ?? 0),
+        coveragePct: taxpayers > 0 ? Math.round((captured / taxpayers) * 100) : 0,
+        flaggedPct: taxpayers > 0 ? Math.round((flagged / taxpayers) * 100) : 0,
+      };
     });
 
-    // Exclude ₦0 account-opening records so per-provider record counts are real.
-    const recWhere: any = {
-      ...(year ? { periodYear: year } : {}),
-      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
-    };
-    const [inflowAgg, flaggedTps, cases] = await Promise.all([
-      this.prisma.dataRecord.groupBy({
-        by: ['taxpayerId'],
-        where: { ...recWhere, taxpayerId: { not: null } },
-        _sum: { totalInflow: true },
-      }),
-      this.prisma.dataRecord.findMany({
-        where: { ...recWhere, flaggedAsUnderdeclared: true, taxpayerId: { not: null } },
-        select: { taxpayerId: true },
-        distinct: ['taxpayerId'],
-      }),
-      this.prisma.underdeclarationCase.groupBy({
-        by: ['taxpayerId'],
-        where: year ? { year } : {},
-        _sum: { estimatedTaxDue: true },
-      }),
-    ]);
-
-    const inflowByTp = new Map(inflowAgg.map((r) => [r.taxpayerId!, Number(r._sum.totalInflow ?? 0)]));
-    const flaggedSet = new Set(flaggedTps.map((r) => r.taxpayerId!));
-    const taxByTp = new Map(cases.map((r) => [r.taxpayerId, Number(r._sum.estimatedTaxDue ?? 0)]));
-
-    type Agg = {
-      taxpayers: number; captured: number; flagged: number;
-      observedInflow: number; estimatedTax: number;
-    };
-    const bySector = new Map<string, Agg>();
-    for (const t of taxpayers) {
-      const key = t.sector ?? 'UNCLASSIFIED';
-      const a = bySector.get(key) ?? { taxpayers: 0, captured: 0, flagged: 0, observedInflow: 0, estimatedTax: 0 };
-      a.taxpayers += 1;
-      const inNet = t.type === 'CORPORATE' ? !!t.cacRcNumber : !!t.tinIndex;
-      if (inNet) a.captured += 1;
-      if (flaggedSet.has(t.id)) a.flagged += 1;
-      a.observedInflow += inflowByTp.get(t.id) ?? 0;
-      a.estimatedTax += taxByTp.get(t.id) ?? 0;
-      bySector.set(key, a);
-    }
-
-    const rows = [...bySector.entries()].map(([sector, a]) => ({
-      sector,
-      taxpayers: a.taxpayers,
-      flaggedTaxpayers: a.flagged,
-      observedInflow: a.observedInflow,
-      estimatedTax: a.estimatedTax,
-      coveragePct: a.taxpayers > 0 ? Math.round((a.captured / a.taxpayers) * 100) : 0,
-      flaggedPct: a.taxpayers > 0 ? Math.round((a.flagged / a.taxpayers) * 100) : 0,
-    }));
-
     rows.sort((a, b) => b.estimatedTax - a.estimatedTax || b.observedInflow - a.observedInflow);
+    const classified = rows.filter((r) => r.sector !== 'UNCLASSIFIED').reduce((s, r) => s + r.taxpayers, 0);
+    const unclassified = rows.find((r) => r.sector === 'UNCLASSIFIED')?.taxpayers ?? 0;
     return {
       totals: {
         sectors: rows.filter((r) => r.sector !== 'UNCLASSIFIED').length,
-        classified: taxpayers.filter((t) => t.sector).length,
-        unclassified: taxpayers.filter((t) => !t.sector).length,
+        classified,
+        unclassified,
       },
       rows,
     };
