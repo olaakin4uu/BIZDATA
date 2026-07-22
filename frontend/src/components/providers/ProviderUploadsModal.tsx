@@ -11,6 +11,20 @@ import { Modal } from '@/components/Modal';
 
 const RAW_ACCESS_ROLES = ['SUPER_ADMIN', 'ADMIN'];
 
+// Standard, audit-friendly reasons an officer can pick instead of free-typing.
+// Selecting one fills the reason field (still editable, so a bespoke reason is
+// always possible). Keeps the audit trail consistent and speeds up access.
+const ACCESS_REASONS = [
+  'Assessing an under-declaration case',
+  'Verifying a taxpayer’s declared income',
+  'Investigating a compliance flag',
+  'Cross-checking a provider submission',
+  'Responding to a taxpayer objection',
+  'Preparing a demand notice',
+  'Routine data-quality review',
+  'Supervisor / audit review',
+];
+
 interface Props {
   providerId: string;
   providerName: string;
@@ -245,10 +259,19 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
                       <label className="block text-[10px] font-medium text-slate-500 mb-1">Reason for access</label>
+                      <select
+                        value={ACCESS_REASONS.includes(assignReason) ? assignReason : ''}
+                        onChange={(e) => e.target.value && setAssignReason(e.target.value)}
+                        className="mb-1.5 px-3 py-2 border border-slate-300 rounded-lg text-sm w-72 bg-white focus:outline-none focus:ring-2 focus:ring-teal-500"
+                      >
+                        <option value="">Choose a reason…</option>
+                        {ACCESS_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                        <option value="" disabled>──────────</option>
+                      </select>
                       <input
                         value={assignReason} onChange={(e) => setAssignReason(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && selfAssign()}
-                        placeholder="e.g. assessing under-declaration case"
+                        placeholder="…or type a specific reason"
                         className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-teal-500"
                       />
                     </div>
@@ -279,9 +302,17 @@ export default function ProviderUploadsModal({ providerId, providerName, onClose
                   <div className="flex flex-wrap items-end gap-2">
                     <div>
                       <label className="block text-[10px] font-medium text-slate-500 mb-1">Reason for access</label>
+                      <select
+                        value={ACCESS_REASONS.includes(assignReason) ? assignReason : ''}
+                        onChange={(e) => e.target.value && setAssignReason(e.target.value)}
+                        className="mb-1.5 px-3 py-2 border border-slate-300 rounded-lg text-sm w-72 bg-white focus:outline-none focus:ring-2 focus:ring-sky-500"
+                      >
+                        <option value="">Choose a reason…</option>
+                        {ACCESS_REASONS.map((r) => <option key={r} value={r}>{r}</option>)}
+                      </select>
                       <input value={assignReason} onChange={(e) => setAssignReason(e.target.value)}
                         onKeyDown={(e) => e.key === 'Enter' && requestToken()}
-                        placeholder="e.g. assessing case #1234"
+                        placeholder="…or type a specific reason"
                         className="px-3 py-2 border border-slate-300 rounded-lg text-sm w-72 focus:outline-none focus:ring-2 focus:ring-sky-500" />
                     </div>
                     <button onClick={requestToken} disabled={grantBusy || !assignReason.trim()}
