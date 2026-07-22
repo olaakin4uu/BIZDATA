@@ -7,27 +7,24 @@ import { StatutoryService } from '../../modules/statutory/statutory.service';
  * reported at all".
  *
  * NTAA 2025 §29 (authoritative gazette, No. 117 of 26 Jun 2025) makes a party
- * reportable once its cumulative transactions IN A MONTH reach:
+ * reportable once its cumulative transactions in a reporting period reach:
  *   - individuals: reportingThresholdIndividual (default ₦50m)
  *   - corporates:  reportingThresholdCorporate  (default ₦250m)
  * Both figures live in StatutoryConfig and are configurable.
  *
- * The trigger is MONTHLY-cumulative. Records carry a `periodLabel` of YYYY-MM
- * (monthly), YYYY-Qn (quarterly) or YYYY (annual). We evaluate the threshold per
- * (taxpayer, period) using the finest period each record was submitted at:
- *   - monthly data  → exact §29 monthly trigger;
- *   - coarser data (a quarter/year total) → compared against the same monthly
- *     threshold. This is CONSERVATIVE: a coarse total ≥ the monthly threshold
- *     makes the party reportable, and a coarse total cannot be split into months
- *     without finer data, so we never under-capture. (It can slightly over-
- *     capture a party whose coarse total clears the line but no single month
- *     does — acceptable, and avoidable only by submitting monthly data.)
+ * GRAIN = PER-QUARTER (operator decision). Data is submitted per quarter
+ * (periodLabel like 2026-Q2), so the threshold is evaluated per (taxpayer,
+ * quarter). A monthly label (YYYY-MM) is folded into its quarter before the
+ * test, and a bare-year label buckets on itself — so a provider that reports
+ * monthly faces the same quarterly bar as one reporting quarterly, rather than a
+ * stricter per-month one, for the same inflow. A taxpayer is reportable if they
+ * cross the threshold in AT LEAST ONE quarter (once reportable, all of their
+ * data is in scope).
  *
- * A taxpayer is reportable if they cross the threshold in AT LEAST ONE period
- * (once reportable, all of their data is in scope). Every reporting surface —
- * scan, cases, flagged, tax-net, analytics, agents, taxpayer/record lists —
- * filters through `reportableTaxpayerIds()` so below-threshold parties never
- * appear anywhere, no matter how much raw provider data was uploaded.
+ * Every reporting surface — scan, cases, flagged, tax-net, analytics, agents,
+ * IRIS, taxpayer/record lists — filters through `reportableTaxpayerIds()` so
+ * below-threshold parties never appear anywhere, no matter how much raw provider
+ * data was uploaded.
  */
 @Injectable()
 export class ReportableService {
@@ -36,27 +33,58 @@ export class ReportableService {
     private statutory: StatutoryService,
   ) {}
 
+  // Short-TTL memo of the reportable set per year-scope. The grouped SQL scans
+  // ~2.16M records; a single page render can ask for it several times (analytics
+  // by-provider + by-sector + a case list), so caching turns N heavy GROUP BYs
+  // into one. The set only shifts when new data lands or a threshold is edited —
+  // both rare relative to reads — so a 60s TTL is safely fresh. Keyed by year
+  // ('all' for the unscoped call).
+  private static readonly TTL_MS = 60_000;
+  private cache = new Map<string, { at: number; ids: Set<string> }>();
+
   /**
    * The set of taxpayer ids that are reportable. Optionally scoped to a year;
    * otherwise every period on record is considered. Uses one grouped-SQL pass
-   * over (taxpayer, period) sums — cheap and exact. The §29 trigger is monthly;
-   * grouping by `periodLabel` gives the exact monthly cumulative for monthly
-   * data and a conservative approximation for coarser periods (see class docs).
+   * over (taxpayer, quarter) sums — cheap and exact. The §29 grain is per-quarter;
+   * `periodLabel` is normalised to a quarter key before the threshold test (see
+   * class docs). Memoised for TTL_MS to collapse repeated calls in one request.
    */
   async reportableTaxpayerIds(opts: { year?: number } = {}): Promise<Set<string>> {
+    const cacheKey = opts.year ? `y:${opts.year}` : 'all';
+    const hit = this.cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < ReportableService.TTL_MS) {
+      // Return a copy so callers that spread/mutate can't corrupt the cached set.
+      return new Set(hit.ids);
+    }
+
     const cfg = await this.statutory.active();
     const indiv = cfg.reportingThresholdIndividual;
     const corp = cfg.reportingThresholdCorporate;
 
-    // Sum inflow per (taxpayer, period), keep taxpayers whose type-specific §29
-    // threshold is met in any period. `periodLabel` is the finest granularity the
-    // data was submitted at (YYYY-MM / YYYY-Qn / YYYY). Raw SQL so the threshold
-    // comparison and the type join happen in one grouped query.
+    // Sum inflow per (taxpayer, QUARTER), keep taxpayers whose type-specific §29
+    // threshold is met in any quarter. The statutory grain is per-quarter (user
+    // decision), so a monthly label (YYYY-MM) is folded into its quarter before
+    // the threshold test — otherwise a provider that reports monthly would face a
+    // stricter per-month bar than one reporting quarterly for the same annual
+    // inflow. Current prod data is ~all YYYY-Qn already; this keeps the grain
+    // stable if monthly submissions ever arrive. Raw SQL so the quarter
+    // normalisation, threshold comparison and type join run in one grouped query.
     const yearFilter = opts.year ? `AND dr."periodYear" = ${Number(opts.year)}` : '';
     const rows = await this.prisma.$queryRawUnsafe<{ taxpayerId: string }[]>(
       `SELECT q."taxpayerId"
          FROM (
-           SELECT dr."taxpayerId", dr."periodLabel", t.type, SUM(dr."totalInflow") AS q_inflow
+           SELECT dr."taxpayerId",
+                  -- Normalise period → quarter key. YYYY-Qn passes through; YYYY-MM
+                  -- maps to its quarter; anything else (e.g. bare YYYY) keys on the
+                  -- label as-is so it still buckets consistently with itself.
+                  CASE
+                    WHEN dr."periodLabel" ~ '^[0-9]{4}-Q[1-4]$' THEN dr."periodLabel"
+                    WHEN dr."periodLabel" ~ '^[0-9]{4}-[0-9]{2}$'
+                      THEN left(dr."periodLabel", 4) || '-Q'
+                           || ((cast(substr(dr."periodLabel", 6, 2) AS int) - 1) / 3 + 1)::text
+                    ELSE dr."periodLabel"
+                  END AS quarter_key,
+                  t.type, SUM(dr."totalInflow") AS q_inflow
              FROM data_records dr
              JOIN taxpayers t ON t.id = dr."taxpayerId"
             WHERE dr."taxpayerId" IS NOT NULL ${yearFilter}
@@ -64,13 +92,17 @@ export class ReportableService {
               -- statutory threshold. IS DISTINCT FROM also keeps legacy rows whose
               -- payload has no recordKind key (NULL) — those remain reportable.
               AND (dr.payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
-            GROUP BY dr."taxpayerId", dr."periodLabel", t.type
+            GROUP BY dr."taxpayerId", quarter_key, t.type
          ) q
         WHERE (q.type = 'INDIVIDUAL' AND q.q_inflow >= ${indiv})
            OR (q.type = 'CORPORATE'  AND q.q_inflow >= ${corp})
         GROUP BY q."taxpayerId"`,
     );
-    return new Set(rows.map((r) => r.taxpayerId));
+    const ids = new Set(rows.map((r) => r.taxpayerId));
+    this.cache.set(cacheKey, { at: Date.now(), ids });
+    // Hand back a copy so a caller spreading/mutating the result never touches
+    // the stored set.
+    return new Set(ids);
   }
 
   /** Convenience: is this one taxpayer reportable? */

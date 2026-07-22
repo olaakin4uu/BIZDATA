@@ -215,7 +215,11 @@ async function main() {
             periodLabel: r.quarter,
             periodYear: Number(r.quarter.slice(0, 4)),
             matchMethod: taxpayerId ? (r.bvn ? 'BVN' : r.tin ? 'TIN' : 'NAME') : 'UNMATCHED',
-            matchConfidence: taxpayerId ? 0.9 : 0.0,
+            // Confidence must track the match METHOD, not a flat constant — a
+            // name-only link is far weaker than a BVN/TIN link and the Matching
+            // agent keys enforcement risk off exactly this. Same scale as
+            // SubmissionsService.resolveTaxpayer (TIN 0.97 / BVN 0.95 / NAME 0.55).
+            matchConfidence: !taxpayerId ? null : r.bvn ? 0.95 : r.tin ? 0.97 : 0.55,
             accountIndex: acctIdx ?? undefined,
             // recordKind drives money: ACCOUNT_OPENED contributes ₦0 and 0 count,
             // so it can never push a taxpayer over the reporting threshold nor
