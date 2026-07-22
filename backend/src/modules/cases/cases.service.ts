@@ -153,6 +153,13 @@ export class CasesService {
       },
     });
     if (!c) throw new NotFoundException('Case not found');
+    // Reportable gate: the list/stats only surface cases for taxpayers over the
+    // §29 threshold, but this direct-by-id lookup bypassed that — a below-
+    // threshold case (and its decrypted TIN) could be fetched by guessing the id.
+    // Treat a non-reportable case as not-found so the gate is the single truth.
+    if (!c.taxpayerId || !(await this.reportable.isReportable(c.taxpayerId, { year: c.year ?? undefined }))) {
+      throw new NotFoundException('Case not found');
+    }
     const clear = await this.pii.canRevealPii();
     return {
       ...c,
