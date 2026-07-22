@@ -121,8 +121,8 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
         <MiniKpi label="Missing periods" value={compliance?.missing ?? '—'}
           valueClass={compliance && compliance.missing > 0 ? 'text-rose-700' : 'text-slate-700'}
           hint={compliance ? `${compliance.late} late · ${compliance.pending} not due` : ''} />
-        <MiniKpi label="Uploads" value={compliance?.submissions ?? totalUploads}
-          valueClass="text-sky-700" hint="submissions received" />
+        <MiniKpi label={`${year} uploads`} value={compliance?.submissions ?? '—'}
+          valueClass="text-sky-700" hint={`${totalUploads} all-time`} />
         <MiniKpi label="Rejection rate" value={compliance ? `${compliance.rejectionRate}%` : '—'}
           valueClass={compliance && compliance.rejectionRate > 10 ? 'text-amber-600' : 'text-slate-700'}
           hint="of submitted records" />
