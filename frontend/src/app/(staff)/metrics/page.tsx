@@ -17,11 +17,32 @@ const YEARS = [2026, 2025, 2024];
 export default function MetricsPage() {
   const [year, setYear] = useState(2026);
   const [m, setM] = useState<ModelMetrics | null>(null);
+  const [forbidden, setForbidden] = useState(false);
 
-  useEffect(() => { setM(null); metricsApi.model(year).then(setM).catch(() => setM(null)); }, [year]);
+  useEffect(() => {
+    setM(null); setForbidden(false);
+    metricsApi.model(year).then(setM).catch((e) => {
+      // Model metrics are restricted to SUPER_ADMIN/ADMIN/SUPERVISOR/ANALYST.
+      // A 403 for a lower role should read as "no access", not an empty page.
+      const msg = extractErrorMessage(e);
+      if (/403|forbidden|permission|not allowed/i.test(msg)) setForbidden(true);
+      setM(null);
+    });
+  }, [year]);
 
   const maxType = Math.max(1, ...(m?.byType.map((x) => x.count) ?? [1]));
   const maxState = Math.max(1, ...(m?.byState.map((x) => x.count) ?? [1]));
+
+  if (forbidden) {
+    return (
+      <div className="p-6 max-w-5xl mx-auto">
+        <PageHeader title="Model governance & fairness" subtitle="Detection precision, flag distribution, and the analyst feedback loop." />
+        <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-6 text-sm text-amber-800">
+          You don’t have access to model &amp; fairness metrics. These are limited to Analyst, Supervisor and Admin roles. Ask an administrator if you need visibility.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 max-w-5xl mx-auto">
