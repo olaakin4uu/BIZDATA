@@ -152,12 +152,18 @@ export class DataRecordsService {
       taxpayerId: { in: ids },
       NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
     } as Prisma.DataRecordWhereInput;
+    // The review cards (pending/confirmed/cleared) count FLAGGED records only —
+    // the flagged page lists {flagged:true, reviewStatus:...}, so the card must
+    // match its own list. Counting every PENDING_REVIEW record (incl. unflagged
+    // ingest defaults) made the "Pending review" card read ~369k against a
+    // ~78k flagged list — a card contradicting the list beneath it.
+    const flaggedTp = { ...tp, flaggedAsUnderdeclared: true } as Prisma.DataRecordWhereInput;
     const [total, flagged, pendingReview, confirmed, cleared] = await Promise.all([
       this.prisma.dataRecord.count({ where: tp }),
-      this.prisma.dataRecord.count({ where: { ...tp, flaggedAsUnderdeclared: true } }),
-      this.prisma.dataRecord.count({ where: { ...tp, reviewStatus: 'PENDING_REVIEW' } }),
-      this.prisma.dataRecord.count({ where: { ...tp, reviewStatus: 'CONFIRMED' } }),
-      this.prisma.dataRecord.count({ where: { ...tp, reviewStatus: 'CLEARED' } }),
+      this.prisma.dataRecord.count({ where: flaggedTp }),
+      this.prisma.dataRecord.count({ where: { ...flaggedTp, reviewStatus: 'PENDING_REVIEW' } }),
+      this.prisma.dataRecord.count({ where: { ...flaggedTp, reviewStatus: 'CONFIRMED' } }),
+      this.prisma.dataRecord.count({ where: { ...flaggedTp, reviewStatus: 'CLEARED' } }),
     ]);
     return { total, flagged, pendingReview, confirmed, cleared };
   }
