@@ -2,7 +2,6 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import Image from 'next/image';
 import { authApi } from '@/lib/api/auth';
 import { tenantApi, type TenantBranding } from '@/lib/api/tenant';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
@@ -169,19 +168,6 @@ export default function StaffLoginPage() {
           </p>
         </div>
 
-        <div className="mt-8 flex flex-col items-center justify-center gap-3">
-          <span className="text-xs uppercase tracking-widest text-slate-300">
-            Powered by
-          </span>
-          <Image
-            src="/manam-logo.jpeg"
-            alt="MANAM — Advisory / Tax / Secretarial Services"
-            width={220}
-            height={86}
-            className="rounded-xl bg-white px-4 py-3 shadow-lg"
-            priority
-          />
-        </div>
       </div>
       </div>
     </div>
