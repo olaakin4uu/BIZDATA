@@ -116,6 +116,7 @@ export class ProvidersService {
       where: { id },
       data: {
         name: dto.name ?? undefined,
+        providerType: dto.providerType ?? undefined,
         contactEmail: dto.contactEmail ?? undefined,
         contactPhone: dto.contactPhone ?? undefined,
         address: dto.address ?? undefined,
@@ -133,6 +134,11 @@ export class ProvidersService {
       action: 'UPDATE_PROVIDER',
       entity: 'DataProvider',
       entityId: id,
+      // Record the structural provider-type transition (string values only —
+      // never Date objects — so the audit hash stays stable).
+      ...(dto.providerType != null && dto.providerType !== before.providerType
+        ? { beforeJson: { providerType: before.providerType }, afterJson: { providerType: dto.providerType } }
+        : {}),
     });
 
     return provider;

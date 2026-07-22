@@ -1,14 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { ReportableService } from '../../common/services/reportable.service';
 
 /**
  * Cross-cutting analytics: comparative views of the data by provider and by
  * sector. Turns 7,000+ raw records into decision-grade aggregates — volume,
  * value, data quality, and enforcement yield.
+ *
+ * Scoped to REPORTABLE taxpayers (§29 threshold) so "underdeclaration
+ * concentration / gap" means the same thing here as in cases / tax-net —
+ * below-threshold parties are never framed as an underdeclaration signal.
  */
 @Injectable()
 export class AnalyticsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private reportable: ReportableService,
+  ) {}
 
   /**
    * By-provider comparative. For each active provider: how much data it
@@ -20,9 +28,17 @@ export class AnalyticsService {
       select: { id: true, name: true, providerType: true, providerCode: true },
     });
 
+    // Reportable-taxpayer gate (§29). Analytics only concerns parties over the
+    // threshold, so below-threshold volume isn't framed as underdeclaration.
+    const reportableIds = [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
+    if (reportableIds.length === 0) {
+      return { totals: { providers: 0, records: 0, observedInflow: 0, flagged: 0 }, rows: [] };
+    }
+
     // Exclude ₦0 account-opening records so per-provider record counts are real.
     const recWhere: any = {
       ...(year ? { periodYear: year } : {}),
+      taxpayerId: { in: reportableIds },
       NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
     };
 
@@ -32,6 +48,7 @@ export class AnalyticsService {
     // Node and building JS Sets — the old findMany materialised ~1M rows in heap
     // and OOM-crashed the backend when the /analytics page loaded (year='').
     const yearClause = year ? `AND "periodYear" = ${Number(year)}` : '';
+    // Parameterised reportable-id set for the raw query ($1::text[]).
     const [recAgg, tpAggRaw, flaggedAgg, submissionAgg] = await Promise.all([
       this.prisma.dataRecord.groupBy({
         by: ['providerId'],
@@ -48,10 +65,11 @@ export class AnalyticsService {
                 COUNT(*)                     AS "total",
                 COUNT(*) FILTER (WHERE "bvn" IS NOT NULL OR "nin" IS NOT NULL) AS "withId"
          FROM data_records
-         WHERE "taxpayerId" IS NOT NULL
+         WHERE "taxpayerId" = ANY($1::text[])
            AND (payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
            ${yearClause}
          GROUP BY "providerId"`,
+        reportableIds,
       ),
       // flagged records per provider (enforcement yield)
       this.prisma.dataRecord.groupBy({
@@ -123,6 +141,13 @@ export class AnalyticsService {
     // that OOM-crashed the backend on the /analytics page. Per-taxpayer inflow,
     // flagged status and estimated-tax are joined as CTEs so nothing but the
     // per-sector result rows (a handful) crosses the wire.
+    // Reportable-taxpayer gate (§29) — sector comparatives count only parties
+    // over the threshold, matching cases/tax-net/by-provider.
+    const reportableIds = [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
+    if (reportableIds.length === 0) {
+      return { totals: { sectors: 0, classified: 0, unclassified: 0 }, rows: [] };
+    }
+
     const recFilter = `"taxpayerId" IS NOT NULL AND (payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'`;
     const recYear = year ? `AND "periodYear" = ${Number(year)}` : '';
     const caseYear = year ? `WHERE "year" = ${Number(year)}` : '';
@@ -153,7 +178,9 @@ export class AnalyticsService {
        LEFT JOIN inflow i  ON i."taxpayerId"  = t.id
        LEFT JOIN flagged f ON f."taxpayerId"  = t.id
        LEFT JOIN taxdue td ON td."taxpayerId" = t.id
+       WHERE t.id = ANY($1::text[])
        GROUP BY COALESCE(t.sector, 'UNCLASSIFIED')`,
+      reportableIds,
     );
 
     const rows = rowsRaw.map((r) => {
