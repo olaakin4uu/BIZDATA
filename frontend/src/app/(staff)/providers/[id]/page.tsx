@@ -8,7 +8,7 @@ import { Modal } from '@/components/Modal';
 import { Button } from '@/components/Button';
 import { providersApi, type Provider, type ProviderUserRecord } from '@/lib/api/providers';
 import { complianceApi, type ProviderCompliance, type PeriodStatus } from '@/lib/api/compliance';
-import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, formatDate, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
+import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, SECTION_29_PROVIDER_TYPES, formatDate, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
 
 type Params = Promise<{ id: string }>;
 
@@ -372,9 +372,15 @@ function Info({ label, value, className }: { label: string; value: React.ReactNo
 
 function EditProviderForm({ provider, onSaved, onCancel }: { provider: Provider; onSaved: () => void; onCancel: () => void }) {
   const [form, setForm] = useState({
-    name: provider.name, contactEmail: provider.contactEmail ?? '', contactPhone: provider.contactPhone ?? '',
+    name: provider.name, providerType: provider.providerType, contactEmail: provider.contactEmail ?? '', contactPhone: provider.contactPhone ?? '',
     address: provider.address ?? '', reportingFrequency: provider.reportingFrequency ?? 'QUARTERLY', status: provider.status,
   });
+  // §29 allows switching only between financial-institution types. If this provider
+  // is currently an out-of-scope legacy type, surface it (disabled) so the select
+  // still shows the real value instead of silently defaulting to the first option.
+  const typeOptions = SECTION_29_PROVIDER_TYPES.includes(provider.providerType as never)
+    ? SECTION_29_PROVIDER_TYPES
+    : [provider.providerType, ...SECTION_29_PROVIDER_TYPES];
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const submit = async (e: React.FormEvent) => {
@@ -388,6 +394,14 @@ function EditProviderForm({ provider, onSaved, onCancel }: { provider: Provider;
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div><label className="block text-xs font-medium text-slate-700 mb-1">Name</label>
           <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" /></div>
+        <div><label className="block text-xs font-medium text-slate-700 mb-1">Provider type</label>
+          <select value={form.providerType} onChange={(e) => setForm({ ...form, providerType: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+            {typeOptions.map((t) => (
+              <option key={t} value={t} disabled={!SECTION_29_PROVIDER_TYPES.includes(t as never)}>
+                {t.replace(/_/g, ' ')}{!SECTION_29_PROVIDER_TYPES.includes(t as never) ? ' (out of §29 scope)' : ''}
+              </option>
+            ))}</select>
+          <p className="mt-1 text-[11px] text-slate-400">Only §29 financial-institution types are selectable.</p></div>
         <div><label className="block text-xs font-medium text-slate-700 mb-1">Status</label>
           <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
             {PROVIDER_STATUSES.map((s) => <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>)}</select></div>
