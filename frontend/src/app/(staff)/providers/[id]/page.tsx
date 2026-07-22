@@ -36,6 +36,9 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
 
   const [year, setYear] = useState(CURRENT_YEAR);
   const [compliance, setCompliance] = useState<ProviderCompliance | null>(null);
+  // Distinguish "still fetching" from "fetched, no row" so a non-ACTIVE provider
+  // doesn't render the loading state forever (it never had a compliance row).
+  const [complianceLoading, setComplianceLoading] = useState(true);
 
   const refresh = () => {
     setLoading(true);
@@ -51,10 +54,12 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
 
   // Per-provider compliance for the selected year.
   useEffect(() => {
+    setComplianceLoading(true);
     setCompliance(null);
     complianceApi.list(year)
       .then((rows) => setCompliance(rows.find((r) => r.provider.id === id) ?? null))
-      .catch(() => setCompliance(null));
+      .catch(() => setCompliance(null))
+      .finally(() => setComplianceLoading(false));
   }, [id, year]);
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
@@ -133,8 +138,10 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
             ))}
           </div>
         </div>
-        {compliance === null ? (
+        {complianceLoading ? (
           <p className="text-xs text-slate-400">Loading compliance…</p>
+        ) : compliance === null ? (
+          <p className="text-xs text-slate-400">No compliance data for this provider{provider.status !== 'ACTIVE' ? ` (${provider.status.toLowerCase()})` : ''} in {year}.</p>
         ) : (
           <>
             <div className="grid grid-cols-4 gap-3 mb-4">

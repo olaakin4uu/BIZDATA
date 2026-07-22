@@ -115,8 +115,12 @@ export class ProviderComplianceService {
     // Commencement gate: penalties apply only to periods due on/after this date.
     // Null → no gate (enforce from every due date).
     const pEffective = cfg.providerPenaltyEffectiveFrom ? new Date(cfg.providerPenaltyEffectiveFrom) : null;
+    // Include ALL providers (not just ACTIVE) so the compliance list + KPI count
+    // agree with the dashboard's provider total, and so a suspended provider's
+    // detail page can resolve its row. Each row carries `status`, so suspended
+    // providers are visibly marked rather than silently dropped.
     const providers = await this.prisma.dataProvider.findMany({
-      where: { ...(providerId ? { id: providerId } : { status: 'ACTIVE' }) },
+      where: { ...(providerId ? { id: providerId } : {}) },
       select: { id: true, name: true, providerType: true, reportingFrequency: true, status: true },
       orderBy: { name: 'asc' },
     });
