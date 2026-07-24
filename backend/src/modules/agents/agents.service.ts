@@ -29,15 +29,20 @@ export class AgentsService {
     // fetching all-then-filtering would load the whole table into memory (OOM).
     const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
     if (reportableIds.size === 0) return [];
-    const records = await this.prisma.dataRecord.findMany({
-      where: { periodYear: year, taxpayerId: { in: [...reportableIds] } },
-      select: {
-        taxpayerId: true, providerId: true, providerType: true, periodLabel: true, periodYear: true,
-        totalInflow: true, totalOutflow: true, openingBalance: true, closingBalance: true,
-        transactionCount: true, matchConfidence: true, accountName: true, accountNumber: true,
-        bvn: true, payload: true,
-      },
-    });
+    // Fetch reportable records via a single `= ANY($1::text[])` array bind rather
+    // than Prisma `in` (which expands to one parameter per id and trips Postgres'
+    // ~32k bind cap / P2029 once the reportable population is large).
+    const records = await this.prisma.$queryRaw<Array<{
+      taxpayerId: string; providerId: string; providerType: string; periodLabel: string; periodYear: number;
+      totalInflow: any; totalOutflow: any; openingBalance: any; closingBalance: any;
+      transactionCount: number | null; matchConfidence: any; accountName: string | null;
+      accountNumber: string | null; bvn: string | null; payload: any;
+    }>>(Prisma.sql`
+      SELECT "taxpayerId", "providerId", "providerType", "periodLabel", "periodYear",
+             "totalInflow", "totalOutflow", "openingBalance", "closingBalance",
+             "transactionCount", "matchConfidence", "accountName", "accountNumber", "bvn", payload
+        FROM data_records
+       WHERE "periodYear" = ${year} AND "taxpayerId" = ANY(${[...reportableIds]}::text[])`);
     const byTp = new Map<string, typeof records>();
     for (const r of records) {
       if (!r.taxpayerId) continue;
@@ -45,14 +50,23 @@ export class AgentsService {
     }
     if (byTp.size === 0) return [];
 
-    const taxpayers = await this.prisma.taxpayer.findMany({
-      where: { id: { in: [...byTp.keys()] } },
-      select: {
-        id: true, type: true, firstName: true, lastName: true, businessName: true,
-        dateOfBirth: true, stateOfResidence: true, sector: true,
-        declaredIncomes: { where: { year }, select: { assessableIncome: true } },
-      },
-    });
+    // Chunk the id list into ≤10k batches so no single Prisma `in` exceeds the
+    // ~32k parameter cap (P2029). Keeps the declaredIncomes relation include.
+    const tpIds = [...byTp.keys()];
+    const CHUNK = 10000;
+    const taxpayerBatches = await Promise.all(
+      Array.from({ length: Math.ceil(tpIds.length / CHUNK) }, (_, i) =>
+        this.prisma.taxpayer.findMany({
+          where: { id: { in: tpIds.slice(i * CHUNK, i * CHUNK + CHUNK) } },
+          select: {
+            id: true, type: true, firstName: true, lastName: true, businessName: true,
+            dateOfBirth: true, stateOfResidence: true, sector: true,
+            declaredIncomes: { where: { year }, select: { assessableIncome: true } },
+          },
+        }),
+      ),
+    );
+    const taxpayers = taxpayerBatches.flat();
 
     return taxpayers.map((t) => {
       const recs = byTp.get(t.id) ?? [];
@@ -116,10 +130,9 @@ export class AgentsService {
     // sector agent flags), guaranteeing full coverage. A provider-supplied sector
     // is authoritative, so we only fill in where the taxpayer has none yet.
     let sectorsWritten = 0;
-    const needSector = await this.prisma.taxpayer.findMany({
-      where: { sector: null, id: { in: profiles.map((p) => p.taxpayerId) } },
-      select: { id: true },
-    });
+    const profileIds = profiles.map((p) => p.taxpayerId);
+    const needSector = await this.prisma.$queryRaw<Array<{ id: string }>>(Prisma.sql`
+      SELECT id FROM taxpayers WHERE sector IS NULL AND id = ANY(${profileIds}::text[])`);
     const needSet = new Set(needSector.map((t) => t.id));
     for (const profile of profiles) {
       if (!needSet.has(profile.taxpayerId)) continue; // keep provider-supplied sector
@@ -172,10 +185,9 @@ export class AgentsService {
 
     // Multi-signal fusion: blend agent corroboration into each case's risk.
     let casesUpdated = 0;
-    const yearCases = await this.prisma.underdeclarationCase.findMany({
-      where: { year, taxpayerId: { in: [...signalsByTaxpayer.keys()] } },
-      select: { id: true, taxpayerId: true, confidence: true },
-    });
+    const sigTpIds = [...signalsByTaxpayer.keys()];
+    const yearCases = sigTpIds.length === 0 ? [] : await this.prisma.$queryRaw<Array<{ id: string; taxpayerId: string; confidence: any }>>(Prisma.sql`
+      SELECT id, "taxpayerId", confidence FROM underdeclaration_cases WHERE year = ${year} AND "taxpayerId" = ANY(${sigTpIds}::text[])`);
     for (const c of yearCases) {
       const sigs = signalsByTaxpayer.get(c.taxpayerId) ?? [];
       if (!sigs.length) continue;

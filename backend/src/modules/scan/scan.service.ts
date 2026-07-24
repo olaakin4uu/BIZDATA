@@ -68,41 +68,44 @@ export class ScanService {
       // restricting the read to reportable taxpayer ids is both correct and bounded.
       // (Account-opening rows carry ₦0 and never affect the sums.)
       const reportableIds = await this.reportable.reportableTaxpayerIds({ year });
+      // whereRecord is used ONLY for the per-taxpayer updateMany below (which adds a
+      // specific taxpayerId, so it never ships a large IN list). Keep it minimal.
       const whereRecord: Prisma.DataRecordWhereInput = {
         periodYear: year,
-        taxpayerId: reportableIds.size ? { in: [...reportableIds] } : { not: null },
+        taxpayerId: { not: null },
         ...(providerTypes?.length ? { providerType: { in: providerTypes as any[] } } : {}),
       };
 
-      // Pull the (now bounded) matching records once and aggregate per taxpayer in-memory.
-      const records = await this.prisma.dataRecord.findMany({
-        where: whereRecord,
-        select: {
-          taxpayerId: true,
-          providerId: true,
-          totalInflow: true,
-          totalOutflow: true,
-          matchConfidence: true,
-        },
-      });
+      // Aggregate per taxpayer IN THE DATABASE — never load every reportable row into
+      // memory (that OOMs at scale), and pass the reportable set as a single
+      // `= ANY($2::text[])` array bind, NOT a Prisma `in` list (which expands to one
+      // parameter per id and trips Postgres' ~32k bind cap / P2029 once the reportable
+      // population is large, e.g. after a bulk provider upload).
+      const reportableArr = [...reportableIds];
+      const provClause = providerTypes?.length ? `AND "providerType" = ANY($3::text[])` : '';
+      const aggRows = reportableArr.length === 0 ? [] : await this.prisma.$queryRawUnsafe<Array<{
+        taxpayerId: string; inflow: string; outflow: string; providers: bigint; avgconf: string | null;
+      }>>(
+        `SELECT "taxpayerId",
+                COALESCE(SUM("totalInflow"), 0)  AS inflow,
+                COALESCE(SUM("totalOutflow"), 0) AS outflow,
+                COUNT(DISTINCT "providerId")     AS providers,
+                AVG("matchConfidence")           AS avgconf
+           FROM data_records
+          WHERE "periodYear" = $1 AND "taxpayerId" = ANY($2::text[]) ${provClause}
+          GROUP BY "taxpayerId"`,
+        ...(providerTypes?.length ? [year, reportableArr, providerTypes] : [year, reportableArr]),
+      );
 
-      type Agg = {
-        inflow: number;
-        outflow: number;
-        providers: Set<string>;
-        matchConfs: number[];
-      };
+      type Agg = { inflow: number; outflow: number; providerCount: number; avgConf: number | null };
       const byTaxpayer = new Map<string, Agg>();
-      for (const r of records) {
-        if (!r.taxpayerId) continue;
-        const a =
-          byTaxpayer.get(r.taxpayerId) ??
-          { inflow: 0, outflow: 0, providers: new Set<string>(), matchConfs: [] };
-        a.inflow += Number(r.totalInflow ?? 0);
-        a.outflow += Number(r.totalOutflow ?? 0);
-        a.providers.add(r.providerId);
-        if (r.matchConfidence != null) a.matchConfs.push(Number(r.matchConfidence));
-        byTaxpayer.set(r.taxpayerId, a);
+      for (const r of aggRows) {
+        byTaxpayer.set(r.taxpayerId, {
+          inflow: Number(r.inflow),
+          outflow: Number(r.outflow),
+          providerCount: Number(r.providers),
+          avgConf: r.avgconf != null ? Number(r.avgconf) : null,
+        });
       }
 
       let totalFlagged = 0;
@@ -173,13 +176,10 @@ export class ScanService {
         if (!shouldFlag) continue;
 
         // 3. Score + explain + estimate recoverable tax
-        const avgMatchConfidence =
-          agg.matchConfs.length > 0
-            ? agg.matchConfs.reduce((s, v) => s + v, 0) / agg.matchConfs.length
-            : 0.5;
+        const avgMatchConfidence = agg.avgConf ?? 0.5;
         const { confidence, reasons } = scoreCase({
           discrepancyPct,
-          providerCount: agg.providers.size,
+          providerCount: agg.providerCount,
           avgMatchConfidence,
           passThroughDiscount,
           hasDeclaration,
@@ -215,7 +215,7 @@ export class ScanService {
           altTaxDue: estimate.flatTax != null ? new Prisma.Decimal(estimate.flatTax.toFixed(2)) : null,
           confidence: new Prisma.Decimal(confidence.toFixed(2)),
           reasons: reasons as any,
-          providerCount: agg.providers.size,
+          providerCount: agg.providerCount,
           engineVersion: ENGINE_VERSION,
           riskLevel: confidenceToRisk(confidence) as any,
         };
