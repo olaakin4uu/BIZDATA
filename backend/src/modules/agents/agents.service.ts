@@ -204,39 +204,55 @@ export class AgentsService {
 
   async signals(query: { year?: string; taxpayerId?: string; agentKey?: string; severity?: string; page?: string; limit?: string }) {
     const yr = query.year ? parseInt(query.year, 10) : undefined;
-    // Statutory threshold: only signals for reportable taxpayers (unless a
-    // specific taxpayer is requested, e.g. their own 360 view).
-    const reportableFilter = query.taxpayerId
-      ? {}
-      : { taxpayerId: { in: [...(await this.reportable.reportableTaxpayerIds(yr ? { year: yr } : {}))] } };
-    const where: Prisma.RiskSignalWhereInput = {
-      ...(yr ? { year: yr } : {}),
-      ...(query.taxpayerId ? { taxpayerId: query.taxpayerId } : {}),
-      ...(query.agentKey ? { agentKey: query.agentKey } : {}),
-      ...(query.severity ? { severity: query.severity } : {}),
-      ...reportableFilter,
-    };
+    // Reportable-gated WHERE built for raw SQL: the reportable id set is passed
+    // as a single `= ANY($1::text[])` bind, not a Prisma `in` list (which trips
+    // Postgres' ~32k parameter cap / P2029 once the reportable population is
+    // large). A taxpayer-scoped request (e.g. their own 360 view) skips the gate.
+    const conds: Prisma.Sql[] = [];
+    if (yr) conds.push(Prisma.sql`s."year" = ${yr}`);
+    if (query.agentKey) conds.push(Prisma.sql`s."agentKey" = ${String(query.agentKey)}`);
+    if (query.severity) conds.push(Prisma.sql`s."severity"::text = ${String(query.severity)}`);
+    if (query.taxpayerId) {
+      conds.push(Prisma.sql`s."taxpayerId" = ${String(query.taxpayerId)}`);
+    } else {
+      const ids = [...(await this.reportable.reportableTaxpayerIds(yr ? { year: yr } : {}))];
+      conds.push(Prisma.sql`s."taxpayerId" = ANY(${ids}::text[])`);
+    }
+    const whereSql = conds.length ? Prisma.join(conds, ' AND ') : Prisma.sql`TRUE`;
+
     // Back-compat: callers that don't request pagination (dashboard, case/360
     // views) get the plain array. Only the Agent Signals page passes page/limit
     // and receives the rich { signals, total, page, limit } shape.
     if (!query.page && !query.limit) {
-      return this.prisma.riskSignal.findMany({ where, orderBy: [{ score: 'desc' }], take: 200 });
+      const idRows = await this.prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT s."id" FROM risk_signals s WHERE ${whereSql} ORDER BY s."score" DESC LIMIT 200`,
+      );
+      const ids = idRows.map((r) => r.id);
+      if (!ids.length) return [];
+      return this.prisma.riskSignal.findMany({ where: { id: { in: ids } }, orderBy: [{ score: 'desc' }] });
     }
 
     const page = Math.max(1, parseInt(query.page ?? '1', 10));
     const limit = Math.min(100, Math.max(1, parseInt(query.limit ?? '50', 10)));
-    const [rows, total] = await this.prisma.$transaction([
-      this.prisma.riskSignal.findMany({
-        where,
-        orderBy: [{ score: 'desc' }],
-        skip: (page - 1) * limit,
-        take: limit,
-        include: {
-          taxpayer: { select: { id: true, businessName: true, firstName: true, lastName: true, type: true, sector: true } },
-        },
-      }),
-      this.prisma.riskSignal.count({ where }),
+    const [idRows, countRows] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT s."id" FROM risk_signals s WHERE ${whereSql} ORDER BY s."score" DESC LIMIT ${limit} OFFSET ${(page - 1) * limit}`,
+      ),
+      this.prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS count FROM risk_signals s WHERE ${whereSql}`,
+      ),
     ]);
+    const total = Number(countRows[0]?.count ?? 0);
+    const pageIds = idRows.map((r) => r.id);
+    const rows = pageIds.length
+      ? await this.prisma.riskSignal.findMany({
+          where: { id: { in: pageIds } },
+          orderBy: [{ score: 'desc' }],
+          include: {
+            taxpayer: { select: { id: true, businessName: true, firstName: true, lastName: true, type: true, sector: true } },
+          },
+        })
+      : [];
     const signals = rows.map((r) => ({
       id: r.id, taxpayerId: r.taxpayerId, year: r.year, agentKey: r.agentKey,
       score: r.score, severity: r.severity, summary: r.summary, createdAt: r.createdAt,
@@ -251,16 +267,23 @@ export class AgentsService {
 
   /** Signal counts by agent + severity, for the summary strip. */
   async signalSummary(year?: number) {
-    const reportableIds = [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
-    const where: Prisma.RiskSignalWhereInput = { ...(year ? { year } : {}), taxpayerId: { in: reportableIds } };
+    // Reportable set as a single `= ANY($1::text[])` bind (Prisma `in` trips the
+    // ~32k parameter cap / P2029 at scale — see signals()). Grouped in SQL.
+    const ids = [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
+    const yrSql = year ? Prisma.sql` AND s."year" = ${year}` : Prisma.empty;
+    const whereSql = Prisma.sql`s."taxpayerId" = ANY(${ids}::text[])${yrSql}`;
     const [byAgent, bySeverity] = await Promise.all([
-      this.prisma.riskSignal.groupBy({ by: ['agentKey'], where, _count: { _all: true } }),
-      this.prisma.riskSignal.groupBy({ by: ['severity'], where, _count: { _all: true } }),
+      this.prisma.$queryRaw<{ agentKey: string; c: bigint }[]>(
+        Prisma.sql`SELECT s."agentKey" AS "agentKey", COUNT(*)::bigint AS c FROM risk_signals s WHERE ${whereSql} GROUP BY s."agentKey"`,
+      ),
+      this.prisma.$queryRaw<{ severity: string; c: bigint }[]>(
+        Prisma.sql`SELECT s."severity" AS severity, COUNT(*)::bigint AS c FROM risk_signals s WHERE ${whereSql} GROUP BY s."severity"`,
+      ),
     ]);
     return {
-      total: byAgent.reduce((s, a) => s + a._count._all, 0),
-      byAgent: byAgent.map((a) => ({ agentKey: a.agentKey, count: a._count._all })),
-      bySeverity: bySeverity.map((s) => ({ severity: s.severity, count: s._count._all })),
+      total: byAgent.reduce((s, a) => s + Number(a.c), 0),
+      byAgent: byAgent.map((a) => ({ agentKey: a.agentKey, count: Number(a.c) })),
+      bySeverity: bySeverity.map((s) => ({ severity: s.severity, count: Number(s.c) })),
     };
   }
 }

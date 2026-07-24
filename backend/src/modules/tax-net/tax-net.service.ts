@@ -56,50 +56,62 @@ export class TaxNetService {
     // the WHOLE ~2M-row universe before filtering, OOM-crashing the backend.
     const reportableIds = await this.reportable.reportableTaxpayerIds({ year: opts.year });
     const reportableIdList = [...reportableIds];
+    // Every read below passes the reportable set as a single `= ANY($1::text[])`
+    // array bind — NOT a Prisma `in` list, which expands to one parameter per id
+    // and trips Postgres' ~32k bind cap (P2029) once the reportable population is
+    // large. Aggregations stay in SQL so the ~2M-row table never lands in heap.
+    const recYear = opts.year ? `AND "periodYear" = ${Number(opts.year)}` : '';
 
-    // Observed inflow per taxpayer — scoped to reportable taxpayers only.
-    const inflowRows = reportableIdList.length === 0 ? [] : await this.prisma.dataRecord.groupBy({
-      by: ['taxpayerId'],
-      where: {
-        taxpayerId: { in: reportableIdList },
-        ...(opts.year ? { periodYear: opts.year } : {}),
-        // exclude ₦0 account-opening rows so the per-taxpayer "records" count is real
-        NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
-      },
-      _sum: { totalInflow: true },
-      _count: { _all: true },
-    });
+    // Observed inflow + record count per reportable taxpayer (₦0 account-opening
+    // rows excluded so the per-taxpayer "records" count reflects real transactions).
+    const inflowRows = reportableIdList.length === 0 ? [] : await this.prisma.$queryRawUnsafe<
+      { taxpayerId: string; inflow: string | null; records: bigint }[]
+    >(
+      `SELECT "taxpayerId", COALESCE(SUM("totalInflow"),0) AS inflow, COUNT(*)::bigint AS records
+         FROM data_records
+        WHERE "taxpayerId" = ANY($1::text[]) ${recYear}
+          AND (payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
+        GROUP BY "taxpayerId"`,
+      reportableIdList,
+    );
     const inflowByTp = new Map<string, { inflow: number; records: number }>();
     for (const r of inflowRows) {
-      if (r.taxpayerId) inflowByTp.set(r.taxpayerId, {
-        inflow: Number(r._sum.totalInflow ?? 0), records: r._count._all,
-      });
+      inflowByTp.set(r.taxpayerId, { inflow: Number(r.inflow ?? 0), records: Number(r.records) });
     }
 
     // Which provider(s) each taxpayer's data was pulled from — reportable only.
-    const provLinks = reportableIdList.length === 0 ? [] : await this.prisma.dataRecord.findMany({
-      where: { taxpayerId: { in: reportableIdList }, ...(opts.year ? { periodYear: opts.year } : {}) },
-      select: { taxpayerId: true, provider: { select: { name: true } } },
-      distinct: ['taxpayerId', 'providerId'],
-    });
+    const provLinks = reportableIdList.length === 0 ? [] : await this.prisma.$queryRawUnsafe<
+      { taxpayerId: string; name: string | null }[]
+    >(
+      `SELECT DISTINCT dr."taxpayerId", p."name"
+         FROM data_records dr
+         JOIN data_providers p ON p.id = dr."providerId"
+        WHERE dr."taxpayerId" = ANY($1::text[]) ${opts.year ? `AND dr."periodYear" = ${Number(opts.year)}` : ''}`,
+      reportableIdList,
+    );
     const providersByTp = new Map<string, Set<string>>();
     for (const l of provLinks) {
       if (!l.taxpayerId) continue;
       const set = providersByTp.get(l.taxpayerId) ?? new Set<string>();
-      if (l.provider?.name) set.add(l.provider.name);
+      if (l.name) set.add(l.name);
       providersByTp.set(l.taxpayerId, set);
     }
 
     // Reportable taxpayers only (identity fields — no PII decryption to classify).
-    const taxpayers = await this.prisma.taxpayer.findMany({
-      where: { id: { in: [...reportableIds] } },
-      select: {
-        id: true, type: true, status: true, firstName: true, lastName: true,
-        businessName: true, cacRcNumber: true, tinIndex: true, ninIndex: true,
-        bvnIndex: true, stateOfResidence: true, sector: true,
-        payeStatus: true, payeRegNumber: true,
-      },
-    });
+    const taxpayers = reportableIdList.length === 0 ? [] : await this.prisma.$queryRawUnsafe<
+      {
+        id: string; type: string; status: string; firstName: string | null; lastName: string | null;
+        businessName: string | null; cacRcNumber: string | null; tinIndex: string | null;
+        ninIndex: string | null; bvnIndex: string | null; stateOfResidence: string | null;
+        sector: string | null; payeStatus: string | null; payeRegNumber: string | null;
+      }[]
+    >(
+      `SELECT id, type, status, "firstName", "lastName", "businessName", "cacRcNumber",
+              "tinIndex", "ninIndex", "bvnIndex", "stateOfResidence", sector,
+              "payeStatus", "payeRegNumber"
+         FROM taxpayers WHERE id = ANY($1::text[])`,
+      reportableIdList,
+    );
 
     // Segment summary across ALL taxpayers.
     const summary: Record<NetStatus, { count: number; observedInflow: number }> = {

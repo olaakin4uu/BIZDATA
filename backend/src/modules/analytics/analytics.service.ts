@@ -35,35 +35,25 @@ export class AnalyticsService {
       return { totals: { providers: 0, records: 0, observedInflow: 0, flagged: 0 }, rows: [] };
     }
 
-    // Exclude ₦0 account-opening records so per-provider record counts are real.
-    const recWhere: any = {
-      ...(year ? { periodYear: year } : {}),
-      taxpayerId: { in: reportableIds },
-      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
-    };
-
-    // Records + observed inflow + identity completeness per provider.
-    // NOTE: distinct-taxpayer + identity-completeness per provider is computed in
-    // SQL (COUNT(DISTINCT ...)) rather than by loading every matching row into
-    // Node and building JS Sets — the old findMany materialised ~1M rows in heap
-    // and OOM-crashed the backend when the /analytics page loaded (year='').
+    // Everything per-provider is aggregated in ONE raw query: record count,
+    // observed inflow, distinct taxpayers, identity completeness and flagged
+    // count. The reportable set is passed as a single `= ANY($1::text[])` array
+    // bind — NOT a Prisma `in` list, which expands to one parameter per id and
+    // trips Postgres' ~32k bind-parameter cap (P2029) once the reportable
+    // population is large (e.g. after a bulk provider upload). ₦0 account-opening
+    // rows are excluded so counts reflect real transactions; aggregating in SQL
+    // (not findMany + JS Sets) also keeps the ~1M-row table out of heap.
     const yearClause = year ? `AND "periodYear" = ${Number(year)}` : '';
-    // Parameterised reportable-id set for the raw query ($1::text[]).
-    const [recAgg, tpAggRaw, flaggedAgg, submissionAgg] = await Promise.all([
-      this.prisma.dataRecord.groupBy({
-        by: ['providerId'],
-        where: recWhere,
-        _count: { _all: true },
-        _sum: { totalInflow: true },
-      }),
-      // distinct taxpayers + identity completeness per provider — aggregated in DB
+    const [provAggRaw, submissionAgg] = await Promise.all([
       this.prisma.$queryRawUnsafe<
-        { providerId: string; distinctTps: bigint; total: bigint; withId: bigint }[]
+        { providerId: string; distinctTps: bigint; total: bigint; withId: bigint; observedInflow: string | null; flagged: bigint }[]
       >(
         `SELECT "providerId",
-                COUNT(DISTINCT "taxpayerId") AS "distinctTps",
-                COUNT(*)                     AS "total",
-                COUNT(*) FILTER (WHERE "bvn" IS NOT NULL OR "nin" IS NOT NULL) AS "withId"
+                COUNT(DISTINCT "taxpayerId")                                   AS "distinctTps",
+                COUNT(*)                                                       AS "total",
+                COUNT(*) FILTER (WHERE "bvn" IS NOT NULL OR "nin" IS NOT NULL)  AS "withId",
+                COALESCE(SUM("totalInflow"), 0)                                AS "observedInflow",
+                COUNT(*) FILTER (WHERE "flaggedAsUnderdeclared" = true)         AS "flagged"
          FROM data_records
          WHERE "taxpayerId" = ANY($1::text[])
            AND (payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
@@ -71,12 +61,6 @@ export class AnalyticsService {
          GROUP BY "providerId"`,
         reportableIds,
       ),
-      // flagged records per provider (enforcement yield)
-      this.prisma.dataRecord.groupBy({
-        by: ['providerId'],
-        where: { ...recWhere, flaggedAsUnderdeclared: true },
-        _count: { _all: true },
-      }),
       // submission quality per provider
       this.prisma.dataSubmission.groupBy({
         by: ['providerId'],
@@ -85,37 +69,28 @@ export class AnalyticsService {
       }),
     ]);
 
-    const recByProv = new Map(recAgg.map((r) => [r.providerId, r]));
-    const flaggedByProv = new Map(flaggedAgg.map((r) => [r.providerId, r._count._all]));
+    const provByProv = new Map(provAggRaw.map((r) => [r.providerId, r]));
     const subByProv = new Map(submissionAgg.map((r) => [r.providerId, r]));
 
-    // Distinct taxpayers + identity completeness per provider (from the SQL agg).
-    const tpByProv = new Map<string, { distinctTps: number; withId: number; total: number }>(
-      tpAggRaw.map((r) => [
-        r.providerId,
-        { distinctTps: Number(r.distinctTps), withId: Number(r.withId), total: Number(r.total) },
-      ]),
-    );
-
     const rows = providers.map((p) => {
-      const rec = recByProv.get(p.id);
-      const tp = tpByProv.get(p.id);
+      const agg = provByProv.get(p.id);
       const sub = subByProv.get(p.id);
-      const records = rec?._count._all ?? 0;
-      const observedInflow = Number(rec?._sum.totalInflow ?? 0);
+      const records = Number(agg?.total ?? 0);
+      const withId = Number(agg?.withId ?? 0);
+      const flaggedRecords = Number(agg?.flagged ?? 0);
       const totalRecords = sub?._sum.recordCount ?? 0;
       const rejected = sub?._sum.rejectedCount ?? 0;
       return {
         provider: { id: p.id, name: p.name, providerType: p.providerType, providerCode: p.providerCode },
         records,
-        taxpayers: tp?.distinctTps ?? 0,
-        observedInflow,
-        flaggedRecords: flaggedByProv.get(p.id) ?? 0,
+        taxpayers: Number(agg?.distinctTps ?? 0),
+        observedInflow: Number(agg?.observedInflow ?? 0),
+        flaggedRecords,
         rejectionRate: totalRecords > 0 ? Math.round((rejected / totalRecords) * 100) : 0,
         // identity completeness = share of rows with a resolvable BVN/NIN
-        identityCompleteness: tp && tp.total > 0 ? Math.round((tp.withId / tp.total) * 100) : 0,
+        identityCompleteness: records > 0 ? Math.round((withId / records) * 100) : 0,
         // yield = flagged records per 1,000 rows (how much intelligence per volume)
-        yieldPer1k: records > 0 ? Number((((flaggedByProv.get(p.id) ?? 0) / records) * 1000).toFixed(1)) : 0,
+        yieldPer1k: records > 0 ? Number(((flaggedRecords / records) * 1000).toFixed(1)) : 0,
       };
     });
 
