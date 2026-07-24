@@ -1,8 +1,13 @@
 # Tax Payments Sync — Integration Spec (Tax App → BIZDATA)
 
 Push each taxpayer's tax PAYMENTS by type into BIZDATA so the per-customer AI
-tax report can show **paid vs declared vs observed** for PAYE, WHT, CGT, CIT,
-VAT. Mirrors `POST /integration/paye` and `/integration/declared-income`.
+tax report can show **paid vs declared vs observed** for PIT, PAYE, WHT, CGT,
+stamp duty and other state levies. Mirrors `POST /integration/paye` and
+`/integration/declared-income`.
+
+> **State taxes only.** BIZDATA is a State revenue platform, so this endpoint
+> carries state-administered heads. Federally administered taxes are out of
+> scope and should not be pushed.
 
 ## Endpoint
 ```
@@ -25,7 +30,7 @@ payment.
 | Field | Required | Notes |
 |---|---|---|
 | `rcNumber` / `tin` | one of them | Match key. Aliases: `cacRcNumber`, `taxpayerTin`. TIN matched via blind index. |
-| `taxType` | yes | One of `PAYE` `WHT` `CGT` `CIT` `VAT` `OTHER`. |
+| `taxType` | yes | One of `PIT` `PAYE` `WHT` `CGT` `STAMP_DUTY` `LEVY` `OTHER`. |
 | `year` | yes | Reporting year (integer). |
 | `amountPaid` | yes | Number. Alias: `amount`. |
 | `period` | no | Finer period e.g. `2026-Q2` / `2026-03`. |
