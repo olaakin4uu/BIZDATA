@@ -51,8 +51,36 @@ const nonEmpty = (v: string) => !!(v && v.trim().length > 0);
 export const PART1_FIELDS: Part1FieldDef[] = [
   { key: 'fullName', label: 'Full name', type: 'text', validate: (v) => nonEmpty(v) && v.trim().length >= 2 },
   { key: 'staffNumber', label: 'Staff number', type: 'text', validate: nonEmpty },
+  {
+    key: 'staffCadre',
+    label: 'Staff cadre',
+    type: 'select',
+    options: [
+      'Officer I',
+      'Officer II',
+      'Assistant Manager',
+      'Deputy Manager',
+      'Manager',
+      'Senior Manager',
+      'Assistant Director',
+      'Deputy Director',
+    ],
+    validate: nonEmpty,
+  },
   { key: 'email', label: 'Official email address', type: 'email', validate: (v) => EMAIL_RE.test((v || '').trim()) },
-  { key: 'group', label: 'Group', type: 'text', validate: nonEmpty },
+  {
+    key: 'group',
+    label: 'Group',
+    type: 'select',
+    options: [
+      'Executive Chairman',
+      'Finance & Account',
+      'Revenue Operations',
+      'Compliance and Enforcement',
+      'Corporate Services',
+    ],
+    validate: nonEmpty,
+  },
   { key: 'department', label: 'Department', type: 'text', validate: nonEmpty },
   { key: 'unitTaxOffice', label: 'Unit / Tax Office', type: 'text', validate: nonEmpty },
 ];
