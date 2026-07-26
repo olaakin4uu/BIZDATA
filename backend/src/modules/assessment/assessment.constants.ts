@@ -18,8 +18,18 @@ export const ASSESSMENT_JWT_SECRET =
 /** Each attempt is a single 5-minute sitting, enforced by the server clock. */
 export const EXAM_DURATION_MS = 5 * 60 * 1000;
 
-/** Part 2 draws this many questions at random from the active bank. */
-export const QUESTIONS_PER_ATTEMPT = 10;
+/**
+ * Per-topic quota for Part 2: a fixed number of random questions is drawn from
+ * each topic (TAX weighted higher). QUESTIONS_PER_ATTEMPT is derived from the sum
+ * so Part 2 scoring stays consistent with the number actually asked.
+ */
+export const TOPIC_QUOTA: Record<string, number> = {
+  TAX: 4,
+  WORD: 2,
+  EXCEL: 2,
+  CYBERSECURITY: 2,
+};
+export const QUESTIONS_PER_ATTEMPT = Object.values(TOPIC_QUOTA).reduce((a, b) => a + b, 0);
 
 /** The two parts each contribute half of the 100-point total. */
 export const PART1_WEIGHT = 50;

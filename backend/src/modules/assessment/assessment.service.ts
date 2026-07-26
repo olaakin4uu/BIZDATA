@@ -9,6 +9,7 @@ import {
   PART2_WEIGHT,
   PASS_MARK,
   QUESTIONS_PER_ATTEMPT,
+  TOPIC_QUOTA,
   publicPart1Fields,
   scorePart1,
 } from './assessment.constants';
@@ -125,41 +126,29 @@ export class AssessmentService {
   }
 
   private async createAttempt(participantId: string): Promise<AttemptRow> {
-    // Balanced draw: split QUESTIONS_PER_ATTEMPT as evenly as possible across the
-    // active topics (round-robin in randomised topic order, so when N isn't a
-    // multiple of the topic count the remainder lands on different topics each
-    // attempt). Picks are random within a topic; the final set is shuffled so the
-    // topics interleave rather than appearing in blocks.
-    const { rows: topicRows } = await this.db.query<{ topic: string; n: number }>(
-      `SELECT topic, count(*)::int AS n FROM question WHERE active = true GROUP BY topic`,
-    );
-    if (topicRows.length === 0) throw new BadRequestException('No questions are configured yet.');
-    const topics = shuffle(topicRows.map((t) => t.topic));
-    const avail = new Map(topicRows.map((t) => [t.topic, Number(t.n)]));
-    const alloc = new Map<string, number>(topics.map((t) => [t, 0]));
-    let remaining = QUESTIONS_PER_ATTEMPT;
-    let progressed = true;
-    while (remaining > 0 && progressed) {
-      progressed = false;
-      for (const t of topics) {
-        if (remaining === 0) break;
-        if (alloc.get(t)! < avail.get(t)!) {
-          alloc.set(t, alloc.get(t)! + 1);
-          remaining--;
-          progressed = true;
-        }
-      }
-    }
+    // Fixed per-topic quota (TAX weighted higher — see TOPIC_QUOTA). Draw the
+    // configured number of random questions from each topic; if a topic is short
+    // on active questions, backfill from the rest so the count stays stable; then
+    // shuffle so the topics interleave rather than appearing in blocks.
     const picked: any[] = [];
-    for (const t of topics) {
-      const k = alloc.get(t)!;
-      if (k <= 0) continue;
+    for (const [topic, quota] of Object.entries(TOPIC_QUOTA)) {
+      if (quota <= 0) continue;
       const { rows: qs } = await this.db.query(
         `SELECT id, topic, title, stem, options, correct_index, competency, is_case_study
            FROM question WHERE active = true AND topic = $1 ORDER BY random() LIMIT $2`,
-        [t, k],
+        [topic, quota],
       );
       picked.push(...qs);
+    }
+    if (picked.length < QUESTIONS_PER_ATTEMPT) {
+      const have = picked.map((q: any) => q.id);
+      const { rows: extra } = await this.db.query(
+        `SELECT id, topic, title, stem, options, correct_index, competency, is_case_study
+           FROM question WHERE active = true AND id <> ALL($2::uuid[])
+           ORDER BY random() LIMIT $1`,
+        [QUESTIONS_PER_ATTEMPT - picked.length, have],
+      );
+      picked.push(...extra);
     }
     const rows = shuffle(picked);
     if (rows.length === 0) throw new BadRequestException('No questions are configured yet.');
