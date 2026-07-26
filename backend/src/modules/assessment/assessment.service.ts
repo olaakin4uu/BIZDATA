@@ -125,11 +125,43 @@ export class AssessmentService {
   }
 
   private async createAttempt(participantId: string): Promise<AttemptRow> {
-    const { rows } = await this.db.query(
-      `SELECT id, topic, title, stem, options, correct_index, competency, is_case_study
-         FROM question WHERE active = true ORDER BY random() LIMIT $1`,
-      [QUESTIONS_PER_ATTEMPT],
+    // Balanced draw: split QUESTIONS_PER_ATTEMPT as evenly as possible across the
+    // active topics (round-robin in randomised topic order, so when N isn't a
+    // multiple of the topic count the remainder lands on different topics each
+    // attempt). Picks are random within a topic; the final set is shuffled so the
+    // topics interleave rather than appearing in blocks.
+    const { rows: topicRows } = await this.db.query<{ topic: string; n: number }>(
+      `SELECT topic, count(*)::int AS n FROM question WHERE active = true GROUP BY topic`,
     );
+    if (topicRows.length === 0) throw new BadRequestException('No questions are configured yet.');
+    const topics = shuffle(topicRows.map((t) => t.topic));
+    const avail = new Map(topicRows.map((t) => [t.topic, Number(t.n)]));
+    const alloc = new Map<string, number>(topics.map((t) => [t, 0]));
+    let remaining = QUESTIONS_PER_ATTEMPT;
+    let progressed = true;
+    while (remaining > 0 && progressed) {
+      progressed = false;
+      for (const t of topics) {
+        if (remaining === 0) break;
+        if (alloc.get(t)! < avail.get(t)!) {
+          alloc.set(t, alloc.get(t)! + 1);
+          remaining--;
+          progressed = true;
+        }
+      }
+    }
+    const picked: any[] = [];
+    for (const t of topics) {
+      const k = alloc.get(t)!;
+      if (k <= 0) continue;
+      const { rows: qs } = await this.db.query(
+        `SELECT id, topic, title, stem, options, correct_index, competency, is_case_study
+           FROM question WHERE active = true AND topic = $1 ORDER BY random() LIMIT $2`,
+        [t, k],
+      );
+      picked.push(...qs);
+    }
+    const rows = shuffle(picked);
     if (rows.length === 0) throw new BadRequestException('No questions are configured yet.');
 
     const questions: AttemptQuestion[] = rows.map((q: any) => {
@@ -406,6 +438,15 @@ export class AssessmentService {
 }
 
 // ── pure helpers ─────────────────────────────────────────────────────────────
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
 
 function shuffleOptions(options: string[], correctIndex: number): { options: string[]; correctIndex: number } {
   const idx = options.map((_, i) => i);
