@@ -52,39 +52,55 @@ export class CasesService {
     private reportable: ReportableService,
   ) {}
 
-  // STATUTORY REPORTING THRESHOLD — a where-fragment limiting cases to reportable
-  // taxpayers. Cases are only created for reportable taxpayers (the scan is
-  // gated), but this also hides any pre-threshold cases from list/stats views.
-  private async reportableWhere(year?: number): Promise<Prisma.UnderdeclarationCaseWhereInput> {
-    const ids = await this.reportable.reportableTaxpayerIds(year ? { year } : {});
-    return { taxpayerId: { in: [...ids] } };
+  // STATUTORY REPORTING THRESHOLD — the reportable taxpayer-id list. Cases are
+  // only created for reportable taxpayers (the scan is gated), but list/stats
+  // re-filter through this too, so pre-threshold cases stay hidden.
+  //
+  // Returned as a plain array and fed to raw SQL as a single `= ANY($1::text[])`
+  // bind — NOT Prisma `in`, which expands to one parameter per id and trips
+  // Postgres' ~32k bind-parameter limit (P2029) once the reportable population
+  // is large (e.g. after a bulk provider upload). See stats()/findAll().
+  private async reportableIds(year?: number): Promise<string[]> {
+    return [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
+  }
+
+  /** WHERE fragment: reportable-gated, plus optional year, for raw case queries. */
+  private caseWhereSql(ids: string[], year?: number, extra: Prisma.Sql[] = []): Prisma.Sql {
+    const conds: Prisma.Sql[] = [Prisma.sql`c."taxpayerId" = ANY(${ids}::text[])`, ...extra];
+    if (year) conds.push(Prisma.sql`c."year" = ${year}`);
+    return Prisma.join(conds, ' AND ');
   }
 
   /** Dashboard headline metrics, the detection→recovery funnel, and breakdowns. */
   async stats(query: { year?: string } = {}) {
     const year = query.year ? parseInt(query.year, 10) : undefined;
-    const where: Prisma.UnderdeclarationCaseWhereInput = {
-      ...(year ? { year } : {}),
-      ...(await this.reportableWhere(year)),
-    };
+    const ids = await this.reportableIds(year);
+    const whereSql = this.caseWhereSql(ids, year);
 
-    const [byStatus, byRisk, atRiskAgg, recoveredAgg, totalEstAgg, totalCount] = await Promise.all([
-      this.prisma.underdeclarationCase.groupBy({ by: ['status'], where, _count: true, _sum: { estimatedTaxDue: true } }),
-      this.prisma.underdeclarationCase.groupBy({ by: ['riskLevel'], where, _count: true }),
-      this.prisma.underdeclarationCase.aggregate({
-        where: { ...where, status: { in: ACTIVE_STATES } },
-        _sum: { estimatedTaxDue: true },
-      }),
-      this.prisma.underdeclarationCase.aggregate({
-        where: { ...where, status: { in: ['RECOVERED', 'SETTLED'] } },
-        _sum: { recoveredAmount: true },
-      }),
-      this.prisma.underdeclarationCase.aggregate({ where, _sum: { estimatedTaxDue: true } }),
-      this.prisma.underdeclarationCase.count({ where }),
+    // Aggregate in the database with the reportable set as ONE array parameter.
+    // Everything else (funnel, at-risk, recovered totals) derives from these two
+    // grouped rowsets in JS — no giant Prisma `in` list.
+    const [byStatusRows, byRiskRows] = await Promise.all([
+      this.prisma.$queryRaw<{ status: CaseStatus; c: bigint; est: string; rec: string }[]>(Prisma.sql`
+        SELECT c."status" AS status, COUNT(*)::bigint AS c,
+               COALESCE(SUM(c."estimatedTaxDue"), 0)::text AS est,
+               COALESCE(SUM(c."recoveredAmount"), 0)::text AS rec
+          FROM underdeclaration_cases c WHERE ${whereSql} GROUP BY c."status"`),
+      this.prisma.$queryRaw<{ risklevel: string; c: bigint }[]>(Prisma.sql`
+        SELECT c."riskLevel" AS risklevel, COUNT(*)::bigint AS c
+          FROM underdeclaration_cases c WHERE ${whereSql} GROUP BY c."riskLevel"`),
     ]);
 
-    const statusCount = (s: CaseStatus) =>
-      byStatus.find((r) => r.status === s)?._count ?? 0;
+    const n = (v: unknown) => Number(v ?? 0);
+    const statusCount = (s: CaseStatus) => n(byStatusRows.find((r) => r.status === s)?.c);
+    const totalCount = byStatusRows.reduce((a, r) => a + n(r.c), 0);
+    const estimatedTaxTotal = byStatusRows.reduce((a, r) => a + n(r.est), 0);
+    const revenueAtRisk = byStatusRows
+      .filter((r) => ACTIVE_STATES.includes(r.status))
+      .reduce((a, r) => a + n(r.est), 0);
+    const recovered = byStatusRows
+      .filter((r) => r.status === 'RECOVERED' || r.status === 'SETTLED')
+      .reduce((a, r) => a + n(r.rec), 0);
 
     // Funnel: each stage counts cases at-or-beyond that stage where sensible.
     const funnel = [
@@ -101,45 +117,61 @@ export class CasesService {
       totalCases: totalCount,
       openCases: statusCount('OPEN'),
       dismissedCases: statusCount('DISMISSED'),
-      revenueAtRisk: Number(atRiskAgg._sum.estimatedTaxDue ?? 0),
-      recovered: Number(recoveredAgg._sum.recoveredAmount ?? 0),
-      estimatedTaxTotal: Number(totalEstAgg._sum.estimatedTaxDue ?? 0),
+      revenueAtRisk,
+      recovered,
+      estimatedTaxTotal,
       funnel,
-      byStatus: byStatus.map((r) => ({ status: r.status, count: r._count, estimatedTax: Number(r._sum.estimatedTaxDue ?? 0) })),
-      byRisk: byRisk.map((r) => ({ riskLevel: r.riskLevel, count: r._count })),
+      byStatus: byStatusRows.map((r) => ({ status: r.status, count: n(r.c), estimatedTax: n(r.est) })),
+      byRisk: byRiskRows.map((r) => ({ riskLevel: r.risklevel, count: n(r.c) })),
     };
   }
 
   async findAll(query: any) {
     const page = Math.max(1, parseInt(query.page || '1', 10));
     const limit = Math.min(200, Math.max(1, parseInt(query.limit || '50', 10)));
-    const where: Prisma.UnderdeclarationCaseWhereInput = {
-      ...(query.year ? { year: parseInt(query.year, 10) } : {}),
-      ...(query.status ? { status: query.status } : {}),
-      ...(query.riskLevel ? { riskLevel: query.riskLevel } : {}),
-      ...(query.assignedToId ? { assignedToId: query.assignedToId } : {}),
-      ...(await this.reportableWhere(query.year ? parseInt(query.year, 10) : undefined)),
-    };
-    const orderBy: Prisma.UnderdeclarationCaseOrderByWithRelationInput =
-      query.sort === 'confidence' ? { confidence: 'desc' } : { estimatedTaxDue: 'desc' };
+    const year = query.year ? parseInt(query.year, 10) : undefined;
+    const ids = await this.reportableIds(year);
 
-    const [cases, total] = await Promise.all([
-      this.prisma.underdeclarationCase.findMany({
-        where,
-        include: {
-          taxpayer: { select: { id: true, type: true, firstName: true, lastName: true, businessName: true, tinEnc: true, stateOfResidence: true } },
-          assignedTo: { select: { id: true, firstName: true, lastName: true } },
-        },
-        orderBy,
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.underdeclarationCase.count({ where }),
+    // Optional non-reportable filters, cast on the column side so we don't need
+    // the enum type names. Reportable gate + these all go through raw SQL with
+    // the id set as a single array bind (see reportableIds).
+    const extra: Prisma.Sql[] = [];
+    if (query.status) extra.push(Prisma.sql`c."status"::text = ${String(query.status)}`);
+    if (query.riskLevel) extra.push(Prisma.sql`c."riskLevel"::text = ${String(query.riskLevel)}`);
+    if (query.assignedToId) extra.push(Prisma.sql`c."assignedToId" = ${String(query.assignedToId)}`);
+    const whereSql = this.caseWhereSql(ids, year, extra);
+    const orderSql = query.sort === 'confidence' ? Prisma.sql`c."confidence" DESC` : Prisma.sql`c."estimatedTaxDue" DESC`;
+
+    // 1) resolve just this page's case ids + the true total (both array-bound).
+    const [idRows, countRows] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT c."id" FROM underdeclaration_cases c
+         WHERE ${whereSql} ORDER BY ${orderSql} LIMIT ${limit} OFFSET ${(page - 1) * limit}`),
+      this.prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS count FROM underdeclaration_cases c WHERE ${whereSql}`),
     ]);
-    const decrypted = cases.map((c) => ({
-      ...c,
-      taxpayer: c.taxpayer ? { ...c.taxpayer, tin: this.crypto.decrypt(c.taxpayer.tinEnc) } : c.taxpayer,
-    }));
+    const total = Number(countRows[0]?.count ?? 0);
+    const pageIds = idRows.map((r) => r.id);
+
+    // 2) hydrate that small page through Prisma (includes + decryption), then
+    //    restore the SQL ordering (findMany by id-set is unordered).
+    const rows = pageIds.length
+      ? await this.prisma.underdeclarationCase.findMany({
+          where: { id: { in: pageIds } },
+          include: {
+            taxpayer: { select: { id: true, type: true, firstName: true, lastName: true, businessName: true, tinEnc: true, stateOfResidence: true } },
+            assignedTo: { select: { id: true, firstName: true, lastName: true } },
+          },
+        })
+      : [];
+    const byId = new Map(rows.map((r) => [r.id, r]));
+    const decrypted = pageIds
+      .map((id) => byId.get(id))
+      .filter((c): c is (typeof rows)[number] => !!c)
+      .map((c) => ({
+        ...c,
+        taxpayer: c.taxpayer ? { ...c.taxpayer, tin: this.crypto.decrypt(c.taxpayer.tinEnc) } : c.taxpayer,
+      }));
     return { cases: decrypted, total, page, limit };
   }
 

@@ -38,6 +38,12 @@ const crypto = new CryptoService();
 const RECORDS = process.env.RECORDS_FILE || path.join(__dirname, 'import_records.jsonl');
 const PROVIDER_MAP = process.env.PROVIDER_MAP || path.join(__dirname, 'provider-map.json');
 const DRY_RUN = process.argv.includes('--dry-run');
+// Idempotency tag. Every record written in this run gets payload.importBatch =
+// IMPORT_BATCH, and before writing we delete only THIS batch's own prior rows
+// from the affected submissions. So a re-run (or a partial failure + retry)
+// converges instead of double-counting, and archive / other-batch rows are
+// never touched. Leave unset to reproduce the original append-only behaviour.
+const IMPORT_BATCH = process.env.IMPORT_BATCH || null;
 
 let encErrors = 0, taxpayersCreated = 0, taxpayersReused = 0;
 let recordsCreated = 0, recordsSkipped = 0, txnCount = 0, openCount = 0;
@@ -189,6 +195,16 @@ async function main() {
   for (const pair of pairs) { const [pid, quarter] = pair.split('|'); await getSubmission(pid, quarter); }
   console.log(`Pre-created ${subCache.size} submissions.`);
 
+  // Idempotency: clear only this batch's own prior rows from the affected
+  // submissions (archive rows have no importBatch tag, so they survive).
+  if (IMPORT_BATCH) {
+    const subIds = [...subCache.values()];
+    const del = await prisma.dataRecord.deleteMany({
+      where: { submissionId: { in: subIds }, payload: { path: ['importBatch'], equals: IMPORT_BATCH } },
+    });
+    console.log(`Idempotency: cleared ${del.count} prior rows for batch "${IMPORT_BATCH}".`);
+  }
+
   // PASS 2 (streaming): import in batches of BATCH, running each batch concurrently.
   const BATCH = 200;
   let batch: any[] = [];
@@ -228,6 +244,7 @@ async function main() {
             transactionCount: isOpen ? 0 : 1,
             payload: {
               source: 'bank-filing',
+              importBatch: IMPORT_BATCH || undefined,
               recordKind: isOpen ? 'ACCOUNT_OPENED' : 'TRANSACTION',
               transactionDate: r.transactionDate || null,
               transactionType: r.txntype || null,

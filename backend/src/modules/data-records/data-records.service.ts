@@ -44,37 +44,54 @@ export class DataRecordsService {
     const maxLimit = query.taxpayerId ? 5000 : 200;
     const limit = Math.min(maxLimit, Math.max(1, parseInt(query.limit || '50', 10)));
     // STATUTORY REPORTING THRESHOLD — records only surface for taxpayers whose
-    // aggregated quarterly inflow (summed across ALL their records, however many
-    // transactions the provider submitted) meets their type threshold.
-    const reportableIds = await this.reportable.reportableTaxpayerIds(
-      query.periodYear ? { year: parseInt(query.periodYear, 10) } : {},
-    );
-    const where: Prisma.DataRecordWhereInput = {
-      ...(query.providerId ? { providerId: query.providerId } : {}),
-      ...(query.providerType ? { providerType: query.providerType } : {}),
-      ...(query.periodYear ? { periodYear: parseInt(query.periodYear, 10) } : {}),
-      ...(query.taxpayerId ? { taxpayerId: query.taxpayerId } : { taxpayerId: { in: [...reportableIds] } }),
-      ...(query.flagged === 'true' ? { flaggedAsUnderdeclared: true } : {}),
-      ...(query.flagged === 'false' ? { flaggedAsUnderdeclared: false } : {}),
-      ...(query.reviewStatus ? { reviewStatus: query.reviewStatus } : {}),
-      // Account-opening records carry ₦0 inflow (identity graph only) — exclude them
-      // from this money-oriented list/count so they don't inflate record totals.
-      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
-    };
-    const [records, total] = await Promise.all([
-      this.prisma.dataRecord.findMany({
-        where,
-        include: {
-          provider: { select: { id: true, name: true, providerType: true } },
-          taxpayer: { select: { id: true, ninEnc: true, tinEnc: true, cacRcNumber: true, businessName: true, firstName: true, lastName: true } },
-          reviewedBy: { select: { id: true, firstName: true, lastName: true } },
-        },
-        orderBy: [{ flaggedAsUnderdeclared: 'desc' }, { createdAt: 'desc' }],
-        skip: (page - 1) * limit,
-        take: limit,
-      }),
-      this.prisma.dataRecord.count({ where }),
+    // aggregated quarterly inflow meets their type threshold. The reportable set
+    // is passed to SQL as ONE `= ANY($1::text[])` array bind (not a Prisma `in`
+    // list, which expands to one parameter per id and trips Postgres' ~32k cap /
+    // P2029 once the reportable population is large). Resolve just this page's
+    // record ids + true count in SQL, then hydrate that page through Prisma.
+    const conds: Prisma.Sql[] = [
+      // ₦0 account-opening rows (identity graph only) excluded from this list.
+      Prisma.sql`(r.payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'`,
+    ];
+    if (query.providerId) conds.push(Prisma.sql`r."providerId" = ${String(query.providerId)}`);
+    if (query.providerType) conds.push(Prisma.sql`r."providerType"::text = ${String(query.providerType)}`);
+    if (query.periodYear) conds.push(Prisma.sql`r."periodYear" = ${parseInt(query.periodYear, 10)}`);
+    if (query.taxpayerId) {
+      conds.push(Prisma.sql`r."taxpayerId" = ${String(query.taxpayerId)}`);
+    } else {
+      const reportableIds = [...(await this.reportable.reportableTaxpayerIds(
+        query.periodYear ? { year: parseInt(query.periodYear, 10) } : {},
+      ))];
+      conds.push(Prisma.sql`r."taxpayerId" = ANY(${reportableIds}::text[])`);
+    }
+    if (query.flagged === 'true') conds.push(Prisma.sql`r."flaggedAsUnderdeclared" = true`);
+    if (query.flagged === 'false') conds.push(Prisma.sql`r."flaggedAsUnderdeclared" = false`);
+    if (query.reviewStatus) conds.push(Prisma.sql`r."reviewStatus"::text = ${String(query.reviewStatus)}`);
+    const whereSql = Prisma.join(conds, ' AND ');
+
+    const [idRows, countRows] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
+        SELECT r."id" FROM data_records r WHERE ${whereSql}
+         ORDER BY r."flaggedAsUnderdeclared" DESC, r."createdAt" DESC
+         LIMIT ${limit} OFFSET ${(page - 1) * limit}`),
+      this.prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
+        SELECT COUNT(*)::bigint AS count FROM data_records r WHERE ${whereSql}`),
     ]);
+    const total = Number(countRows[0]?.count ?? 0);
+    const pageIds = idRows.map((r) => r.id);
+
+    const found = pageIds.length
+      ? await this.prisma.dataRecord.findMany({
+          where: { id: { in: pageIds } },
+          include: {
+            provider: { select: { id: true, name: true, providerType: true } },
+            taxpayer: { select: { id: true, ninEnc: true, tinEnc: true, cacRcNumber: true, businessName: true, firstName: true, lastName: true } },
+            reviewedBy: { select: { id: true, firstName: true, lastName: true } },
+          },
+        })
+      : [];
+    const byId = new Map(found.map((r) => [r.id, r]));
+    const records = pageIds.map((id) => byId.get(id)).filter((r): r is (typeof found)[number] => !!r);
     const clear = await this.pii.canRevealPii();
     return { records: records.map((r) => this.decryptRecord(r, clear)), total, page, limit };
   }
@@ -147,23 +164,26 @@ export class DataRecordsService {
   async stats() {
     // Reportable-taxpayer records only (statutory threshold). Exclude ₦0
     // account-opening records so counts reflect real transactions.
+    // Reportable set as a single `= ANY($1::text[])` array bind (see findAll for
+    // why Prisma `in` can't be used at scale — P2029). Counts run in SQL.
     const ids = [...(await this.reportable.reportableTaxpayerIds())];
-    const tp = {
-      taxpayerId: { in: ids },
-      NOT: { payload: { path: ['recordKind'], equals: 'ACCOUNT_OPENED' } },
-    } as Prisma.DataRecordWhereInput;
+    const base = Prisma.sql`r."taxpayerId" = ANY(${ids}::text[]) AND (r.payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'`;
     // The review cards (pending/confirmed/cleared) count FLAGGED records only —
     // the flagged page lists {flagged:true, reviewStatus:...}, so the card must
     // match its own list. Counting every PENDING_REVIEW record (incl. unflagged
     // ingest defaults) made the "Pending review" card read ~369k against a
     // ~78k flagged list — a card contradicting the list beneath it.
-    const flaggedTp = { ...tp, flaggedAsUnderdeclared: true } as Prisma.DataRecordWhereInput;
+    const flaggedSql = Prisma.sql`${base} AND r."flaggedAsUnderdeclared" = true`;
+    const cnt = async (w: Prisma.Sql) =>
+      Number((await this.prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS count FROM data_records r WHERE ${w}`,
+      ))[0]?.count ?? 0);
     const [total, flagged, pendingReview, confirmed, cleared] = await Promise.all([
-      this.prisma.dataRecord.count({ where: tp }),
-      this.prisma.dataRecord.count({ where: flaggedTp }),
-      this.prisma.dataRecord.count({ where: { ...flaggedTp, reviewStatus: 'PENDING_REVIEW' } }),
-      this.prisma.dataRecord.count({ where: { ...flaggedTp, reviewStatus: 'CONFIRMED' } }),
-      this.prisma.dataRecord.count({ where: { ...flaggedTp, reviewStatus: 'CLEARED' } }),
+      cnt(base),
+      cnt(flaggedSql),
+      cnt(Prisma.sql`${flaggedSql} AND r."reviewStatus"::text = 'PENDING_REVIEW'`),
+      cnt(Prisma.sql`${flaggedSql} AND r."reviewStatus"::text = 'CONFIRMED'`),
+      cnt(Prisma.sql`${flaggedSql} AND r."reviewStatus"::text = 'CLEARED'`),
     ]);
     return { total, flagged, pendingReview, confirmed, cleared };
   }

@@ -45,27 +45,36 @@ export class ListCasesTool implements AgentTool {
     const limit = Math.min(50, Math.max(1, typeof args.limit === 'number' ? args.limit : 20));
 
     // §29 gate: IRIS must count/list the same reportable cases the case list,
-    // dashboard and tax-net show — never the raw pre-threshold population.
+    // dashboard and tax-net show — never the raw pre-threshold population. The
+    // reportable set is a single `= ANY($1::text[])` bind, not a Prisma `in` list
+    // (which trips Postgres' ~32k parameter cap / P2029 once large).
     const reportableIds = [...(await this.reportable.reportableTaxpayerIds(year ? { year } : {}))];
-    const where: Prisma.UnderdeclarationCaseWhereInput = {
-      taxpayerId: { in: reportableIds },
-      ...(year ? { year } : {}),
-      ...(status ? { status: status as Prisma.UnderdeclarationCaseWhereInput['status'] } : {}),
-    };
+    const conds: Prisma.Sql[] = [Prisma.sql`c."taxpayerId" = ANY(${reportableIds}::text[])`];
+    if (year) conds.push(Prisma.sql`c."year" = ${year}`);
+    if (status) conds.push(Prisma.sql`c."status"::text = ${status}`);
+    const whereSql = Prisma.join(conds, ' AND ');
 
     // The TRUE total matching the filter — so IRIS reports "6,855 cases", not
-    // the page size. Returned separately from the (capped) page of rows below.
-    const [total, cases] = await this.prisma.$transaction([
-      this.prisma.underdeclarationCase.count({ where }),
-      this.prisma.underdeclarationCase.findMany({
-        where,
-        orderBy: { estimatedTaxDue: 'desc' },
-        take: limit,
-        include: {
-          taxpayer: { select: { businessName: true, firstName: true, lastName: true, type: true, sector: true } },
-        },
-      }),
+    // the page size. Count + the capped page's ids resolve in SQL, then hydrate.
+    const [countRows, idRows] = await this.prisma.$transaction([
+      this.prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`SELECT COUNT(*)::bigint AS count FROM underdeclaration_cases c WHERE ${whereSql}`,
+      ),
+      this.prisma.$queryRaw<{ id: string }[]>(
+        Prisma.sql`SELECT c."id" FROM underdeclaration_cases c WHERE ${whereSql} ORDER BY c."estimatedTaxDue" DESC LIMIT ${limit}`,
+      ),
     ]);
+    const total = Number(countRows[0]?.count ?? 0);
+    const pageIds = idRows.map((r) => r.id);
+    const cases = pageIds.length
+      ? await this.prisma.underdeclarationCase.findMany({
+          where: { id: { in: pageIds } },
+          orderBy: { estimatedTaxDue: 'desc' },
+          include: {
+            taxpayer: { select: { businessName: true, firstName: true, lastName: true, type: true, sector: true } },
+          },
+        })
+      : [];
 
     return {
       total, // total cases matching the filter (authoritative count for "how many")
