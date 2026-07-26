@@ -19,7 +19,7 @@ export const ASSESSMENT_JWT_SECRET =
 export const EXAM_DURATION_MS = 5 * 60 * 1000;
 
 /** Part 2 draws this many questions at random from the active bank. */
-export const QUESTIONS_PER_ATTEMPT = 5;
+export const QUESTIONS_PER_ATTEMPT = 10;
 
 /** The two parts each contribute half of the 100-point total. */
 export const PART1_WEIGHT = 50;

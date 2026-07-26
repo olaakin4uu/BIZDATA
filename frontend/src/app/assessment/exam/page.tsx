@@ -131,15 +131,10 @@ export default function ExamPage() {
   }
 
   if (phase === 'result') {
-    const r = state?.result;
     return (
       <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl p-8 border border-slate-200 text-center">
-          <div
-            className={`mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full ${
-              r?.passed ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'
-            }`}
-          >
+          <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-teal-100 text-teal-700">
             <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="m4.5 12.75 6 6 9-13.5" />
             </svg>
@@ -147,25 +142,9 @@ export default function ExamPage() {
           <h1 className="text-lg font-semibold text-slate-800">
             {state?.status === 'EXPIRED' ? 'Time’s up — test submitted' : 'Test submitted'}
           </h1>
-          <p className="text-xs text-slate-500 mt-1">Thank you. Your responses have been recorded.</p>
-
-          {r && (
-            <>
-              <div className="mt-6 text-5xl font-bold text-slate-900 tabular-nums">{r.totalScore}%</div>
-              <div className="mt-1 text-xs font-medium uppercase tracking-wide text-slate-400">Total score</div>
-              <div className="mt-5 grid grid-cols-2 gap-3 text-left">
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Part 1 · Details</div>
-                  <div className="text-lg font-semibold text-slate-800 tabular-nums">{r.part1Score}<span className="text-xs text-slate-400"> / 50</span></div>
-                </div>
-                <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                  <div className="text-[11px] uppercase tracking-wide text-slate-400">Part 2 · Questions</div>
-                  <div className="text-lg font-semibold text-slate-800 tabular-nums">{r.part2Score}<span className="text-xs text-slate-400"> / 50</span></div>
-                </div>
-              </div>
-            </>
-          )}
-
+          <p className="text-sm text-slate-500 mt-2">
+            Thank you. Your responses have been recorded and will be reviewed by the administrator.
+          </p>
           <Button size="lg" className="w-full mt-7" onClick={finish}>
             Finish
           </Button>

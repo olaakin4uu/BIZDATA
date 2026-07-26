@@ -201,15 +201,9 @@ export class AssessmentService {
             isCaseStudy: q.isCaseStudy,
             chosenIndex: q.chosenIndex,
           })),
-      result: finalized
-        ? {
-            part1Score: num(attempt.part1_score),
-            part2Score: num(attempt.part2_score),
-            totalScore: num(attempt.total_score),
-            passMark: PASS_MARK,
-            passed: num(attempt.total_score) >= PASS_MARK,
-          }
-        : null,
+      // Candidates NEVER see their score — only a submission confirmation. Scores
+      // are still computed and stored server-side and are visible to the admin.
+      result: finalized ? { submitted: true } : null,
     };
   }
 

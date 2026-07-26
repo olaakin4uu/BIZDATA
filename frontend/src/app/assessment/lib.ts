@@ -65,11 +65,8 @@ export interface ExamQuestion {
   chosenIndex: number | null;
 }
 export interface ExamResult {
-  part1Score: number;
-  part2Score: number;
-  totalScore: number;
-  passMark: number;
-  passed: boolean;
+  // Candidates only get a submission confirmation — never their score.
+  submitted: boolean;
 }
 export interface ExamState {
   attemptId: string;
