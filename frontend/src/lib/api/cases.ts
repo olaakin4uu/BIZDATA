@@ -140,6 +140,7 @@ export function formatNaira(value: string | number | null | undefined): string {
   const n = typeof value === 'string' ? Number(value) : value ?? 0;
   if (!n) return '₦0';
   const abs = Math.abs(n);
+  if (abs >= 1_000_000_000_000) return `₦${(n / 1_000_000_000_000).toFixed(2)}tn`;
   if (abs >= 1_000_000_000) return `₦${(n / 1_000_000_000).toFixed(2)}bn`;
   if (abs >= 1_000_000) return `₦${(n / 1_000_000).toFixed(1)}m`;
   if (abs >= 1_000) return `₦${(n / 1_000).toFixed(0)}k`;
