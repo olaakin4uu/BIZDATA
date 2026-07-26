@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy, ServiceUnavailableException } from '@nestjs/common';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
 import { KIRS_QUESTIONS } from './assessment.questions.kirs';
@@ -16,22 +16,40 @@ import { KIRS_QUESTIONS } from './assessment.questions.kirs';
 export class AssessmentDbService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(AssessmentDbService.name);
   private pool: Pool;
+  private ready = false;
 
   async onModuleInit() {
     const connectionString =
       process.env.ASSESSMENT_DATABASE_URL ||
       'postgresql://postgres:postgres@localhost:5433/findata_assessment_db?schema=public';
-    this.pool = new Pool({ connectionString });
-    await this.ensureSchema();
-    await this.ensureSeed();
-    this.logger.log('Assessment DB ready (isolated from BizData).');
+    // Isolated + fail-safe: a problem with the assessment DB must NEVER take down
+    // the rest of BizData. If init fails, the module stays disabled (query() 503s)
+    // and the app boots normally.
+    try {
+      this.pool = new Pool({ connectionString });
+      // An idle-client error emits 'error' on the pool; if unhandled it crashes the
+      // whole Node process. Swallow + log so a later DB blip can't take BizData down.
+      this.pool.on('error', (e) => this.logger.error(`Assessment DB pool error: ${e?.message || e}`));
+      await this.ensureSchema();
+      await this.ensureSeed();
+      this.ready = true;
+      this.logger.log('Assessment DB ready (isolated from BizData).');
+    } catch (err: any) {
+      this.ready = false;
+      this.logger.error(
+        `Assessment DB init failed — /assessment disabled, rest of BizData unaffected: ${err?.message || err}`,
+      );
+    }
   }
 
   async onModuleDestroy() {
-    await this.pool?.end();
+    await this.pool?.end().catch(() => undefined);
   }
 
   query<T = any>(text: string, params: any[] = []): Promise<{ rows: T[]; rowCount: number | null }> {
+    if (!this.ready || !this.pool) {
+      throw new ServiceUnavailableException('Assessment module is unavailable (its database failed to initialize).');
+    }
     return this.pool.query(text, params) as any;
   }
 
