@@ -22,6 +22,12 @@ export const adminToken = {
   clear: () => localStorage.removeItem(ADMIN_KEY),
 };
 
+// Public org branding (name + logo data-URI) — same endpoint the staff login uses,
+// so the assessment pages show the configured KIRS logo without any coupling.
+export const brandingApi = {
+  get: () => req<{ name?: string; shortName?: string; logoUrl?: string | null }>('/tenant/branding'),
+};
+
 async function req<T>(path: string, opts: { method?: string; body?: unknown; token?: string | null } = {}): Promise<T> {
   const headers: Record<string, string> = {};
   if (opts.body !== undefined) headers['Content-Type'] = 'application/json';

@@ -4,8 +4,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Field';
-import { candidateApi, candToken } from './lib';
-import { APP_NAME } from '@/lib/appName';
+import { candidateApi, candToken, brandingApi } from './lib';
 
 export default function CandidateLoginPage() {
   const router = useRouter();
@@ -13,6 +12,12 @@ export default function CandidateLoginPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [checking, setChecking] = useState(true);
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+
+  // Public org branding → show the configured KIRS logo on the login screen.
+  useEffect(() => {
+    brandingApi.get().then((b) => setLogoUrl(b.logoUrl ?? null)).catch(() => {});
+  }, []);
 
   // Resume an in-progress sitting if a valid candidate token is already stored.
   useEffect(() => {
@@ -54,8 +59,11 @@ export default function CandidateLoginPage() {
     <div className="min-h-screen flex items-center justify-center px-4 py-12 bg-gradient-to-br from-slate-900 via-slate-800 to-teal-900">
       <div className="w-full max-w-md">
         <div className="text-center mb-6">
+          {logoUrl && (
+            <img src={logoUrl} alt="KIRS" className="mx-auto mb-4 h-20 w-auto object-contain drop-shadow-lg" />
+          )}
           <p className="text-[10px] uppercase tracking-widest text-teal-300">Aptitude Assessment</p>
-          <h1 className="text-4xl font-bold text-white mt-1">{APP_NAME}</h1>
+          <h1 className="text-2xl font-bold text-white mt-1 leading-snug">KIRS Staff Internal Capability and Career Development Review</h1>
         </div>
 
         <div className="bg-white rounded-2xl shadow-2xl p-8 border border-slate-200">
