@@ -96,7 +96,7 @@ export default function CandidateLoginPage() {
             <p className="font-medium text-slate-700 mb-1">What to expect</p>
             <ul className="list-disc pl-4 space-y-0.5">
               <li>Part 1 — your personal details (50%)</li>
-              <li>Part 2 — 5 questions on Excel, Word &amp; Cybersecurity (50%)</li>
+              <li>Part 2 — 10 questions on Tax, Excel, Word &amp; Cybersecurity (50%)</li>
               <li>When the 5 minutes end, the test submits automatically</li>
             </ul>
           </div>
