@@ -61,6 +61,24 @@ export default function ProviderProfilePage() {
     <div className="rise-in">
       <PageHeader title="Profile" subtitle="Account and organisation details." icon="settings" />
 
+      {/* Without this, a forced password change looks like a broken portal: the
+          layout bounces every Dashboard/Submissions click straight back here, so
+          the nav reads as dead buttons. Say plainly what is happening and why. */}
+      {me.mustChangePassword && (
+        <div className="mb-6 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <p className="font-semibold">Set a new password to activate your account</p>
+          <p className="mt-1">
+            Your password was issued by an administrator, so it must be changed before you can use the
+            portal. <strong>Dashboard</strong> and <strong>Submissions</strong> stay locked until you do —
+            selecting them will simply return you to this page.
+          </p>
+          <p className="mt-1">
+            Use <strong>Change password</strong> below. Enter the password you signed in with as the current
+            password, then choose a new one of at least 8 characters.
+          </p>
+        </div>
+      )}
+
       <section className="mb-6">
         <SectionTitle icon="taxpayers">You</SectionTitle>
         <div className="mt-3 grid grid-cols-1 gap-4 md:grid-cols-2">

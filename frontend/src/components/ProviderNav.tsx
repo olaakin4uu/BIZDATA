@@ -60,6 +60,23 @@ export default function ProviderNav() {
           <nav className="flex items-center gap-1">
             {NAV.map((item) => {
               const active = pathname === item.href || pathname.startsWith(item.href + '/');
+              // While a password change is mandatory the layout redirects every
+              // route back to Profile. Rendering these as normal links makes them
+              // look broken, so show them locked and explain why on hover.
+              const locked = !!user?.mustChangePassword && item.href !== '/provider/profile';
+              if (locked) {
+                return (
+                  <span
+                    key={item.href}
+                    aria-disabled="true"
+                    title="Set a new password on the Profile page to unlock"
+                    className="relative px-3 py-2 rounded-lg text-sm font-medium text-teal-100/40 cursor-not-allowed select-none"
+                  >
+                    {item.label}
+                    <span aria-hidden className="ml-1.5 text-[11px]">&#128274;</span>
+                  </span>
+                );
+              }
               return (
                 <Link
                   key={item.href}
