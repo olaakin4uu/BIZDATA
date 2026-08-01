@@ -34,210 +34,101 @@ export interface SchemaTemplate {
   columns: FieldDef[];
 }
 
-/**
- * Columns common to every provider type. `sector` and `businessType` let a
- * provider supply the taxpayer's economic sector and nature of business at
- * source — far more reliable than inferring it from an account name.
- *
- * The identity/contact columns below improve entity resolution and taxpayer
- * contactability at source: `tin` is the strongest taxpayer-matching key (the
- * resolver already consumes it), `rcNumber` links corporate account holders to
- * their CAC registration, and phone/address/email aid matching and follow-up.
- * All are optional so providers who cannot supply them still submit valid files.
- */
-// Enforcement date for the phased-in compulsory fields (user decision 2026-07-06):
-// sector / businessType / customerType warn now and become hard-required on this
-// date. Overridable at runtime via StatutoryConfig.piiEnforcementDate.
+// Fallback grace-period date for a phased-in compulsory field — a column marked
+// `required` that also carries `enforceFrom` warns while blank and only starts
+// rejecting on that date (overridable at runtime via
+// StatutoryConfig.fieldEnforcementDate).
+//
+// NO COLUMN USES IT TODAY. The seven-column return is compulsory in full from
+// the moment it ships (user decision 2026-07-31) — the earlier phase-in for
+// customerType is withdrawn. The mechanism stays for the next column that needs
+// to be introduced gently; until one does, this constant is only the default the
+// settings screen shows.
 export const COMPULSORY_FIELD_ENFORCE_FROM = '2027-01-01';
 
-const COMMON_COLUMNS: FieldDef[] = [
-  // Hard-required now, every provider type (user decision 2026-07-06).
-  { name: 'nin', required: true, type: 'string', validation: { length: 11 } }, // National Identity Number (11 digits)
-  // Hard-required now: every transaction must carry the date it occurred, so it
-  // can be placed in the correct reporting period. Rows with a missing/blank
-  // transactionDate are rejected (user decision 2026-07-19 — the erev import
-  // left 72% of rows undated, which is what this prevents recurring).
-  { name: 'transactionDate', required: true, type: 'string', validation: { format: 'date' } }, // YYYY-MM-DD
-  // Soft-required: warn now, hard-required from COMPULSORY_FIELD_ENFORCE_FROM.
-  { name: 'sector', required: true, type: 'string', validation: { enforceFrom: COMPULSORY_FIELD_ENFORCE_FROM } },
-  { name: 'businessType', required: true, type: 'string', validation: { enforceFrom: COMPULSORY_FIELD_ENFORCE_FROM } },
-  { name: 'customerType', required: true, type: 'string', validation: { enum: ['INDIVIDUAL', 'CORPORATE'], enforceFrom: COMPULSORY_FIELD_ENFORCE_FROM } },
-  // Optional identity / contact / metadata.
-  { name: 'tin', required: false, type: 'string' },             // Tax Identification Number (strongest match key)
-  { name: 'rcNumber', required: false, type: 'string' },        // CAC registration number (corporate account holders)
-  { name: 'phoneNumber', required: false, type: 'string' },     // contact MSISDN, e.g. 0803...
-  { name: 'customerAddress', required: false, type: 'string' }, // account holder / customer address
-  { name: 'customerEmail', required: false, type: 'string', validation: { format: 'email' } },
-  { name: 'transactionDescription', required: false, type: 'string' }, // narrative / notes
-  { name: 'currency', required: false, type: 'string', validation: { format: 'currency' } }, // ISO 4217, defaults NGN
-  { name: 'conversionRate', required: false, type: 'decimal', validation: { min: 0 } }, // rate to NGN if currency ≠ NGN
-];
+/**
+ * CUSTOMER TYPE — a natural person, or one of the five classes of organisation
+ * the Corporate Affairs Commission registers under CAMA 2020.
+ *
+ * The class is not cosmetic: it decides which authority may assess the party.
+ * The three limited forms (LTD / PLC / LTD-GTE) are limited-liability companies,
+ * assessed FEDERALLY on income (CIT), so a State IRS raises no income case
+ * against them. A Business Name, an Incorporated Trustees body, and an
+ * individual all remain state-assessable. See `isLimitedLiability` on Taxpayer
+ * and the LLC skip in ScanService.
+ */
+export const CUSTOMER_TYPES = [
+  'INDIVIDUAL',            // natural person
+  'BUSINESS_NAME',         // BN — sole proprietorship / partnership (CAMA Part E)
+  'PRIVATE_LIMITED',       // LTD — private company limited by shares
+  'PUBLIC_LIMITED',        // PLC — public company limited by shares
+  'LIMITED_BY_GUARANTEE',  // LTD/GTE — company limited by guarantee
+  'INCORPORATED_TRUSTEES', // IT — incorporated trustees (CAMA Part F)
+] as const;
+export type CustomerType = (typeof CUSTOMER_TYPES)[number];
 
-const BASE_SCHEMAS: Record<string, SchemaTemplate> = {
-  BANK: {
-    providerType: 'BANK',
-    columns: [
-      { name: 'bankCode', required: true, type: 'string' },
-      { name: 'bankName', required: true, type: 'string' },
-      { name: 'accountNumber', required: true, type: 'string', validation: { length: 10 } },
-      { name: 'bvn', required: true, type: 'string', validation: { length: 11 } },
-      // nin now comes from COMMON_COLUMNS (compulsory, all types).
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal', validation: { min: 0 } },
-      { name: 'totalOutflow', required: false, type: 'decimal', validation: { min: 0 } },
-      { name: 'openingBalance', required: true, type: 'decimal' },
-      { name: 'closingBalance', required: true, type: 'decimal' },
-      { name: 'transactionCount', required: false, type: 'integer' },
-      // §6.2 extended columns (optional aliases / extras; periodQuarter aliases periodLabel,
-      // totalCreditTransactions aliases transactionCount — normalised in processRows).
-      { name: 'periodQuarter', required: false, type: 'string' },
-      { name: 'accountType', required: false, type: 'string' },
-      { name: 'totalCreditTransactions', required: false, type: 'integer' },
-      { name: 'totalDebitTransactions', required: false, type: 'integer' },
-      { name: 'residentialState', required: false, type: 'string' },
-      { name: 'accountOpenedDate', required: false, type: 'string' },
-      { name: 'reportingBranch', required: false, type: 'string' },
-    ],
-  },
-  FINTECH: {
-    providerType: 'FINTECH',
-    columns: [
-      { name: 'walletId', required: true, type: 'string' },
-      { name: 'phoneNumber', required: true, type: 'string' },
-      { name: 'bvn', required: false, type: 'string', validation: { length: 11 } },
-      // nin now comes from COMMON_COLUMNS (compulsory, all types).
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal', validation: { min: 0 } },
-      { name: 'totalOutflow', required: false, type: 'decimal', validation: { min: 0 } },
-      { name: 'transactionCount', required: false, type: 'integer' },
-    ],
-  },
-  TELCO: {
-    providerType: 'TELCO',
-    columns: [
-      { name: 'phoneNumber', required: true, type: 'string' },
-      // nin now comes from COMMON_COLUMNS (compulsory, all types).
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: false, type: 'decimal' },
-      { name: 'transactionCount', required: false, type: 'integer' },
-      { name: 'airtimeSpend', required: false, type: 'decimal' },
-      { name: 'dataSpend', required: false, type: 'decimal' },
-    ],
-  },
-  PAYMENT_PROCESSOR: {
-    providerType: 'PAYMENT_PROCESSOR',
-    columns: [
-      { name: 'merchantId', required: true, type: 'string' },
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal' },
-      { name: 'transactionCount', required: false, type: 'integer' },
-    ],
-  },
-  FX_BUREAU: {
-    providerType: 'FX_BUREAU',
-    columns: [
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'bvn', required: false, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal' },
-    ],
-  },
-  POS_AGGREGATOR: {
-    providerType: 'POS_AGGREGATOR',
-    columns: [
-      { name: 'merchantId', required: true, type: 'string' },
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal' },
-      { name: 'transactionCount', required: false, type: 'integer' },
-    ],
-  },
-  ECOMMERCE: {
-    providerType: 'ECOMMERCE',
-    columns: [
-      { name: 'merchantId', required: true, type: 'string' },
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal' },
-    ],
-  },
-  INSURANCE: {
-    providerType: 'INSURANCE',
-    columns: [
-      { name: 'policyNumber', required: true, type: 'string' },
-      { name: 'accountName', required: true, type: 'string' }, // policyholder name
-      { name: 'bvn', required: false, type: 'string', validation: { length: 11 } },
-      // nin now comes from COMMON_COLUMNS (compulsory, all types).
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: true, type: 'decimal', validation: { min: 0 } }, // premiums paid
-      { name: 'sumAssured', required: false, type: 'decimal', validation: { min: 0 } },
-      { name: 'policyType', required: false, type: 'string' }, // life, general, takaful, etc.
-      { name: 'transactionCount', required: false, type: 'integer' }, // number of premium payments
-      // rcNumber & phoneNumber now come from COMMON_COLUMNS.
-    ],
-  },
-  OTHER: {
-    providerType: 'OTHER',
-    columns: [
-      { name: 'accountName', required: true, type: 'string' },
-      { name: 'periodLabel', required: true, type: 'string' },
-      { name: 'totalInflow', required: false, type: 'decimal' },
-    ],
-  },
-};
+/** The CAC classes that are limited-liability companies (federal CIT, not state income tax). */
+export const LIMITED_LIABILITY_CUSTOMER_TYPES: readonly CustomerType[] = [
+  'PRIVATE_LIMITED',
+  'PUBLIC_LIMITED',
+  'LIMITED_BY_GUARANTEE',
+];
 
 /**
- * Canonical column order — groups related fields so every template reads in a
- * logical sequence regardless of provider type: identifiers → customer identity
- * → contact → profile → period → financials → activity → narrative. Columns not
- * listed here keep their original relative order at the end (stable sort). Adjust
- * this list, not the per-type schemas, to reorder templates.
+ * THE RETURN TEMPLATE — seven columns, identical for every provider type
+ * (user decision 2026-07-31).
+ *
+ * A §29 return now carries only what is needed to identify the party and size
+ * its activity. Everything the older per-type templates asked for is gone:
+ * bank/wallet/merchant/policy identifiers, opening & closing balances,
+ * transaction counts, sector, businessType, tin, rcNumber, the contact columns,
+ * currency/conversionRate, and the per-row transactionDate.
+ *
+ * ALL SEVEN ARE COMPULSORY, with no grace period (user decision 2026-07-31): a
+ * row that leaves any of them blank is rejected, and a file whose header omits
+ * any of them is rejected outright. There is nothing left to phase in — the
+ * earlier warn-until-2027 treatment of customerType is withdrawn.
+ *
+ * The reporting period is deliberately NOT a column. It is chosen once per
+ * submission in the portal and stamped onto every row (see
+ * SubmissionsService.processRows), so a provider cannot mis-key it line by line.
+ *
+ * Columns a provider supplies BEYOND these seven are still read and kept, not
+ * rejected — an institution that keeps filing its older, wider export continues
+ * to work, and the extra values (bankCode, balances, …) still feed the checks
+ * that can use them.
  */
-const COLUMN_ORDER: string[] = [
-  // Account / provider identifiers
-  'bankCode', 'bankName', 'accountNumber', 'accountType', 'reportingBranch', 'accountOpenedDate',
-  'walletId', 'merchantId', 'policyNumber',
-  // Customer identity
-  'accountName', 'customerType', 'bvn', 'nin', 'tin', 'rcNumber',
-  // Customer contact
-  'phoneNumber', 'customerEmail', 'customerAddress', 'residentialState',
-  // Customer profile
-  'sector', 'businessType', 'policyType',
-  // Reporting period
-  'periodLabel', 'periodQuarter', 'transactionDate',
-  // Financials
-  'totalInflow', 'totalOutflow', 'openingBalance', 'closingBalance', 'sumAssured',
-  'airtimeSpend', 'dataSpend', 'currency', 'conversionRate',
-  // Activity counts
-  'transactionCount', 'totalCreditTransactions', 'totalDebitTransactions',
-  // Narrative
-  'transactionDescription',
+export const RETURN_COLUMNS: FieldDef[] = [
+  { name: 'nin', required: true, type: 'string', validation: { length: 11 } },       // National Identity Number
+  { name: 'accountNumber', required: true, type: 'string' },                         // NUBAN for banks; wallet/merchant/policy id otherwise
+  { name: 'accountName', required: true, type: 'string' },                           // name on the account
+  { name: 'bvn', required: true, type: 'string', validation: { length: 11 } },       // Bank Verification Number
+  { name: 'customerType', required: true, type: 'string', validation: { enum: [...CUSTOMER_TYPES] } },
+  { name: 'totalInflow', required: true, type: 'decimal', validation: { min: 0 } },  // total credits for the period (₦)
+  { name: 'totalOutflow', required: true, type: 'decimal', validation: { min: 0 } }, // total debits for the period (₦)
 ];
-const ORDER_INDEX: Record<string, number> = Object.fromEntries(COLUMN_ORDER.map((n, i) => [n, i]));
 
-function orderColumns(cols: FieldDef[]): FieldDef[] {
-  const rank = (name: string) => (name in ORDER_INDEX ? ORDER_INDEX[name] : COLUMN_ORDER.length);
-  // Stable sort: decorate with original index so unlisted columns keep their order.
-  return cols
-    .map((c, i) => ({ c, i }))
-    .sort((a, b) => rank(a.c.name) - rank(b.c.name) || a.i - b.i)
-    .map((x) => x.c);
-}
+/**
+ * When the seven-column return replaced the old per-type templates. A provider
+ * who has not yet filed an ACCEPTED return since this date is still working from
+ * the old format, so the portal tells them to re-pull the template — a file
+ * missing any of the seven columns is now rejected in full.
+ */
+export const RETURN_TEMPLATE_CHANGED_AT = new Date('2026-07-31T00:00:00.000Z');
 
-// Every provider schema also accepts the common columns. A type-specific
-// definition wins over the common one of the same name (e.g. FINTECH/TELCO keep
-// their REQUIRED phoneNumber), so no column is ever duplicated in a template.
-// The merged list is then sorted into the canonical relevance order above.
+/** Every provider type the authority registers (mirrors the ProviderType enum). */
+export const PROVIDER_TYPES = [
+  'BANK', 'FINTECH', 'PAYMENT_PROCESSOR', 'TELCO', 'FX_BUREAU',
+  'POS_AGGREGATOR', 'ECOMMERCE', 'INSURANCE', 'OTHER',
+] as const;
+
+/**
+ * Every provider type files against the SAME seven-column return. A stored
+ * ProviderSchema override (set by staff on /schemas) still wins at read time —
+ * see SubmissionsService.resolveSchema and ProviderPortalService.uploadTemplate.
+ */
 export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = Object.fromEntries(
-  Object.entries(BASE_SCHEMAS).map(([type, schema]) => {
-    const own = new Set(schema.columns.map((c) => c.name));
-    const merged = [...schema.columns, ...COMMON_COLUMNS.filter((c) => !own.has(c.name))];
-    return [type, { ...schema, columns: orderColumns(merged) }];
-  }),
+  PROVIDER_TYPES.map((providerType) => [providerType, { providerType, columns: [...RETURN_COLUMNS] }]),
 );
 
 /**

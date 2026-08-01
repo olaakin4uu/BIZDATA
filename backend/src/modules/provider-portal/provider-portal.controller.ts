@@ -57,6 +57,17 @@ export class ProviderPortalController {
     res.send(t.csv);
   }
 
+  @Get('notifications')
+  @ApiOperation({ summary: 'Notifications addressed to this provider (never staff service alerts)' })
+  notifications(@CurrentProviderUser() u: any) {
+    return this.service.listNotifications(u.providerId);
+  }
+
+  @Patch('notifications/:id/read')
+  markNotificationRead(@CurrentProviderUser() u: any, @Param('id') id: string) {
+    return this.service.markNotificationRead(u.providerId, id);
+  }
+
   @Get('submissions')
   listSubmissions(@CurrentProviderUser() u: any, @Query() q: any) {
     return this.service.listSubmissions(u.providerId, q);

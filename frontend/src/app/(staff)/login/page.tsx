@@ -3,7 +3,8 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { authApi } from '@/lib/api/auth';
-import { tenantApi, type TenantBranding } from '@/lib/api/tenant';
+import { type TenantBranding } from '@/lib/api/tenant';
+import { loadBranding } from '@/lib/branding';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
 import { Button } from '@/components/Button';
@@ -37,7 +38,7 @@ export default function StaffLoginPage() {
   }, [expired, token, user, router, clearAuth]);
 
   useEffect(() => {
-    tenantApi.branding().then(setBranding).catch(() => setBranding(null));
+    loadBranding().then(setBranding).catch(() => setBranding(null));
   }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {

@@ -37,9 +37,13 @@ function normaliseName(raw: string): { firstName: string; lastName: string; midd
   return { firstName: parts[0], middleName: parts[1], lastName: parts.slice(2).join(' ') };
 }
 
+// Legacy files say CORPORATE; the current return template says which CAC class
+// (BUSINESS_NAME / PRIVATE_LIMITED / …). Anything that names a registered
+// organisation — i.e. any known type other than INDIVIDUAL — is corporate here.
 function isCorporate(rec: any): boolean {
   const t = (rec.customerType || '').toUpperCase();
-  return t === 'CORPORATE' || (!!rec.rcNumber && rec.rcNumber.toUpperCase() !== 'N/A');
+  if (t === 'INDIVIDUAL') return false;
+  return !!t || (!!rec.rcNumber && rec.rcNumber.toUpperCase() !== 'N/A');
 }
 
 function toNum(v: any): number {

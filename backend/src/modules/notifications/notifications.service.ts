@@ -1,4 +1,5 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
@@ -12,28 +13,50 @@ export class NotificationsService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * A user sees notifications addressed to everyone (targetRole null AND
-   * targetUserId null), those scoped to their role (targetRole = their role),
-   * and those addressed specifically to them (targetUserId = them).
+   * What one staff member may see. Two gates, and both matter:
+   *
+   *  - `targetProviderId: null` keeps PROVIDER-addressed notifications out of the
+   *    staff feed entirely. Those rows (SUBMISSION_OVERDUE, RESUBMIT_PERMISSION)
+   *    carry targetRole = null and targetUserId = null, so without this they
+   *    match the broadcast branch below and leak into the officer alert list —
+   *    they are written FOR the institution and belong in its own portal
+   *    (ProviderPortalService.listNotifications).
+   *  - the OR branches then scope the remaining service alerts: broadcast to all
+   *    staff, scoped to the caller's role, or addressed to the caller directly.
    */
+  private staffVisibility(staffId?: string, role?: string): Prisma.NotificationWhereInput {
+    return {
+      targetProviderId: null,
+      OR: [
+        // Broadcast to all staff.
+        { targetRole: null, targetUserId: null },
+        // Scoped to the caller's role.
+        ...(role ? [{ targetRole: role, targetUserId: null }] : []),
+        // Addressed to the caller directly.
+        ...(staffId ? [{ targetUserId: staffId }] : []),
+      ],
+    };
+  }
+
   async list(staffId?: string, role?: string) {
     return this.prisma.notification.findMany({
-      where: {
-        OR: [
-          // Broadcast to all staff.
-          { targetRole: null, targetUserId: null },
-          // Scoped to the caller's role.
-          ...(role ? [{ targetRole: role, targetUserId: null }] : []),
-          // Addressed to the caller directly.
-          ...(staffId ? [{ targetUserId: staffId }] : []),
-        ],
-      },
+      where: this.staffVisibility(staffId, role),
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
   }
 
-  async markRead(id: string) {
+  /**
+   * Marking read is gated by the SAME visibility rule as listing — otherwise a
+   * staff member could clear a provider's notification, or another officer's
+   * personal one, just by knowing its id.
+   */
+  async markRead(id: string, staffId?: string, role?: string) {
+    const visible = await this.prisma.notification.findFirst({
+      where: { id, ...this.staffVisibility(staffId, role) },
+      select: { id: true },
+    });
+    if (!visible) throw new NotFoundException('Notification not found');
     return this.prisma.notification.update({ where: { id }, data: { read: true } });
   }
 

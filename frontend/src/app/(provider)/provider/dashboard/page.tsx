@@ -34,31 +34,29 @@ export default function ProviderDashboardPage() {
 
   if (loading) return <div className="pt-16"><LoadingSpinner /></div>;
 
-  const notice = data?.fieldEnforcementNotice;
-
   return (
     <div className="space-y-8 rise-in">
       {error && (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{error}</div>
       )}
 
-      {/* ── Standing notice: upcoming compulsory-field requirement ── */}
-      {notice && notice.fields.length > 0 && (
+      {/* ── Standing notice: this provider is still on the old return format ──
+          Clears itself once they file an accepted return under the current one. */}
+      {data?.returnFormatNotice && (
         <div className="flex items-start gap-3 rounded-xl border border-amber-200 bg-[var(--warn-soft)] px-5 py-4">
           <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-100 text-amber-700 ring-1 ring-amber-200">
             <Icon name="flag" width={16} height={16} />
           </span>
           <div className="min-w-0">
-            <p className="text-sm font-semibold text-amber-800">
-              New required fields from {notice.enforceDate}
-            </p>
+            <p className="text-sm font-semibold text-amber-800">The return template has changed</p>
             <p className="mt-0.5 text-sm text-amber-700">
-              From <strong>{notice.enforceDate}</strong>, these fields will be mandatory on every submission:{' '}
-              <span className="font-medium">{notice.fields.join(', ')}</span>. Until then, rows left blank are still
-              accepted but flagged with a warning. Please start including them now — after that date, files missing
-              them will be rejected.{' '}
+              Since <strong>{data.returnFormatNotice.changedOn}</strong> every return uses{' '}
+              {data.returnFormatNotice.columns.length} columns, <strong>all compulsory</strong>:{' '}
+              <span className="font-medium">{data.returnFormatNotice.columns.join(', ')}</span>. The reporting
+              period is no longer a column — you choose it once when you upload. A file that omits any column, or
+              leaves any cell blank, is now rejected in full.{' '}
               <Link href="/provider/submissions/new" className="font-medium text-amber-800 underline hover:text-amber-900">
-                Download the updated template →
+                Download the new template →
               </Link>
             </p>
           </div>

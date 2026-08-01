@@ -3,7 +3,14 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
 import { ProviderComplianceService } from '../providers/provider-compliance.service';
-import { DEFAULT_SCHEMAS, COMPULSORY_FIELD_ENFORCE_FROM, type SchemaTemplate, type FieldDef } from '../submissions/submission-parser';
+import {
+  DEFAULT_SCHEMAS,
+  COMPULSORY_FIELD_ENFORCE_FROM,
+  RETURN_COLUMNS,
+  RETURN_TEMPLATE_CHANGED_AT,
+  type SchemaTemplate,
+  type FieldDef,
+} from '../submissions/submission-parser';
 
 @Injectable()
 export class ProviderPortalService {
@@ -84,6 +91,8 @@ export class ProviderPortalService {
       `# Reporting frequency: ${(provider.reportingFrequency ?? 'QUARTERLY')} · Period format: ${periodFormatHint(provider.reportingFrequency)}`,
       `#`,
       `# Fill one row per taxpayer/account for the period. Keep the header row (line below this block).`,
+      `# The reporting period is NOT a column — you choose it once when you upload, and it is`,
+      `#   applied to every row in the file. Submit one file per period.`,
       `# Lines starting with '#' are guidance only and are ignored on upload — you may leave them in or delete them.`,
       `# The example row beneath the header shows the expected format; replace it with your data.`,
     ];
@@ -123,21 +132,6 @@ export class ProviderPortalService {
       : COMPULSORY_FIELD_ENFORCE_FROM;
   }
 
-  /**
-   * Provider-facing grace-period notice: which fields become mandatory and when.
-   * Drives the dashboard/upload banner. Returns null once nothing is pending.
-   */
-  async fieldEnforcementNotice(): Promise<{ enforceDate: string; fields: string[] } | null> {
-    const soft = new Set<string>();
-    for (const schema of Object.values(DEFAULT_SCHEMAS)) {
-      for (const c of schema.columns) {
-        if (c.required && c.validation?.enforceFrom) soft.add(c.name);
-      }
-    }
-    if (soft.size === 0) return null;
-    return { enforceDate: await this.resolveFieldEnforcementDate(), fields: [...soft] };
-  }
-
   async me(id: string) {
     const user = await this.prisma.dataProviderUser.findUnique({
       where: { id },
@@ -162,12 +156,58 @@ export class ProviderPortalService {
       take: 5,
     });
 
+    // Standing notice: this provider has not yet filed successfully against the
+    // seven-column return, so it is probably still exporting the old, wider
+    // format. That format is no longer sufficient — a file missing any of the
+    // seven columns is rejected in full — so point them at the new template.
+    // Clears itself the moment they file an accepted return under it.
+    const filedUnderCurrentFormat = await this.prisma.dataSubmission.count({
+      where: { providerId, status: 'ACCEPTED', createdAt: { gte: RETURN_TEMPLATE_CHANGED_AT } },
+    });
+
     return {
       stats: { submissions, records, accepted, flagged },
+      unreadNotifications: await this.unreadNotificationCount(providerId),
       recentSubmissions,
-      // Standing notice: upcoming compulsory-field enforcement (null once past).
-      fieldEnforcementNotice: await this.fieldEnforcementNotice(),
+      returnFormatNotice: filedUnderCurrentFormat > 0 ? null : {
+        changedOn: RETURN_TEMPLATE_CHANGED_AT.toISOString().slice(0, 10),
+        columns: RETURN_COLUMNS.map((c) => c.name),
+      },
     };
+  }
+
+  /**
+   * Notifications addressed to THIS institution — overdue-submission reminders,
+   * resubmission authorisations, and anything else written with its
+   * targetProviderId. Service alerts meant for revenue staff (high-value case
+   * flags, §41 deadlines, missing-provider reports) carry no targetProviderId
+   * and are never returned here; the staff feed gates them the other way round
+   * (NotificationsService.staffVisibility).
+   */
+  async listNotifications(providerId: string) {
+    return this.prisma.notification.findMany({
+      where: { targetProviderId: providerId },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+  }
+
+  /** Unread count for the portal nav badge. */
+  async unreadNotificationCount(providerId: string) {
+    return this.prisma.notification.count({ where: { targetProviderId: providerId, read: false } });
+  }
+
+  /**
+   * Mark one of this provider's own notifications read. Scoped by providerId, so
+   * knowing another institution's notification id gets you a 404, not a write.
+   */
+  async markNotificationRead(providerId: string, id: string) {
+    const own = await this.prisma.notification.findFirst({
+      where: { id, targetProviderId: providerId },
+      select: { id: true },
+    });
+    if (!own) throw new NotFoundException('Notification not found');
+    return this.prisma.notification.update({ where: { id }, data: { read: true } });
   }
 
   async listSubmissions(providerId: string, query: any) {
@@ -247,7 +287,7 @@ function exampleValue(c: FieldDef): string {
   if (n === 'accountname') return 'ADACHI VENTURES LTD';
   if (n === 'customeraddress') return '12 Ahmadu Bello Way, Kano';
   if (n === 'customeremail') return 'accounts@adachiventures.ng';
-  if (n === 'customertype') return 'CORPORATE';
+  if (n === 'customertype') return 'PRIVATE_LIMITED'; // matches the LTD example account name below
   if (n === 'transactiondate') return '2026-03-31';
   if (n === 'transactiondescription') return 'Q1 aggregate account activity';
   if (n === 'currency') return 'NGN';
@@ -318,8 +358,9 @@ const COLUMN_HINTS: Record<string, string> = {
   periodquarter: 'alias of periodLabel; e.g. 2026-Q1',
   bvn: 'Bank Verification Number',
   nin: 'National Identity Number',
-  accountnumber: '10-digit NUBAN',
+  accountnumber: '10-digit NUBAN for banks & fintechs; otherwise your own account / wallet / merchant / policy identifier',
   accountname: 'name on the account / policyholder',
+  customertype: 'INDIVIDUAL for a natural person, else the CAC class of the organisation — BUSINESS_NAME (BN), PRIVATE_LIMITED (LTD), PUBLIC_LIMITED (PLC), LIMITED_BY_GUARANTEE (LTD/GTE) or INCORPORATED_TRUSTEES (IT)',
   bankcode: 'CBN bank sort code',
   totalinflow: 'total credits into the account for the period (₦)',
   totaloutflow: 'total debits for the period (₦)',
