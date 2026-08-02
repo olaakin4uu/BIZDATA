@@ -586,6 +586,14 @@ model DataRecord {
   // providers, without decrypting anything. See CryptoService.blindIndex.
   bvnIndex                String?
   ninIndex                String?
+  // TIN as REPORTED on this return. Nine of the KIRS bank-file layouts carry a
+  // TIN column, but until now nothing kept it: the row's tin was fed to
+  // resolveTaxpayer as a lookup key and then discarded, so a TIN supplied for a
+  // taxpayer we had not yet seen was lost, and per-return TIN coverage could not
+  // be measured at all. Encrypted like the other identifiers, with a blind index
+  // so it can be grouped and matched.
+  tin                     String?
+  tinIndex                String?
 
   // Common monetary fields
   totalInflow             Decimal?            @db.Decimal(18, 2)
@@ -625,6 +633,7 @@ model DataRecord {
   // Account-linkage report: group a customer's rows across every provider.
   @@index([bvnIndex, periodYear])
   @@index([ninIndex, periodYear])
+  @@index([tinIndex, periodYear])
   @@map("data_records")
 }
 

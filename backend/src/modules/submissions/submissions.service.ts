@@ -608,13 +608,20 @@ export class SubmissionsService {
       // Taxpayer matching (entity resolution) — see resolveTaxpayer()
       const bvn = extractBvn(row.bvn);
       const nin = row.nin || null;
+      const tin = (row.tin || '').trim() || null;
       const match = await this.resolveTaxpayer({
         nin,
-        tin: row.tin || null,
+        tin,
         bvn,
         accountName: row.accountName || null,
       });
       const taxpayerId = match.taxpayerId;
+
+      // A provider that supplies a TIN for a taxpayer we matched some other way
+      // (usually BVN) is telling us something the register does not yet know.
+      // Record it, so the strongest match key improves with every return instead
+      // of being discarded.
+      if (taxpayerId && tin) await this.enrichTaxpayerTin(taxpayerId, tin);
 
       // payload assembly (provider-specific)
       const payload: any = {};
@@ -678,6 +685,11 @@ export class SubmissionsService {
         // decrypting the ciphertext above.
         bvnIndex: this.crypto.blindIndex(bvn),
         ninIndex: this.crypto.blindIndex(nin),
+        // Keep the TIN the provider reported. It used to be read for matching
+        // and thrown away, so a TIN for a taxpayer we had not seen before was
+        // lost and per-return TIN coverage was unmeasurable.
+        tin: this.crypto.encrypt(tin),
+        tinIndex: this.crypto.blindIndex(tin),
         periodLabel: row.periodLabel,
         periodYear: periodInfo.year,
         totalInflow: toDecimal(row.totalInflow),
@@ -832,6 +844,42 @@ export class SubmissionsService {
    * detection engine and officers know to verify it. The match method and
    * confidence are persisted on the record for auditability.
    */
+  /**
+   * Write a provider-supplied TIN onto a taxpayer that has none.
+   *
+   * Deliberately conservative — this runs per row on a bulk ingest, so it must
+   * never reject a file or overwrite curated data:
+   *
+   *  - NEVER overwrites an existing TIN. If the register already holds one and
+   *    the provider reports a different one, that is a conflict for a human, not
+   *    something to silently resolve mid-import.
+   *  - Taxpayer.tinIndex is UNIQUE. Another taxpayer already holding this TIN
+   *    means the two records are probably the same party (or a provider sent a
+   *    wrong TIN); writing it would throw a constraint error and abort the whole
+   *    submission. Skip instead.
+   *  - Any failure is swallowed. Enrichment is a bonus on top of ingestion —
+   *    it must not be able to fail a return.
+   */
+  private async enrichTaxpayerTin(taxpayerId: string, tin: string): Promise<void> {
+    try {
+      const index = this.crypto.blindIndex(tin);
+      if (!index) return;
+      const tp = await this.prisma.taxpayer.findUnique({
+        where: { id: taxpayerId },
+        select: { tinIndex: true },
+      });
+      if (!tp || tp.tinIndex) return; // unknown, or already has one — leave it alone
+      const clash = await this.prisma.taxpayer.findUnique({ where: { tinIndex: index }, select: { id: true } });
+      if (clash) return; // held by another taxpayer — a merge decision, not an import one
+      await this.prisma.taxpayer.update({
+        where: { id: taxpayerId },
+        data: { tinEnc: this.crypto.encrypt(tin), tinIndex: index },
+      });
+    } catch {
+      // Never let enrichment fail an otherwise valid submission.
+    }
+  }
+
   private async resolveTaxpayer(opts: {
     nin?: string | null;
     tin?: string | null;

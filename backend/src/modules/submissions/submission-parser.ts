@@ -106,6 +106,12 @@ export const RETURN_COLUMNS: FieldDef[] = [
   { name: 'customerType', required: true, type: 'string', validation: { enum: [...CUSTOMER_TYPES] } },
   { name: 'totalInflow', required: true, type: 'decimal', validation: { min: 0 } },  // total credits for the period (₦)
   { name: 'totalOutflow', required: true, type: 'decimal', validation: { min: 0 } }, // total debits for the period (₦)
+  // Tax Identification Number. OPTIONAL, and deliberately the only column that
+  // is: TIN is the strongest matching key there is (0.97, above BVN's 0.95) and
+  // banks already supply it in nine of the file layouts we receive, so it is
+  // worth collecting — but a provider that genuinely holds no TIN for an account
+  // must not have its entire file rejected by the all-or-nothing row validation.
+  { name: 'tin', required: false, type: 'string' },
 ];
 
 /**
