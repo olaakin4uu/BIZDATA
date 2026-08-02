@@ -27,6 +27,8 @@ export const NAV: NavItem[] = [
   { href: '/declared-income', label: 'Declared Income', icon: 'document' },
   { href: '/submissions', label: 'Submissions', icon: 'upload' },
   { href: '/data-records', label: 'Data Records', icon: 'records' },
+  { href: '/linkage', label: 'Account Linkage', icon: 'link' },
+  { href: '/data-quality', label: 'Data Quality', icon: 'shield' },
   { href: '/analytics', label: 'Analytics', icon: 'chart', section: 'Detection' },
   { href: '/scan', label: 'Scans', icon: 'search' },
   { href: '/flagged', label: 'Flagged Review', icon: 'flag' },

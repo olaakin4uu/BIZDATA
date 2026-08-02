@@ -673,6 +673,11 @@ export class SubmissionsService {
         matchMethod: match.method,
         matchConfidence: match.confidence != null ? new Prisma.Decimal(match.confidence) : null,
         accountIndex,
+        // Deterministic HMACs of the same identifiers, so the account-linkage
+        // report can group a customer's rows across providers without ever
+        // decrypting the ciphertext above.
+        bvnIndex: this.crypto.blindIndex(bvn),
+        ninIndex: this.crypto.blindIndex(nin),
         periodLabel: row.periodLabel,
         periodYear: periodInfo.year,
         totalInflow: toDecimal(row.totalInflow),

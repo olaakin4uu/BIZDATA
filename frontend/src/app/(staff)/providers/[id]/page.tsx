@@ -13,6 +13,11 @@ import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, SECTION_29_PROVIDER_TYPES, form
 type Params = Promise<{ id: string }>;
 
 const CURRENT_YEAR = new Date().getFullYear();
+
+/** Naira, formatted exactly as /compliance and /providers do — one house style for money. */
+function ngn(n: number | undefined | null): string {
+  return `₦${Math.round(Number(n ?? 0)).toLocaleString('en-NG')}`;
+}
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2, CURRENT_YEAR - 3];
 
 const PERIOD_META: Record<PeriodStatus, { bg: string; label: string; text: string; ring: string }> = {
@@ -39,6 +44,7 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
   // Distinguish "still fetching" from "fetched, no row" so a non-ACTIVE provider
   // doesn't render the loading state forever (it never had a compliance row).
   const [complianceLoading, setComplianceLoading] = useState(true);
+  const [issuedTotal, setIssuedTotal] = useState(0);
 
   const refresh = () => {
     setLoading(true);
@@ -60,6 +66,14 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
       .then((rows) => setCompliance(rows.find((r) => r.provider.id === id) ?? null))
       .catch(() => setCompliance(null))
       .finally(() => setComplianceLoading(false));
+  }, [id, year]);
+
+  // What has actually been ASSESSED against this provider — waived penalties
+  // excluded, since a waived penalty is no longer a liability.
+  useEffect(() => {
+    complianceApi.penalties({ providerId: id, year })
+      .then((ps) => setIssuedTotal(ps.filter((p) => p.status !== 'WAIVED').reduce((s, p) => s + Number(p.amount ?? 0), 0)))
+      .catch(() => setIssuedTotal(0));
   }, [id, year]);
 
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
@@ -114,7 +128,7 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
       )}
 
       {/* ── Compliance summary KPIs ───────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <MiniKpi label={`${year} compliance`} value={compliance ? `${compliance.complianceRate}%` : '—'}
           valueClass={compliance ? compColor(compliance.complianceRate) : 'text-slate-400'}
           hint={compliance ? `${compliance.onTime} on-time of ${compliance.expected}` : ''} />
@@ -126,6 +140,13 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
         <MiniKpi label="Rejection rate" value={compliance ? `${compliance.rejectionRate}%` : '—'}
           valueClass={compliance && compliance.rejectionRate > 10 ? 'text-amber-600' : 'text-slate-700'}
           hint="of submitted records" />
+        {/* Same field (compliance.penaltyTotal), same wording and same number
+            format as this provider's row on /compliance and /providers — one
+            source, so the three screens cannot disagree. `assessed` is the
+            separate, formally-issued figure; only that is a real liability. */}
+        <MiniKpi label="Penalty exposure" value={compliance ? ngn(compliance.penaltyTotal) : '—'}
+          valueClass={compliance && (compliance.penaltyTotal ?? 0) > 0 ? 'text-rose-700' : 'text-slate-700'}
+          hint={issuedTotal > 0 ? `${ngn(issuedTotal)} assessed · accrued §101` : 'Accrued NTAA §101 — not yet assessed'} />
       </div>
 
       {/* ── Quarterly compliance timeline ─────────────────────── */}
