@@ -85,8 +85,14 @@ export class BehaviouralAnalyticsAgent implements AnalyticsAgent {
       { score: risingUndisclosedScore, weight: 0.40, usable: fp.periodCount >= 2 },
       { score: newProviderScore,       weight: 0.25, usable: fp.newHighValueProviderShare > 0 },
       { score: volatilityScore,        weight: 0.20, usable: fp.periodCount >= 2 },
-      // passThrough needs opening/closing balances — usable only when present.
-      { score: passThroughScore,       weight: 0.15, usable: fp.balanceRetentionRatio !== 0 || fp.netBalanceChange !== 0 },
+      // passThrough needs opening/closing balances. Gate on whether the data was
+      // REPORTED, not on whether the computed ratio happens to be non-zero: a
+      // record set with no balances and one where closing exactly equals opening
+      // both produce 0, yet they mean opposite things. The first is absent data
+      // and must be excluded; the second is a textbook pass-through account and
+      // is the single most meaningful case this component exists to catch. The
+      // old test discarded it.
+      { score: passThroughScore,       weight: 0.15, usable: fp.hasBalanceData },
     ];
     const usable = components.filter((c) => c.usable && c.weight > 0);
     const totalW = usable.reduce((s, c) => s + c.weight, 0);
@@ -188,6 +194,12 @@ export interface BehaviouralFingerprint {
   netBalanceChange: number;
   /** 1 - |retention|, i.e. how "pass-through" the account looks. */
   passThroughRatio: number;
+  /**
+   * Whether ANY contributing record carried balance figures. Without this the
+   * pass-through signal cannot be trusted in either direction — see the gate in
+   * the scorer.
+   */
+  hasBalanceData: boolean;
 
   /** Label of a provider that first appears in the later year and is high-value. */
   newHighValueProvider: string | null;
@@ -285,6 +297,8 @@ export function buildFingerprint(profile: TaxpayerProfile): BehaviouralFingerpri
   const balanceRetentionRatio =
     profile.totalInflow > 0 ? netBalanceChange / profile.totalInflow : 0;
   const passThroughRatio = clamp01(1 - Math.abs(balanceRetentionRatio));
+  // Did any record actually report balances? Most bank filings do not.
+  const hasBalanceData = records.some((r) => r.hasBalances);
 
   // Sudden new high-value provider: a provider whose earliest period is in the
   // later part of the year yet contributes a large share of total inflow.
@@ -304,6 +318,7 @@ export function buildFingerprint(profile: TaxpayerProfile): BehaviouralFingerpri
     balanceRetentionRatio,
     netBalanceChange,
     passThroughRatio,
+    hasBalanceData,
     newHighValueProvider,
     newHighValueProviderShare,
   };
@@ -329,7 +344,10 @@ export function detectNewHighValueProvider(
   const lateThreshold = minOrder + span / 2; // strictly after the midpoint = "late entry"
 
   // Per provider: earliest appearance + total inflow.
-  const stats = new Map<string, { firstOrder: number; inflow: number }>();
+  // Keyed by id, but carrying the resolved name: findings are read by analysts,
+  // and "a4f3c1e2-…" is not something anyone can act on. Grouping still uses the
+  // id so two providers sharing a name can never be merged.
+  const stats = new Map<string, { firstOrder: number; inflow: number; name: string | null }>();
   for (const rec of records) {
     const id = rec.providerId || 'unknown';
     const order = periodOrder(rec);
@@ -338,8 +356,9 @@ export function detectNewHighValueProvider(
     if (s) {
       s.firstOrder = Math.min(s.firstOrder, order);
       s.inflow += inflow;
+      if (!s.name && rec.providerName) s.name = rec.providerName;
     } else {
-      stats.set(id, { firstOrder: order, inflow });
+      stats.set(id, { firstOrder: order, inflow, name: rec.providerName ?? null });
     }
   }
 
@@ -348,7 +367,9 @@ export function detectNewHighValueProvider(
     if (s.firstOrder <= lateThreshold) continue; // not a late entrant
     const share = s.inflow / totalInflow;
     if (share >= 0.2 && (!best || share > best.share)) {
-      best = { provider: id, share };
+      // Fall back to the id only when the provider could not be resolved — an
+      // opaque label is still better than dropping a real finding.
+      best = { provider: s.name || id, share };
     }
   }
 
@@ -400,7 +421,12 @@ function buildSummary(
     );
   }
 
-  if (s.passThroughScore >= 0.33) {
+  // Only assert pass-through when balances were actually REPORTED. Without them
+  // retention computes to 0, which inverts to a maximal pass-through ratio — so
+  // the absence of data reads as the strongest possible evidence of sweeping.
+  // The score already excludes this component (see `usable`); the sentence must
+  // match, or the narrative accuses on data nobody supplied.
+  if (fp.hasBalanceData && s.passThroughScore >= 0.33) {
     parts.push(
       `Most inflow is not retained on the balance (pass-through), leaving the destination of ` +
       `funds unexplained by declared income.`,

@@ -24,9 +24,22 @@ export interface ProfileRecord {
   totalOutflow: number;
   openingBalance: number;
   closingBalance: number;
+  /**
+   * Whether this record actually carried balance figures.
+   *
+   * openingBalance/closingBalance are coerced through num() on load, so a NULL
+   * arrives indistinguishable from a genuine zero. That difference matters:
+   * "no balance data" and "money in, money out, balance unchanged" are opposite
+   * conclusions, and the second is the strongest pass-through signal there is.
+   * Most bank filings carry no balances at all, so without this flag the agent
+   * either discards its best signal or invents one.
+   */
+  hasBalances: boolean;
   transactionCount: number;
   matchConfidence: number | null; // 0..1 identity-match quality
   accountName: string | null;
+  /** Human-readable provider name. Falls back to the id when unresolved. */
+  providerName: string | null;
   accountNumber: string | null;   // for distinct-account counting
   bvn: string | null;             // for shared-identifier concern detection
   payload: Record<string, unknown> | null;
