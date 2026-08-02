@@ -136,6 +136,7 @@ export class BehaviouralAnalyticsAgent implements AnalyticsAgent {
           netBalanceChange: round2(fp.netBalanceChange),
           passThroughRatio: round4(fp.passThroughRatio),
           newHighValueProvider: fp.newHighValueProvider,
+          newHighValueProviderName: fp.newHighValueProviderName,
           newHighValueProviderShare: round4(fp.newHighValueProviderShare),
           periodInflows: fp.periodInflows.map((p) => ({
             periodLabel: p.periodLabel,
@@ -201,8 +202,14 @@ export interface BehaviouralFingerprint {
    */
   hasBalanceData: boolean;
 
-  /** Label of a provider that first appears in the later year and is high-value. */
+  /** Id of a provider that first appears in the later year and is high-value. */
   newHighValueProvider: string | null;
+  /**
+   * That provider's human-readable name. Kept separate from the id rather than
+   * replacing it: the summary needs something an analyst can act on, and the
+   * details need something a machine can join back to the provider record.
+   */
+  newHighValueProviderName: string | null;
   /** That provider's share of total inflow (0 if none). */
   newHighValueProviderShare: number;
 }
@@ -302,8 +309,11 @@ export function buildFingerprint(profile: TaxpayerProfile): BehaviouralFingerpri
 
   // Sudden new high-value provider: a provider whose earliest period is in the
   // later part of the year yet contributes a large share of total inflow.
-  const { provider: newHighValueProvider, share: newHighValueProviderShare } =
-    detectNewHighValueProvider(records, profile.totalInflow);
+  const {
+    provider: newHighValueProvider,
+    providerName: newHighValueProviderName,
+    share: newHighValueProviderShare,
+  } = detectNewHighValueProvider(records, profile.totalInflow);
 
   return {
     periodCount,
@@ -320,6 +330,7 @@ export function buildFingerprint(profile: TaxpayerProfile): BehaviouralFingerpri
     passThroughRatio,
     hasBalanceData,
     newHighValueProvider,
+    newHighValueProviderName,
     newHighValueProviderShare,
   };
 }
@@ -332,13 +343,13 @@ export function buildFingerprint(profile: TaxpayerProfile): BehaviouralFingerpri
 export function detectNewHighValueProvider(
   records: ProfileRecord[],
   totalInflow: number,
-): { provider: string | null; share: number } {
-  if (!records.length || totalInflow <= 0) return { provider: null, share: 0 };
+): { provider: string | null; providerName: string | null; share: number } {
+  if (!records.length || totalInflow <= 0) return { provider: null, providerName: null, share: 0 };
 
   const orders = records.map(periodOrder);
   const minOrder = Math.min(...orders);
   const maxOrder = Math.max(...orders);
-  if (minOrder === maxOrder) return { provider: null, share: 0 }; // single period: nothing "new"
+  if (minOrder === maxOrder) return { provider: null, providerName: null, share: 0 }; // single period: nothing "new"
 
   const span = maxOrder - minOrder;
   const lateThreshold = minOrder + span / 2; // strictly after the midpoint = "late entry"
@@ -362,18 +373,37 @@ export function detectNewHighValueProvider(
     }
   }
 
-  let best: { provider: string; share: number } | null = null;
+  let best: { provider: string; providerName: string | null; share: number } | null = null;
   for (const [id, s] of stats) {
     if (s.firstOrder <= lateThreshold) continue; // not a late entrant
     const share = s.inflow / totalInflow;
     if (share >= 0.2 && (!best || share > best.share)) {
-      // Fall back to the id only when the provider could not be resolved — an
-      // opaque label is still better than dropping a real finding.
-      best = { provider: s.name || id, share };
+      best = { provider: id, providerName: s.name ?? null, share };
     }
   }
 
-  return best ? { provider: best.provider, share: best.share } : { provider: null, share: 0 };
+  return best
+    ? { provider: best.provider, providerName: best.providerName, share: best.share }
+    : { provider: null, providerName: null, share: 0 };
+}
+
+/** Naira for prose — short scale, so a summary stays readable at a glance. */
+function money(n: number): string {
+  const a = Math.abs(n);
+  if (a >= 1e9) return `₦${(n / 1e9).toFixed(2)}bn`;
+  if (a >= 1e6) return `₦${(n / 1e6).toFixed(2)}m`;
+  if (a >= 1e3) return `₦${Math.round(n).toLocaleString('en-NG')}`;
+  return `₦${n.toFixed(2)}`;
+}
+
+/**
+ * Is the first half so small that the trend percentage says more about the
+ * baseline than about the taxpayer? A half worth under 1% of the other pins the
+ * normalised slope near 100% whatever the money actually did.
+ */
+function negligibleBaseline(fp: { firstHalfInflow: number; secondHalfInflow: number }): boolean {
+  const { firstHalfInflow: a, secondHalfInflow: b } = fp;
+  return b > 0 && a >= 0 && a < b * 0.01;
 }
 
 function buildSummary(
@@ -393,28 +423,44 @@ function buildSummary(
   const parts: string[] = [];
 
   if (s.risingUndisclosedScore >= 0.33) {
+    // Quote the halves, never a bare percentage. The slope is normalised to
+    // (second − first) / (first + second), so a negligible first half pins it at
+    // ~100% however small the rise is in money terms: ₦2,205 followed by ₦131.9m
+    // reads as "100% higher", which is arithmetically true and tells the reader
+    // nothing. The figures let an officer judge the baseline for themselves.
     const pct = Math.round(fp.normalisedInflowSlope * 100);
+    const shape = `${money(fp.firstHalfInflow)} → ${money(fp.secondHalfInflow)}, +${pct}% net`;
+    const caveat = negligibleBaseline(fp)
+      ? ' The first half is negligible next to the second, so that percentage reflects a near-zero base rather than sustained growth.'
+      : '';
     if (s.underDeclarationFactor >= 0.5 && !profile.hasDeclaration) {
       parts.push(
-        `Inflows trend upward across the year (second half ${pct}% higher, net) ` +
-        `with no income declaration on file — a pattern consistent with emerging undisclosed income.`,
+        `Inflows trend upward across the year (${shape}) ` +
+        `with no income declaration on file — a pattern consistent with emerging undisclosed income.${caveat}`,
       );
     } else {
       parts.push(
-        `Inflows trend upward across the year (second half ${pct}% higher, net) ` +
-        `against low declared income relative to banked receipts.`,
+        `Inflows trend upward across the year (${shape}) ` +
+        `against low declared income relative to banked receipts.${caveat}`,
       );
     }
   }
 
   if (fp.newHighValueProvider && s.newProviderScore >= 0.2) {
+    // Name the institution. This is the REPORTING provider — the bank that filed
+    // the return — not a counter-party the taxpayer transacted with. Calling it a
+    // counter-party invites the reader to think we can see who paid them; a §29
+    // return carries no counter-party at all.
     parts.push(
-      `A new high-value counter-party (${fp.newHighValueProvider}) appears only later in the ` +
-      `year yet accounts for ${Math.round(fp.newHighValueProviderShare * 100)}% of total inflow.`,
+      `${fp.newHighValueProviderName ?? fp.newHighValueProvider} first reports for this taxpayer ` +
+      `only later in the year, yet accounts for ` +
+      `${Math.round(fp.newHighValueProviderShare * 100)}% of total inflow.`,
     );
   }
 
-  if (s.volatilityScore >= 0.4) {
+  // A coefficient of variation needs more than two points to carry information;
+  // from exactly two it merely restates the trend already reported above.
+  if (fp.periodCount >= 3 && s.volatilityScore >= 0.4) {
     parts.push(
       `Period-to-period inflow is highly irregular (coefficient of variation ` +
       `${fp.inflowCoefficientOfVariation.toFixed(2)}).`,
