@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { agentsApi, AGENT_NAMES, type SignalsPage, type SignalSummary, type AgentSeverity } from '@/lib/api/agents';
-import { extractErrorMessage } from '@/lib/utils';
+import { extractErrorMessage, formatDateTime } from '@/lib/utils';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2];
@@ -142,7 +142,17 @@ export default function AgentSignalsPage() {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right tabular-nums font-semibold text-slate-700">{Math.round(Number(sig.score) * 100)}%</td>
-                  <td className="px-4 py-3 text-xs text-slate-600 max-w-md">{sig.summary}</td>
+                  <td className="px-4 py-3 text-xs text-slate-600 max-w-md">
+                    {sig.summary}
+                    {/* A signal describes the records as they stood when the
+                        agents ran. Without this an old snapshot reads as current
+                        fact — and re-importing data does NOT refresh it. */}
+                    {sig.computedAt && (
+                      <p className="mt-1 text-[10px] text-slate-400">
+                        Computed {formatDateTime(sig.computedAt)} · reflects the data as it stood then
+                      </p>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

@@ -47,7 +47,7 @@ export class AgentsService {
              -- UUID. An analyst cannot act on "a4f3…"; they can act on "Zenith Bank".
              p.name AS "providerName"
         FROM data_records dr
-        LEFT JOIN providers p ON p.id = dr."providerId"
+        LEFT JOIN data_providers p ON p.id = dr."providerId"
        WHERE dr."periodYear" = ${year} AND dr."taxpayerId" = ANY(${[...reportableIds]}::text[])`);
     const byTp = new Map<string, typeof records>();
     for (const r of records) {
@@ -278,6 +278,10 @@ export class AgentsService {
     const signals = rows.map((r) => ({
       id: r.id, taxpayerId: r.taxpayerId, year: r.year, agentKey: r.agentKey,
       score: r.score, severity: r.severity, summary: r.summary, createdAt: r.createdAt,
+      // When the agents last recomputed this — NOT when it first appeared. A
+      // signal describes the records as they stood at scan time, so the reader
+      // must be able to see whether newer data has landed since.
+      computedAt: r.computedAt,
       taxpayerName: r.taxpayer.type === 'CORPORATE'
         ? (r.taxpayer.businessName ?? '—')
         : [r.taxpayer.firstName, r.taxpayer.lastName].filter(Boolean).join(' ') || '—',
