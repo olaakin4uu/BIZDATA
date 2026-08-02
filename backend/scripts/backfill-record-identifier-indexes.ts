@@ -1,20 +1,28 @@
 /**
- * Backfill data_records.bvnIndex / ninIndex — and encrypt any identifier still
- * sitting in the clear.
+ * Backfill data_records.bvnIndex / ninIndex — and optionally encrypt any
+ * identifier still sitting in the clear.
  *
- * Why both at once: the bulk importers used to write the raw BVN / account
- * number / phone straight onto the record while correctly encrypting the
- * taxpayer's copy, so historic rows hold plaintext PII. The account-linkage
- * report needs a deterministic index to group on, and computing it means
- * touching every row anyway — so the same pass also re-writes any plaintext
- * value as ciphertext.
+ * Why this exists: the bulk importers wrote the raw BVN / account number / phone
+ * straight onto the record while correctly encrypting the taxpayer's copy, so
+ * historic rows hold plaintext PII and no blind index. The account-linkage
+ * report groups on the blind index (bvn/nin are AES-GCM with a random IV, so
+ * equal values do NOT produce equal ciphertext and cannot be grouped in SQL), so
+ * without this backfill the report returns nothing at all.
  *
- * Safe to re-run: rows that already carry both indexes are skipped, and a value
- * that is already ciphertext is decrypted-then-indexed rather than double
- * encrypted (CryptoService.decrypt returns unprefixed input unchanged, so the
- * same code path handles plaintext and ciphertext).
+ * Two passes, separable because they are independent — the index is derived from
+ * the PLAINTEXT value, so encrypting afterwards never invalidates it:
+ *   --indexes-only   write bvnIndex/ninIndex, touch nothing else. Cheap, and
+ *                    enough to make the linkage report work.
+ *   (default)        also rewrite any plaintext bvn/nin/accountNumber/phone as
+ *                    ciphertext.
+ *   --dry-run        report what would change, write nothing.
  *
- *   npx ts-node scripts/backfill-record-identifier-indexes.ts [--dry-run]
+ * Bulk-updates in batches via a single UPDATE ... FROM (VALUES …) per batch;
+ * row-by-row updates are far too slow at the ~600k-row scale this runs at.
+ * Safe to re-run: rows that already carry their indexes are skipped by the
+ * cursor query, so an interrupted run resumes where it stopped.
+ *
+ *   npx ts-node scripts/backfill-record-identifier-indexes.ts --indexes-only
  */
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
@@ -23,66 +31,110 @@ import { CryptoService } from '../src/common/services/crypto.service';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
+
 const DRY = process.argv.includes('--dry-run');
-const BATCH = 500;
+const INDEXES_ONLY = process.argv.includes('--indexes-only');
+const BATCH = 1000;
 
 /** Already an AES-GCM payload written by CryptoService? */
-function isCiphertext(v: string | null): boolean {
-  return !!v && (v.startsWith('v1.') || v.startsWith('v2.'));
-}
+const isCiphertext = (v: string | null) => !!v && (v.startsWith('v1.') || v.startsWith('v2.'));
 
 async function main() {
   const crypto = new CryptoService();
   await crypto.onModuleInit();
 
-  const total = await prisma.dataRecord.count({
-    where: { OR: [{ bvn: { not: null } }, { nin: { not: null } }, { accountNumber: { not: null } }, { phoneNumber: { not: null } }] },
+  const todo = await prisma.dataRecord.count({
+    where: {
+      OR: [
+        { AND: [{ bvn: { not: null } }, { bvnIndex: null }] },
+        { AND: [{ nin: { not: null } }, { ninIndex: null }] },
+      ],
+    },
   });
-  console.log(`${total} record(s) carry an identifier.${DRY ? ' DRY RUN — nothing will be written.' : ''}`);
+  console.log(
+    `${todo.toLocaleString()} record(s) need an identifier index.` +
+    `${INDEXES_ONLY ? ' Indexes only — plaintext values will be left as-is.' : ' Plaintext values will also be encrypted.'}` +
+    `${DRY ? ' DRY RUN — nothing will be written.' : ''}`,
+  );
+  if (todo === 0) { console.log('Nothing to do.'); return; }
 
-  let cursor: string | undefined;
+  let cursor = '';
   let scanned = 0, indexed = 0, encrypted = 0;
+  const started = Date.now();
 
   for (;;) {
-    const rows = await prisma.dataRecord.findMany({
-      where: { OR: [{ bvn: { not: null } }, { nin: { not: null } }, { accountNumber: { not: null } }, { phoneNumber: { not: null } }] },
-      select: { id: true, bvn: true, nin: true, accountNumber: true, phoneNumber: true, bvnIndex: true, ninIndex: true, accountIndex: true },
-      orderBy: { id: 'asc' },
-      take: BATCH,
-      ...(cursor ? { cursor: { id: cursor }, skip: 1 } : {}),
-    });
+    // Cursor by id so an interrupted run resumes; the WHERE also naturally skips
+    // rows a previous run already completed.
+    const rows = await prisma.$queryRawUnsafe<any[]>(
+      `SELECT id, bvn, nin, "accountNumber", "phoneNumber", "bvnIndex", "ninIndex", "accountIndex"
+         FROM data_records
+        WHERE id > $1
+          AND ((bvn IS NOT NULL AND "bvnIndex" IS NULL) OR (nin IS NOT NULL AND "ninIndex" IS NULL))
+        ORDER BY id
+        LIMIT ${BATCH}`,
+      cursor,
+    );
     if (!rows.length) break;
     cursor = rows[rows.length - 1].id;
 
+    const updates: { id: string; cols: Record<string, string> }[] = [];
     for (const r of rows) {
       scanned++;
-      const data: Record<string, string | null> = {};
+      const cols: Record<string, string> = {};
 
-      // Identifier columns: derive the blind index from the PLAINTEXT value,
-      // then make sure what is stored is ciphertext.
       for (const [col, idxCol] of [['bvn', 'bvnIndex'], ['nin', 'ninIndex'], ['accountNumber', 'accountIndex']] as const) {
-        const stored = (r as any)[col] as string | null;
+        const stored = r[col] as string | null;
         if (!stored) continue;
         const plain = crypto.decrypt(stored);
         if (!plain) continue;
-        if (!(r as any)[idxCol]) { data[idxCol] = crypto.blindIndex(plain); indexed++; }
-        if (!isCiphertext(stored)) { data[col] = crypto.encrypt(plain); encrypted++; }
+        if (!r[idxCol]) { cols[idxCol] = crypto.blindIndex(plain)!; indexed++; }
+        if (!INDEXES_ONLY && !isCiphertext(stored)) { cols[col] = crypto.encrypt(plain)!; encrypted++; }
       }
-      // Phone has no index, but must not sit in the clear either.
-      if (r.phoneNumber && !isCiphertext(r.phoneNumber)) {
+      if (!INDEXES_ONLY && r.phoneNumber && !isCiphertext(r.phoneNumber)) {
         const plain = crypto.decrypt(r.phoneNumber);
-        if (plain) { data.phoneNumber = crypto.encrypt(plain); encrypted++; }
+        if (plain) { cols.phoneNumber = crypto.encrypt(plain)!; encrypted++; }
       }
-
-      if (Object.keys(data).length && !DRY) {
-        await prisma.dataRecord.update({ where: { id: r.id }, data });
-      }
+      if (Object.keys(cols).length) updates.push({ id: r.id, cols });
     }
-    console.log(`  …${scanned}/${total} scanned, ${indexed} index(es) written, ${encrypted} value(s) encrypted`);
+
+    if (updates.length && !DRY) await bulkUpdate(updates);
+
+    const rate = Math.round(scanned / ((Date.now() - started) / 1000));
+    console.log(`  …${scanned.toLocaleString()}/${todo.toLocaleString()} · ${indexed.toLocaleString()} index(es)` +
+      `${INDEXES_ONLY ? '' : ` · ${encrypted.toLocaleString()} encrypted`} · ${rate}/s`);
   }
 
-  console.log(`\nDone. Scanned ${scanned}; wrote ${indexed} blind index(es); encrypted ${encrypted} previously-plaintext value(s).`);
+  console.log(`\nDone in ${Math.round((Date.now() - started) / 1000)}s. Scanned ${scanned.toLocaleString()}; ` +
+    `wrote ${indexed.toLocaleString()} blind index(es)` +
+    `${INDEXES_ONLY ? '' : `; encrypted ${encrypted.toLocaleString()} previously-plaintext value(s)`}.`);
   if (DRY) console.log('DRY RUN — no changes were persisted.');
+  if (INDEXES_ONLY) {
+    console.log('NOTE: plaintext identifiers were left untouched. Re-run without --indexes-only to encrypt them.');
+  }
+}
+
+/**
+ * One UPDATE for the whole batch. Every value is bound as a parameter (never
+ * interpolated), and each column is written with COALESCE so a row that only
+ * needs one column keeps the rest untouched.
+ */
+async function bulkUpdate(updates: { id: string; cols: Record<string, string> }[]) {
+  const COLS = ['bvnIndex', 'ninIndex', 'accountIndex', 'bvn', 'nin', 'accountNumber', 'phoneNumber'] as const;
+  const params: (string | null)[] = [];
+  const tuples = updates.map((u) => {
+    const row = [u.id, ...COLS.map((c) => u.cols[c] ?? null)];
+    const placeholders = row.map((_, i) => `$${params.length + i + 1}`);
+    params.push(...row);
+    return `(${placeholders.join(',')})`;
+  });
+
+  const setClause = COLS.map((c) => `"${c}" = COALESCE(v."${c}", d."${c}")`).join(', ');
+  await prisma.$executeRawUnsafe(
+    `UPDATE data_records d SET ${setClause}
+       FROM (VALUES ${tuples.join(',')}) AS v(id, ${COLS.map((c) => `"${c}"`).join(', ')})
+      WHERE d.id = v.id`,
+    ...params,
+  );
 }
 
 main()
