@@ -40,6 +40,8 @@ export interface SignalRow {
   severity: AgentSeverity;
   summary: string;
   createdAt: string;
+  /** When the agents last RECOMPUTED this signal — not when it first appeared. */
+  computedAt?: string;
   taxpayerName: string;
   taxpayerType: string;
   sector: string | null;

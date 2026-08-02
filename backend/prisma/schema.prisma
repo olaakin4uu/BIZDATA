@@ -956,6 +956,12 @@ model RiskSignal {
   summary     String
   details     Json?
   createdAt   DateTime @default(now())
+  // When this signal was last COMPUTED. A re-run upserts onto the unique
+  // (taxpayer, year, agent) key, so createdAt keeps saying when the signal first
+  // appeared — which reads as "as of" and is wrong the moment the underlying
+  // records change. A signal is a snapshot of the data at scan time; the reader
+  // needs to know which scan.
+  computedAt  DateTime @updatedAt
 
   taxpayer Taxpayer @relation(fields: [taxpayerId], references: [id])
 
