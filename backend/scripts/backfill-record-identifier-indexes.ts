@@ -119,7 +119,15 @@ async function main() {
  * needs one column keeps the rest untouched.
  */
 async function bulkUpdate(updates: { id: string; cols: Record<string, string> }[]) {
-  const COLS = ['bvnIndex', 'ninIndex', 'accountIndex', 'bvn', 'nin', 'accountNumber', 'phoneNumber'] as const;
+  // Only the columns this batch actually changes. Naming all seven made every
+  // UPDATE rewrite (and re-index) columns it had no work for — on a table with
+  // six indexes that dominated the runtime.
+  const present = new Set<string>();
+  for (const u of updates) for (const k of Object.keys(u.cols)) present.add(k);
+  const COLS = (['bvnIndex', 'ninIndex', 'accountIndex', 'bvn', 'nin', 'accountNumber', 'phoneNumber'] as const)
+    .filter((c) => present.has(c));
+  if (!COLS.length) return;
+
   const params: (string | null)[] = [];
   const tuples = updates.map((u) => {
     const row = [u.id, ...COLS.map((c) => u.cols[c] ?? null)];
