@@ -37,12 +37,18 @@ export class AgentsService {
       totalInflow: any; totalOutflow: any; openingBalance: any; closingBalance: any;
       transactionCount: number | null; matchConfidence: any; accountName: string | null;
       accountNumber: string | null; bvn: string | null; payload: any;
+      providerName: string | null;
     }>>(Prisma.sql`
-      SELECT "taxpayerId", "providerId", "providerType", "periodLabel", "periodYear",
-             "totalInflow", "totalOutflow", "openingBalance", "closingBalance",
-             "transactionCount", "matchConfidence", "accountName", "accountNumber", "bvn", payload
-        FROM data_records
-       WHERE "periodYear" = ${year} AND "taxpayerId" = ANY(${[...reportableIds]}::text[])`);
+      SELECT dr."taxpayerId", dr."providerId", dr."providerType", dr."periodLabel", dr."periodYear",
+             dr."totalInflow", dr."totalOutflow", dr."openingBalance", dr."closingBalance",
+             dr."transactionCount", dr."matchConfidence", dr."accountName", dr."accountNumber",
+             dr.bvn, dr.payload,
+             -- Resolve the provider so findings name an institution rather than a
+             -- UUID. An analyst cannot act on "a4f3…"; they can act on "Zenith Bank".
+             p.name AS "providerName"
+        FROM data_records dr
+        LEFT JOIN providers p ON p.id = dr."providerId"
+       WHERE dr."periodYear" = ${year} AND dr."taxpayerId" = ANY(${[...reportableIds]}::text[])`);
     const byTp = new Map<string, typeof records>();
     for (const r of records) {
       if (!r.taxpayerId) continue;
@@ -84,6 +90,7 @@ export class AgentsService {
         sector: t.sector,
         records: recs.map((r) => ({
           providerId: r.providerId,
+          providerName: r.providerName ?? null,
           providerType: r.providerType as string,
           periodLabel: r.periodLabel,
           periodYear: r.periodYear,
@@ -91,6 +98,9 @@ export class AgentsService {
           totalOutflow: num(r.totalOutflow),
           openingBalance: num(r.openingBalance),
           closingBalance: num(r.closingBalance),
+          // Captured BEFORE num() flattens null to 0, which is the only place
+          // the distinction still exists.
+          hasBalances: r.openingBalance != null || r.closingBalance != null,
           transactionCount: r.transactionCount ?? 0,
           matchConfidence: r.matchConfidence != null ? Number(r.matchConfidence) : null,
           accountName: r.accountName,
