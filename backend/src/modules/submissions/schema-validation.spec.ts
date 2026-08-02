@@ -7,7 +7,9 @@ import {
   dateInPeriod,
   normalizePeriodLabel,
   DEFAULT_SCHEMAS,
-  type SchemaTemplate,
+  PROVIDER_TYPES,
+  CUSTOMER_TYPES,
+  LIMITED_LIABILITY_CUSTOMER_TYPES,
 } from './submission-parser';
 
 describe('dateInPeriod — transaction date must match the reported period', () => {
@@ -102,83 +104,119 @@ describe('parseFlexibleDate', () => {
 
 const BANK = DEFAULT_SCHEMAS.BANK;
 
-// A row that satisfies every BANK required field with valid formats.
-function validBankRow(overrides: Record<string, string> = {}): Record<string, string> {
+describe('DEFAULT_SCHEMAS — one seven-column return for every provider type', () => {
+  it('every provider type exposes exactly the seven columns, in order', () => {
+    for (const type of PROVIDER_TYPES) {
+      expect(DEFAULT_SCHEMAS[type].columns.map((c) => c.name)).toEqual([
+        'nin', 'accountNumber', 'accountName', 'bvn', 'customerType', 'totalInflow', 'totalOutflow',
+      ]);
+    }
+  });
+
+  it('makes every column compulsory, with no phase-in', () => {
+    for (const type of PROVIDER_TYPES) {
+      for (const col of DEFAULT_SCHEMAS[type].columns) {
+        expect(col.required).toBe(true);
+        expect(col.validation?.enforceFrom).toBeUndefined();
+      }
+    }
+  });
+
+  it('drops every column the redesign removed', () => {
+    const names = new Set(BANK.columns.map((c) => c.name));
+    for (const gone of [
+      'bankCode', 'bankName', 'periodLabel', 'periodQuarter', 'transactionDate', 'openingBalance',
+      'closingBalance', 'transactionCount', 'sector', 'businessType', 'tin', 'rcNumber',
+      'phoneNumber', 'customerEmail', 'customerAddress', 'currency', 'conversionRate',
+      'walletId', 'merchantId', 'policyNumber',
+    ]) {
+      expect(names.has(gone)).toBe(false);
+    }
+  });
+
+  it('customerType covers INDIVIDUAL plus the five CAC classes', () => {
+    const col = BANK.columns.find((c) => c.name === 'customerType')!;
+    expect(col.validation?.enum).toEqual([
+      'INDIVIDUAL', 'BUSINESS_NAME', 'PRIVATE_LIMITED',
+      'PUBLIC_LIMITED', 'LIMITED_BY_GUARANTEE', 'INCORPORATED_TRUSTEES',
+    ]);
+  });
+
+  it('only the three limited forms are limited-liability (federal CIT, not state income tax)', () => {
+    expect([...LIMITED_LIABILITY_CUSTOMER_TYPES]).toEqual([
+      'PRIVATE_LIMITED', 'PUBLIC_LIMITED', 'LIMITED_BY_GUARANTEE',
+    ]);
+    for (const stateAssessable of ['INDIVIDUAL', 'BUSINESS_NAME', 'INCORPORATED_TRUSTEES'] as const) {
+      expect(LIMITED_LIABILITY_CUSTOMER_TYPES).not.toContain(stateAssessable);
+    }
+  });
+});
+
+// A row that satisfies every required field with valid formats.
+function validRow(overrides: Record<string, string> = {}): Record<string, string> {
   return {
-    bankCode: '057',
-    bankName: 'Example Bank',
-    accountNumber: '0123456788',
-    bvn: '22212345678',
     nin: '12345678901',
+    accountNumber: '0123456788',
     accountName: 'ADACHI VENTURES LTD',
-    customerType: 'CORPORATE',
-    sector: 'TRADING',
-    businessType: 'Retail shop',
-    transactionDate: '2026-01-15',
-    periodLabel: '2026-Q1',
+    bvn: '22212345678',
+    customerType: 'PRIVATE_LIMITED',
     totalInflow: '100000',
-    openingBalance: '10000',
-    closingBalance: '60000',
+    totalOutflow: '50000',
     ...overrides,
   };
 }
 
 describe('validateRow — required fields (compulsory columns)', () => {
   it('accepts a row with all required fields present and valid', () => {
-    const { ok, errors } = validateRow(validBankRow(), BANK);
+    const { ok, errors } = validateRow(validRow(), BANK);
     expect(errors).toEqual([]);
     expect(ok).toBe(true);
   });
 
-  // Hard-required fields (no grace period) reject immediately when blank.
-  it.each(['nin', 'accountName', 'bvn', 'periodLabel', 'transactionDate'])(
-    'rejects a row missing the hard-required field "%s"',
+  // Every column is compulsory with no grace period — blank rejects immediately.
+  it.each(['nin', 'accountNumber', 'accountName', 'bvn', 'customerType', 'totalInflow', 'totalOutflow'])(
+    'rejects a row missing the required field "%s"',
     (field) => {
-      const { ok, errors } = validateRow(validBankRow({ [field]: '' }), BANK);
+      const { ok, errors } = validateRow(validRow({ [field]: '' }), BANK);
       expect(ok).toBe(false);
       expect(errors).toContain(`${field} is required`);
     },
   );
 
   it('treats whitespace-only as missing', () => {
-    const { ok, errors } = validateRow(validBankRow({ nin: '   ' }), BANK);
+    const { ok, errors } = validateRow(validRow({ nin: '   ' }), BANK);
     expect(ok).toBe(false);
     expect(errors).toContain('nin is required');
   });
+
+  it('ignores extra columns a provider still sends from an older, wider export', () => {
+    const wide = validRow({ bankCode: '057', periodLabel: '2026-Q1', sector: 'TRADING' });
+    expect(validateRow(wide, BANK).ok).toBe(true);
+  });
 });
 
-describe('validateRow — grace period (soft-required fields)', () => {
-  const BEFORE = { now: new Date('2026-08-01') }; // before 2027-01-01 enforce date
-  const AFTER = { now: new Date('2027-06-01') };  // after it
+describe('validateRow — no grace period on any column', () => {
+  it('no column carries an enforceFrom, so nothing is phased in', () => {
+    expect(BANK.columns.filter((c) => c.validation?.enforceFrom)).toEqual([]);
+  });
 
-  it.each(['sector', 'businessType', 'customerType'])(
-    'warns (does NOT reject) when soft field "%s" is blank before the enforcement date',
-    (field) => {
-      const { ok, errors, warnings } = validateRow(validBankRow({ [field]: '' }), BANK, BEFORE);
-      expect(ok).toBe(true); // accepted
-      expect(errors).not.toContain(`${field} is required`);
-      expect(warnings.some((w) => w.startsWith(`${field} is blank`))).toBe(true);
-    },
-  );
-
-  it.each(['sector', 'businessType', 'customerType'])(
-    'rejects soft field "%s" when blank on/after the enforcement date',
-    (field) => {
-      const { ok, errors } = validateRow(validBankRow({ [field]: '' }), BANK, AFTER);
+  it('rejects a blank customerType today, not from some future date', () => {
+    for (const ctx of [{ now: new Date('2026-08-01') }, { now: new Date('2027-06-01') }]) {
+      const { ok, errors, warnings } = validateRow(validRow({ customerType: '' }), BANK, ctx);
       expect(ok).toBe(false);
-      expect(errors).toContain(`${field} is required`);
-    },
-  );
+      expect(errors).toContain('customerType is required');
+      expect(warnings).toEqual([]); // never a soft warning
+    }
+  });
 
-  it('a config override date takes precedence over the schema default', () => {
-    // Override to a past date → soft field is enforced now even though the
-    // schema default (2027) has not arrived.
-    const { ok } = validateRow(validBankRow({ sector: '' }), BANK, { now: new Date('2026-08-01'), enforceFrom: '2026-01-01' });
+  it('a config enforcement-date override cannot soften a blank column', () => {
+    // Even with a far-future override, a column with no enforceFrom is enforced now.
+    const { ok } = validateRow(validRow({ customerType: '' }), BANK, { now: new Date('2026-08-01'), enforceFrom: '2099-01-01' });
     expect(ok).toBe(false);
   });
 
-  it('still accepts a fully-populated row before the date with no warnings', () => {
-    const { ok, warnings } = validateRow(validBankRow(), BANK, BEFORE);
+  it('accepts a fully-populated row with no warnings', () => {
+    const { ok, warnings } = validateRow(validRow(), BANK, { now: new Date('2026-08-01') });
     expect(ok).toBe(true);
     expect(warnings).toEqual([]);
   });
@@ -186,61 +224,34 @@ describe('validateRow — grace period (soft-required fields)', () => {
 
 describe('validateRow — format checks', () => {
   it('rejects a NIN that is not exactly 11 digits', () => {
-    expect(validateRow(validBankRow({ nin: '123' }), BANK).errors).toContain('nin must be exactly 11 digits');
-    expect(validateRow(validBankRow({ nin: 'abcdefghijk' }), BANK).errors).toContain('nin must be exactly 11 digits');
-    expect(validateRow(validBankRow({ nin: '123456789012' }), BANK).errors).toContain('nin must be exactly 11 digits');
+    expect(validateRow(validRow({ nin: '123' }), BANK).errors).toContain('nin must be exactly 11 digits');
+    expect(validateRow(validRow({ nin: 'abcdefghijk' }), BANK).errors).toContain('nin must be exactly 11 digits');
+    expect(validateRow(validRow({ nin: '123456789012' }), BANK).errors).toContain('nin must be exactly 11 digits');
   });
 
-  it('rejects an invalid customerType and accepts a valid one (case-insensitive)', () => {
-    expect(validateRow(validBankRow({ customerType: 'ROBOT' }), BANK).errors)
-      .toContain('customerType must be one of: INDIVIDUAL, CORPORATE');
-    expect(validateRow(validBankRow({ customerType: 'individual' }), BANK).ok).toBe(true);
+  it('rejects a BVN that is not exactly 11 digits', () => {
+    expect(validateRow(validRow({ bvn: '2221234567' }), BANK).errors).toContain('bvn must be exactly 11 digits');
   });
 
-  it('validates the optional email format only when present', () => {
-    expect(validateRow(validBankRow({ customerEmail: 'not-an-email' }), BANK).errors)
-      .toContain('customerEmail is not a valid email address');
-    expect(validateRow(validBankRow({ customerEmail: 'a@b.co' }), BANK).ok).toBe(true);
-    expect(validateRow(validBankRow({ customerEmail: '' }), BANK).ok).toBe(true); // optional & blank OK
-  });
-
-  it('validates currency as a 3-letter code', () => {
-    expect(validateRow(validBankRow({ currency: 'Naira' }), BANK).errors)
-      .toContain('currency must be a 3-letter currency code (e.g. NGN)');
-    expect(validateRow(validBankRow({ currency: 'USD' }), BANK).ok).toBe(true);
-  });
-
-  it('accepts common date formats for transactionDate and normalises them in place', () => {
-    for (const [input, iso] of [
-      ['2026-03-31', '2026-03-31'],
-      ['31/03/2026', '2026-03-31'],
-      ['15-01-2026', '2026-01-15'],
-      ['2026/02/28', '2026-02-28'],
-    ] as const) {
-      const row = validBankRow({ transactionDate: input });
-      const { ok, errors } = validateRow(row, BANK);
-      expect(errors).toEqual([]);
-      expect(ok).toBe(true);
-      expect(row.transactionDate).toBe(iso); // self-healed to ISO for storage
+  it('accepts every CAC class, case-insensitively', () => {
+    for (const t of CUSTOMER_TYPES) {
+      expect(validateRow(validRow({ customerType: t }), BANK).ok).toBe(true);
+      expect(validateRow(validRow({ customerType: t.toLowerCase() }), BANK).ok).toBe(true);
     }
   });
 
-  it('rejects an unparseable transactionDate (now hard-required)', () => {
-    const row = validBankRow({ transactionDate: 'sometime in March' });
-    const { ok, errors } = validateRow(row, BANK);
-    expect(ok).toBe(false); // required + unparseable → file-killer
-    expect(errors.some((e) => e.includes('transactionDate') && e.includes('valid date'))).toBe(true);
-  });
-
-  it('rejects a blank transactionDate (now hard-required)', () => {
-    const { ok, errors } = validateRow(validBankRow({ transactionDate: '' }), BANK);
-    expect(ok).toBe(false);
-    expect(errors).toContain('transactionDate is required');
+  it('rejects a customerType outside the CAC classes', () => {
+    const { ok, errors } = validateRow(validRow({ customerType: 'CORPORATE' }), BANK);
+    expect(ok).toBe(false); // the old catch-all value is no longer a valid class
+    expect(errors).toContain(
+      'customerType must be one of: INDIVIDUAL, BUSINESS_NAME, PRIVATE_LIMITED, PUBLIC_LIMITED, LIMITED_BY_GUARANTEE, INCORPORATED_TRUSTEES',
+    );
   });
 
   it('rejects non-numeric amounts and enforces min', () => {
-    expect(validateRow(validBankRow({ totalInflow: 'lots' }), BANK).errors).toContain('totalInflow must be a number');
-    expect(validateRow(validBankRow({ totalInflow: '-5' }), BANK).errors).toContain('totalInflow must be at least 0');
+    expect(validateRow(validRow({ totalInflow: 'lots' }), BANK).errors).toContain('totalInflow must be a number');
+    expect(validateRow(validRow({ totalInflow: '-5' }), BANK).errors).toContain('totalInflow must be at least 0');
+    expect(validateRow(validRow({ totalOutflow: '-5' }), BANK).errors).toContain('totalOutflow must be at least 0');
   });
 });
 
@@ -252,19 +263,16 @@ describe('missingRequiredColumns — file-level guard', () => {
   });
 
   it('reports required columns absent from the header', () => {
-    const withoutNin = header.filter((h) => h !== 'nin' && h !== 'sector');
-    const missing = missingRequiredColumns(withoutNin, BANK);
+    const missing = missingRequiredColumns(header.filter((h) => h !== 'nin' && h !== 'bvn'), BANK);
     expect(missing).toContain('nin');
-    expect(missing).toContain('sector');
+    expect(missing).toContain('bvn');
   });
 
-  it('ignores optional columns being absent', () => {
-    const withoutOptional = header.filter((h) => h !== 'tin' && h !== 'customerEmail');
-    expect(missingRequiredColumns(withoutOptional, BANK)).toEqual([]);
+  it('reports every column as missing when the header is empty — all seven are required', () => {
+    expect(missingRequiredColumns([], BANK)).toEqual(header);
   });
 
   it('is case-insensitive on header names', () => {
-    const upper = header.map((h) => h.toUpperCase());
-    expect(missingRequiredColumns(upper, BANK)).toEqual([]);
+    expect(missingRequiredColumns(header.map((h) => h.toUpperCase()), BANK)).toEqual([]);
   });
 });

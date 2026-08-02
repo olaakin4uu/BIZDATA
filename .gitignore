@@ -22,6 +22,9 @@ out/
 .env
 .env.local
 .env.*.local
+# Timestamped backups the deploy/rotation scripts leave behind — same secrets as
+# .env (DB password, JWT secret, PII keys), so they must never be committed.
+.env.bak*
 !.env.example
 
 # OS / IDE

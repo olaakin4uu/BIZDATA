@@ -33,6 +33,8 @@ import { SchemasModule } from './modules/schemas/schemas.module';
 import { ProviderPortalModule } from './modules/provider-portal/provider-portal.module';
 import { TaxNetModule } from './modules/tax-net/tax-net.module';
 import { AnalyticsModule } from './modules/analytics/analytics.module';
+import { LinkageModule } from './modules/linkage/linkage.module';
+import { DataQualityModule } from './modules/data-quality/data-quality.module';
 import { PortfoliosModule } from './modules/portfolios/portfolios.module';
 import { IdentityModule } from './modules/identity/identity.module';
 import { StatutoryModule } from './modules/statutory/statutory.module';
@@ -76,6 +78,8 @@ import { AssessmentModule } from './modules/assessment/assessment.module';
     ProviderPortalModule,
     TaxNetModule,
     AnalyticsModule,
+    LinkageModule,
+    DataQualityModule,
     PortfoliosModule,
     IdentityModule,
     StatutoryModule,

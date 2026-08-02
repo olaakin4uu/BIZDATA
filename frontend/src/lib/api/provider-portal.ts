@@ -9,9 +9,23 @@ export interface ProviderDashboard {
     accepted: number;
     flagged: number;
   };
+  /** Set while this provider has not yet filed an accepted return in the current format. */
+  returnFormatNotice?: { changedOn: string; columns: string[] } | null;
+  unreadNotifications?: number;
   recentSubmissions: Submission[];
-  /** Upcoming compulsory-field enforcement notice (null once past). */
-  fieldEnforcementNotice?: { enforceDate: string; fields: string[] } | null;
+}
+
+/** A notification addressed to this provider — never a staff service alert. */
+export interface ProviderNotification {
+  id: string;
+  type: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  title: string;
+  message: string;
+  entity?: string | null;
+  entityId?: string | null;
+  read: boolean;
+  createdAt: string;
 }
 
 export type PeriodStatus = 'ON_TIME' | 'LATE' | 'MISSING' | 'PENDING';
@@ -79,6 +93,9 @@ export const providerPortalApi = {
     );
   },
   getSubmission: (id: string) => providerApiFetch<Submission>(`/provider-portal/submissions/${id}`),
+  notifications: () => providerApiFetch<ProviderNotification[]>('/provider-portal/notifications'),
+  markNotificationRead: (id: string) =>
+    providerApiFetch<ProviderNotification>(`/provider-portal/notifications/${id}/read`, { method: 'PATCH' }),
   upload: (args: ProviderUploadArgs) => {
     const fd = new FormData();
     fd.append('file', args.file);

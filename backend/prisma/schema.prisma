@@ -579,6 +579,13 @@ model DataRecord {
   matchMethod             String?             // 'NIN' | 'TIN' | 'BVN' | 'NAME' | 'UNMATCHED'
   matchConfidence         Decimal?            @db.Decimal(3, 2) // 0..1
   accountIndex            String?             // HMAC blind index of accountNumber (duplicate detection)
+  // Blind indexes of the identifiers the PROVIDER reported on this row. bvn/nin
+  // above are AES-GCM ciphertext with a random IV, so they cannot be grouped or
+  // compared in SQL; these deterministic HMACs can. They are what the account-
+  // linkage report groups on to find one customer holding many accounts across
+  // providers, without decrypting anything. See CryptoService.blindIndex.
+  bvnIndex                String?
+  ninIndex                String?
 
   // Common monetary fields
   totalInflow             Decimal?            @db.Decimal(18, 2)
@@ -615,6 +622,9 @@ model DataRecord {
   @@index([providerId, periodLabel])
   @@index([providerId, periodLabel, accountIndex])
   @@index([flaggedAsUnderdeclared, reviewStatus])
+  // Account-linkage report: group a customer's rows across every provider.
+  @@index([bvnIndex, periodYear])
+  @@index([ninIndex, periodYear])
   @@map("data_records")
 }
 

@@ -275,12 +275,12 @@ function StatutoryPanel() {
         ))}
       </div>
 
-      {/* Compulsory-field enforcement date — governs the sector/businessType/
-          customerType grace period on provider submissions. */}
+      {/* Compulsory-field enforcement date — governs the customerType grace
+          period on provider submissions. */}
       <div className="rounded-lg border border-slate-200 bg-slate-50/60 p-4">
         <Field
           label="Compulsory-field enforcement date"
-          hint="From this date, sector, businessType & customerType are rejected if blank on a provider submission. Before it, blanks are accepted with a warning. Leave empty to use the built-in default (2027-01-01)."
+          hint="Grace-period date for any column that is being phased in: blanks are accepted with a warning until this date, then rejected. No column currently uses it — all seven columns of the return template are compulsory immediately — so this setting has no effect until a new column is introduced gradually."
         >
           <div className="flex flex-wrap items-center gap-2">
             <input

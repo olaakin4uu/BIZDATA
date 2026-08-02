@@ -2,7 +2,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { providersApi } from '@/lib/api/providers';
-import { complianceApi, type ProviderCompliance, type ComplianceSummary, type PeriodStatus } from '@/lib/api/compliance';
+import { complianceApi, type ProviderCompliance, type ComplianceSummary, type PeriodStatus, type ProviderPenalty } from '@/lib/api/compliance';
 import ProviderUploadsModal from '@/components/providers/ProviderUploadsModal';
 import { PROVIDER_TYPES, isSection29ProviderType, extractErrorMessage } from '@/lib/utils';
 
@@ -15,6 +15,11 @@ const PERIOD_META: Record<PeriodStatus, { bg: string; ring: string; label: strin
   MISSING: { bg: 'bg-rose-500',    ring: 'ring-rose-200',    label: 'Missing', text: 'text-rose-700' },
   PENDING: { bg: 'bg-slate-200',   ring: 'ring-slate-200',   label: 'Not due', text: 'text-slate-500' },
 };
+
+/** Naira, formatted exactly as /compliance does — the two screens quote the same figures. */
+function ngn(n: number | undefined | null): string {
+  return `₦${Math.round(Number(n ?? 0)).toLocaleString('en-NG')}`;
+}
 
 function complianceColor(rate: number) {
   if (rate >= 80) return 'text-emerald-700';
@@ -35,6 +40,9 @@ export default function ProvidersDashboardPage() {
   const [typeFilter, setTypeFilter] = useState('');
   const [uploadsFor, setUploadsFor] = useState<{ id: string; name: string } | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
+  // Formally-issued §101 penalties, so the row can separate what has actually
+  // been ASSESSED against a provider from what has merely accrued.
+  const [penalties, setPenalties] = useState<ProviderPenalty[]>([]);
 
   // Fetch compliance data. `showLoading` blanks the table (used on first load /
   // year change); on a silent background refresh we keep the current rows visible
@@ -43,7 +51,20 @@ export default function ProvidersDashboardPage() {
     if (showLoading) { setRows(null); setSummary(null); setLoadErr(null); }
     complianceApi.list(year).then((r) => { setRows(r); setLoadErr(null); }).catch((e) => { if (showLoading) { setRows([]); setLoadErr(extractErrorMessage(e)); } });
     complianceApi.summary(year).then(setSummary).catch(() => { if (showLoading) setSummary(null); });
+    complianceApi.penalties({ year }).then(setPenalties).catch(() => setPenalties([]));
   }, [year]);
+
+  // providerId → what has been formally assessed this year (amount + count).
+  const issuedByProvider = useMemo(() => {
+    const m = new Map<string, { amount: number; count: number }>();
+    for (const p of penalties) {
+      const cur = m.get(p.providerId) ?? { amount: 0, count: 0 };
+      // A waived penalty is no longer a liability — don't present it as one.
+      if (p.status === 'WAIVED') continue;
+      m.set(p.providerId, { amount: cur.amount + Number(p.amount ?? 0), count: cur.count + 1 });
+    }
+    return m;
+  }, [penalties]);
 
   // Load on mount + whenever the year changes.
   useEffect(() => { load(true); }, [load]);
@@ -121,13 +142,21 @@ export default function ProvidersDashboardPage() {
       </div>
 
       {/* ── KPI row ─────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
         <Kpi label="Registered providers" value={derived?.totalProviders ?? '—'} hint={`${derived?.withSubmissions ?? 0} have submitted`} tone="sky" />
         <Kpi label="Avg. compliance" value={summary ? `${summary.avgCompliance}%` : '—'}
           hint={`${derived?.fullyCompliant ?? 0} fully compliant`}
           tone={summary && summary.avgCompliance >= 80 ? 'emerald' : summary && summary.avgCompliance >= 50 ? 'amber' : 'rose'} />
         <Kpi label="Missing periods" value={summary?.totalMissing ?? '—'} hint={`${summary?.totalLate ?? 0} late · ${derived?.atRisk ?? 0} providers at risk`} tone="rose" />
         <Kpi label="Total uploads" value={derived?.totalUploads ?? '—'} hint={`${derived?.avgRejection ?? 0}% avg rejection rate`} tone="violet" />
+        {/* Deliberately the SAME field, label, hint and number format as the
+            "Penalty exposure" card on /compliance — both read
+            summary.totalPenalty from /providers/compliance/summary for the same
+            year, so the two screens cannot show different figures. Change one
+            and change the other. */}
+        <Kpi label="Penalty exposure" value={summary ? ngn(summary.totalPenalty) : '—'}
+          hint="Accrued NTAA §101, all providers"
+          tone={summary && (summary.totalPenalty ?? 0) > 0 ? 'rose' : 'sky'} />
       </div>
 
       {/* ── At-risk callout ─────────────────────────────────────── */}
@@ -178,17 +207,20 @@ export default function ProvidersDashboardPage() {
                 <th className="px-4 py-3 font-medium">Type</th>
                 {quarters.map((q) => <th key={q} className="px-2 py-3 font-medium text-center">{q}</th>)}
                 <th className="px-4 py-3 font-medium">Compliance</th>
+                <th className="px-4 py-3 font-medium text-right" title="NTAA 2025 §101 late/failure-to-file penalty. Accrued is an estimate on late or unfiled periods; assessed is what has been formally issued with a notice reference.">
+                  §101 Penalty
+                </th>
                 <th className="px-4 py-3 font-medium text-center">Uploads</th>
                 <th className="px-4 py-3 font-medium text-right">Records</th>
               </tr>
             </thead>
             <tbody>
               {rows === null && !loadErr ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">Loading provider compliance…</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-slate-400">Loading provider compliance…</td></tr>
               ) : loadErr ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-rose-600">Couldn’t load providers: {loadErr} <button onClick={() => load(true)} className="ml-2 text-teal-700 hover:underline font-medium">Retry</button></td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-rose-600">Couldn’t load providers: {loadErr} <button onClick={() => load(true)} className="ml-2 text-teal-700 hover:underline font-medium">Retry</button></td></tr>
               ) : sorted.length === 0 ? (
-                <tr><td colSpan={9} className="px-4 py-8 text-center text-sm text-slate-400">No providers match.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-sm text-slate-400">No providers match.</td></tr>
               ) : sorted.map((r) => {
                 const byQuarter: Record<string, PeriodStatus> = {};
                 r.periods.forEach((p) => {
@@ -228,6 +260,34 @@ export default function ProvidersDashboardPage() {
                         </div>
                         <span className={`text-xs font-semibold ${complianceColor(r.complianceRate)}`}>{r.complianceRate}%</span>
                       </div>
+                    </td>
+                    {/* §101 exposure. Accrued and assessed are deliberately shown
+                        as two different things — an accrued figure is an estimate
+                        on late/unfiled periods and must never be quoted at a
+                        provider as money owed; only an issued penalty carries a
+                        notice reference and is a real liability. */}
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      {(() => {
+                        const accrued = r.penaltyTotal ?? 0;
+                        const issued = issuedByProvider.get(r.provider.id);
+                        if (!accrued && !issued) return <span className="text-xs text-slate-300">—</span>;
+                        return (
+                          <>
+                            {accrued > 0 && (
+                              <div title="Estimated on late/unfiled periods — not yet formally assessed">
+                                <span className="text-xs font-semibold tabular-nums text-amber-700">{ngn(accrued)}</span>
+                                <span className="ml-1 text-[10px] text-slate-400">accrued</span>
+                              </div>
+                            )}
+                            {issued && issued.amount > 0 && (
+                              <div title={`${issued.count} penalt${issued.count === 1 ? 'y' : 'ies'} formally issued with a notice reference`}>
+                                <span className="text-xs font-semibold tabular-nums text-rose-700">{ngn(issued.amount)}</span>
+                                <span className="ml-1 text-[10px] text-rose-500">assessed</span>
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
                     </td>
                     <td className="px-4 py-3 text-center">
                       <button

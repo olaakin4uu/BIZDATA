@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { providerAuthApi } from '@/lib/api/auth';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
 import { extractErrorMessage } from '@/lib/utils';
-import { tenantApi } from '@/lib/api/tenant';
+import { loadBranding } from '@/lib/branding';
 import PasswordInput from '@/components/PasswordInput';
 import { Button } from '@/components/Button';
 import { APP_NAME } from '@/lib/appName';
@@ -26,7 +26,7 @@ export default function ProviderLoginPage() {
   }, [token, user, router]);
 
   useEffect(() => {
-    tenantApi.branding()
+    loadBranding()
       .then((b) => { setOrgLogo(b.logoUrl ?? null); setOrgName(b.name ?? null); })
       .catch(() => { /* fall back to the generic mark below */ });
   }, []);

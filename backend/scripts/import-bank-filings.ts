@@ -55,9 +55,13 @@ function normaliseName(raw: string): { firstName: string; lastName: string; midd
   return { firstName: parts[0], middleName: parts[1], lastName: parts.slice(2).join(' ') };
 }
 
+// Legacy files say CORPORATE; the current return template says which CAC class
+// (BUSINESS_NAME / PRIVATE_LIMITED / …). Anything that names a registered
+// organisation — i.e. any known type other than INDIVIDUAL — is corporate here.
 function isCorporate(rec: any): boolean {
   const t = (rec.customerType || '').toUpperCase();
-  return t === 'CORPORATE' || (!!rec.rcNumber && rec.rcNumber.toUpperCase() !== 'N/A');
+  if (t === 'INDIVIDUAL') return false;
+  return !!t || (!!rec.rcNumber && rec.rcNumber.toUpperCase() !== 'N/A');
 }
 
 function toNum(v: any): number {
@@ -218,16 +222,27 @@ async function main() {
         const taxpayerId = await findOrCreateTaxpayer(r);
         const acctIdx = r.accountNumber ? crypto.blindIndex(String(r.accountNumber).trim()) : undefined;
         const isOpen = r.recordKind === 'ACCOUNT_OPENED';
+        // Record-level PII must be encrypted at rest exactly like the taxpayer's
+        // copy above — this previously wrote the raw BVN / account number /
+        // phone straight into data_records, leaving them in the clear. The blind
+        // indexes travel alongside so the linkage report can still group them.
+        const recBvn = await encryptPii(r.bvn);
+        const recNin = await encryptPii(r.nin);
+        const recAcct = await encryptPii(r.accountNumber);
+        const recPhone = await encryptPii(r.phone);
         await prisma.dataRecord.create({
           data: {
             submissionId,
             providerId: p.id,
             providerType: p.providerType as ProviderType,
             taxpayerId: taxpayerId ?? undefined,
-            accountNumber: r.accountNumber || undefined,
+            accountNumber: recAcct?.enc ?? undefined,
             accountName: r.accountName || undefined,
-            bvn: r.bvn || undefined,
-            phoneNumber: r.phone || undefined,
+            bvn: recBvn?.enc ?? undefined,
+            nin: recNin?.enc ?? undefined,
+            bvnIndex: recBvn?.idx ?? undefined,
+            ninIndex: recNin?.idx ?? undefined,
+            phoneNumber: recPhone?.enc ?? undefined,
             periodLabel: r.quarter,
             periodYear: Number(r.quarter.slice(0, 4)),
             matchMethod: taxpayerId ? (r.bvn ? 'BVN' : r.tin ? 'TIN' : 'NAME') : 'UNMATCHED',
