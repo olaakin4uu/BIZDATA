@@ -24,6 +24,11 @@
  *
  *   npx ts-node scripts/backfill-record-identifier-indexes.ts --indexes-only
  */
+// MUST come first. ts-node does not load .env the way the Nest bootstrap does,
+// so without this the script silently falls back to the DEV keys derived from
+// JWT_SECRET — writing blind indexes and ciphertext that the running app,
+// which uses PII_INDEX_KEY / PII_ENC_KEY, cannot match or decrypt.
+import 'dotenv/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
@@ -34,7 +39,19 @@ const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
 
 const DRY = process.argv.includes('--dry-run');
 const INDEXES_ONLY = process.argv.includes('--indexes-only');
-const BATCH = 1000;
+const BATCH = 4000;
+
+/**
+ * A row still needs work when an identifier has no blind index yet, or — unless
+ * --indexes-only — when a value is still stored in the clear (`v1.`/`v2.` is the
+ * CryptoService ciphertext prefix, so NOT LIKE 'v_.%' means plaintext).
+ */
+const PENDING_SQL = INDEXES_ONLY
+  ? `((bvn IS NOT NULL AND "bvnIndex" IS NULL) OR (nin IS NOT NULL AND "ninIndex" IS NULL))`
+  : `((bvn IS NOT NULL AND ("bvnIndex" IS NULL OR bvn NOT LIKE 'v_.%'))
+     OR (nin IS NOT NULL AND ("ninIndex" IS NULL OR nin NOT LIKE 'v_.%'))
+     OR ("accountNumber" IS NOT NULL AND ("accountIndex" IS NULL OR "accountNumber" NOT LIKE 'v_.%'))
+     OR ("phoneNumber" IS NOT NULL AND "phoneNumber" NOT LIKE 'v_.%'))`;
 
 /** Already an AES-GCM payload written by CryptoService? */
 const isCiphertext = (v: string | null) => !!v && (v.startsWith('v1.') || v.startsWith('v2.'));
@@ -43,16 +60,12 @@ async function main() {
   const crypto = new CryptoService();
   await crypto.onModuleInit();
 
-  const todo = await prisma.dataRecord.count({
-    where: {
-      OR: [
-        { AND: [{ bvn: { not: null } }, { bvnIndex: null }] },
-        { AND: [{ nin: { not: null } }, { ninIndex: null }] },
-      ],
-    },
-  });
+  const [{ count }] = await prisma.$queryRawUnsafe<{ count: bigint }[]>(
+    `SELECT COUNT(*)::bigint AS count FROM data_records WHERE ${PENDING_SQL}`,
+  );
+  const todo = Number(count);
   console.log(
-    `${todo.toLocaleString()} record(s) need an identifier index.` +
+    `${todo.toLocaleString()} record(s) need work.` +
     `${INDEXES_ONLY ? ' Indexes only — plaintext values will be left as-is.' : ' Plaintext values will also be encrypted.'}` +
     `${DRY ? ' DRY RUN — nothing will be written.' : ''}`,
   );
@@ -69,7 +82,7 @@ async function main() {
       `SELECT id, bvn, nin, "accountNumber", "phoneNumber", "bvnIndex", "ninIndex", "accountIndex"
          FROM data_records
         WHERE id > $1
-          AND ((bvn IS NOT NULL AND "bvnIndex" IS NULL) OR (nin IS NOT NULL AND "ninIndex" IS NULL))
+          AND ${PENDING_SQL}
         ORDER BY id
         LIMIT ${BATCH}`,
       cursor,
@@ -128,20 +141,24 @@ async function bulkUpdate(updates: { id: string; cols: Record<string, string> }[
     .filter((c) => present.has(c));
   if (!COLS.length) return;
 
-  const params: (string | null)[] = [];
-  const tuples = updates.map((u) => {
-    const row = [u.id, ...COLS.map((c) => u.cols[c] ?? null)];
-    const placeholders = row.map((_, i) => `$${params.length + i + 1}`);
-    params.push(...row);
-    return `(${placeholders.join(',')})`;
-  });
-
+  // One array parameter PER COLUMN, unnested server-side — not one placeholder
+  // per cell. A VALUES list of N tuples costs 8·N bind parameters, which caps
+  // the batch at a few hundred rows (Prisma trips P2029 past ~32k binds) and
+  // makes Postgres re-plan a differently-shaped statement every time. With
+  // UNNEST the statement shape is constant and the bind count is fixed at
+  // COLS.length + 1, so batches can be thousands of rows.
+  const ids = updates.map((u) => u.id);
+  const arrays = COLS.map((c) => updates.map((u) => u.cols[c] ?? null));
   const setClause = COLS.map((c) => `"${c}" = COALESCE(v."${c}", d."${c}")`).join(', ');
+  const casts = COLS.map((_, i) => `$${i + 2}::text[]`).join(', ');
+
   await prisma.$executeRawUnsafe(
     `UPDATE data_records d SET ${setClause}
-       FROM (VALUES ${tuples.join(',')}) AS v(id, ${COLS.map((c) => `"${c}"`).join(', ')})
+       FROM (SELECT * FROM unnest($1::text[], ${casts})
+                       AS t(id, ${COLS.map((c) => `"${c}"`).join(', ')})) v
       WHERE d.id = v.id`,
-    ...params,
+    ids,
+    ...arrays,
   );
 }
 
