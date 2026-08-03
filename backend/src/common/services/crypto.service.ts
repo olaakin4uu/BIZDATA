@@ -7,7 +7,7 @@ import {
   createHash,
   timingSafeEqual,
 } from 'crypto';
-import { EnvKeyProvider, KmsKeyProvider, KeyProvider } from './key-provider';
+import { EnvKeyProvider, KmsKeyProvider, KeyProvider, assertEnvironmentLoaded } from './key-provider';
 import { resolveKms } from './kms';
 
 /**
@@ -75,9 +75,13 @@ export class CryptoService implements OnModuleInit {
       return b;
     }
     if (isProd) throw new Error('PII_INDEX_KEY is required in production.');
+    // Same guard as the encryption key: no PII_INDEX_KEY *and* no JWT_SECRET
+    // means no environment was loaded, and a blind index written under a
+    // repository-published secret is worse than none — it silently fails to
+    // match everything the app computes.
+    assertEnvironmentLoaded('PII_INDEX_KEY');
     this.logger.warn('PII_INDEX_KEY not set — deriving a DEV index key from JWT_SECRET.');
-    const secret = process.env.JWT_SECRET || 'bizdata-dev-secret';
-    return createHash('sha256').update(`pii-index:${secret}`).digest();
+    return createHash('sha256').update(`pii-index:${process.env.JWT_SECRET}`).digest();
   }
 
   /** AES-256-GCM encrypt a string with the ACTIVE key. Returns null for empty. */

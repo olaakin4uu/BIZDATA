@@ -65,6 +65,29 @@ export interface Kms {
  * A KMS/HSM provider would implement the same interface with getKey/decrypt
  * calls instead of env reads.
  */
+/**
+ * Refuse to derive a dev PII key when the environment was clearly never loaded.
+ *
+ * The dev fallback is legitimate for `nest start` on a machine with a .env: keys
+ * are absent but JWT_SECRET is present, so the derived key is at least stable
+ * for that developer. It is NOT legitimate when JWT_SECRET is missing too —
+ * that means no environment was loaded at all, which is what happens when a
+ * maintenance script runs under ts-node without `import 'dotenv/config'`. The
+ * old code silently derived from the literal 'bizdata-dev-secret', so such a
+ * script encrypted real PII under a secret committed to this repository and the
+ * app could never decrypt it. Failing loudly is the only safe answer: the fix
+ * is one import, but only if the author is told.
+ */
+export function assertEnvironmentLoaded(missingKey: string): void {
+  if (process.env.JWT_SECRET) return;
+  throw new Error(
+    `${missingKey} is not set, and neither is JWT_SECRET — the environment was never loaded, ` +
+    `so there is no safe key to derive. If this is a maintenance script, add ` +
+    `\`import 'dotenv/config';\` as its FIRST import (before anything constructs CryptoService). ` +
+    `Refusing to fall back to a key derived from a value hardcoded in this repository.`,
+  );
+}
+
 export class EnvKeyProvider implements KeyProvider {
   private readonly logger = new Logger(EnvKeyProvider.name);
   private readonly keys = new Map<string, ManagedKey>();
@@ -82,10 +105,16 @@ export class EnvKeyProvider implements KeyProvider {
       if (isProd) {
         throw new Error('PII_ENC_KEY is required in production — refusing to start without a PII key.');
       }
+      // Neither PII_ENC_KEY nor JWT_SECRET means the environment was never
+      // loaded — the signature of a maintenance script run under ts-node, which
+      // does not read .env the way the Nest bootstrap does. Falling back to a
+      // key derived from a hardcoded literal here would encrypt real PII under a
+      // secret published in this repository, and the caller would see only a
+      // warning. This has already happened twice. Refuse instead.
+      assertEnvironmentLoaded('PII_ENC_KEY');
       // Dev fallback: one deterministic key derived from JWT_SECRET, id "dev".
       this.logger.warn('PII_ENC_KEY not set — deriving a DEV key from JWT_SECRET. Do NOT use this for production data.');
-      const secret = process.env.JWT_SECRET || 'bizdata-dev-secret';
-      const key = createHash('sha256').update(`pii-enc:${secret}`).digest();
+      const key = createHash('sha256').update(`pii-enc:${process.env.JWT_SECRET}`).digest();
       this.keys.set('dev', { id: 'dev', key, createdAt: startedAt });
       this.activeId = 'dev';
       return;
