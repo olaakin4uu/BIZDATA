@@ -21,6 +21,30 @@ function ngn(n: number | undefined | null): string {
   return `₦${Math.round(Number(n ?? 0)).toLocaleString('en-NG')}`;
 }
 
+/**
+ * Sort orders offered on the list.
+ *
+ * A–Z is the DEFAULT because this is the register — the question it usually
+ * answers is "where is this bank in the list", and 48 providers is far past the
+ * point where scanning an unordered list is reasonable. The old default
+ * (worst-compliance-first) is kept as an option rather than dropped: it is the
+ * right order when working the list as a queue rather than looking one up.
+ *
+ * Every comparator returns only its primary ordering; name is applied as the
+ * tiebreaker in one place, so no ordering ever falls back to API order.
+ */
+const SORTS: Record<string, { label: string; cmp: (a: ProviderCompliance, b: ProviderCompliance) => number }> = {
+  'name-asc':    { label: 'Name (A–Z)',            cmp: () => 0 },
+  'name-desc':   { label: 'Name (Z–A)',            cmp: (a, b) => b.provider.name.localeCompare(a.provider.name, 'en', { sensitivity: 'base' }) },
+  'risk':        { label: 'Needs attention first', cmp: (a, b) => (b.missing - a.missing) || (a.complianceRate - b.complianceRate) },
+  'compliance':  { label: 'Compliance (high→low)', cmp: (a, b) => b.complianceRate - a.complianceRate },
+  'penalty':     { label: 'Penalty exposure',      cmp: (a, b) => (b.penaltyTotal ?? 0) - (a.penaltyTotal ?? 0) },
+  'uploads':     { label: 'Uploads (most first)',  cmp: (a, b) => b.submissions - a.submissions },
+  'type':        { label: 'Provider type',         cmp: (a, b) => a.provider.providerType.localeCompare(b.provider.providerType) },
+};
+const DEFAULT_SORT = 'name-asc';
+const SORT_KEY_STORAGE = 'bizdata_providers_sort';
+
 function complianceColor(rate: number) {
   if (rate >= 80) return 'text-emerald-700';
   if (rate >= 50) return 'text-amber-600';
@@ -38,6 +62,19 @@ export default function ProvidersDashboardPage() {
   const [summary, setSummary] = useState<ComplianceSummary | null>(null);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  // Sort preference persists per user — someone who works this list as a queue
+  // should not have to re-pick their order on every visit. Read after mount so
+  // server and first client render agree (localStorage is unavailable on the
+  // server, and reading it in useState would hydrate-mismatch).
+  const [sortKey, setSortKey] = useState<string>(DEFAULT_SORT);
+  useEffect(() => {
+    const saved = localStorage.getItem(SORT_KEY_STORAGE);
+    if (saved && SORTS[saved]) setSortKey(saved);
+  }, []);
+  const chooseSort = (key: string) => {
+    setSortKey(key);
+    localStorage.setItem(SORT_KEY_STORAGE, key);
+  };
   const [uploadsFor, setUploadsFor] = useState<{ id: string; name: string } | null>(null);
   const [loadErr, setLoadErr] = useState<string | null>(null);
   // Formally-issued §101 penalties, so the row can separate what has actually
@@ -105,11 +142,17 @@ export default function ProvidersDashboardPage() {
     });
   }, [rows, search, typeFilter]);
 
-  // Sort: worst compliance / most missing first — decision-oriented.
-  const sorted = useMemo(
-    () => [...filtered].sort((a, b) => (b.missing - a.missing) || (a.complianceRate - b.complianceRate)),
-    [filtered],
-  );
+  const sorted = useMemo(() => {
+    const byName = (a: ProviderCompliance, b: ProviderCompliance) =>
+      // localeCompare so accented and lower-case names file where a reader
+      // expects, rather than after Z as a raw codepoint sort would put them.
+      a.provider.name.localeCompare(b.provider.name, 'en', { sensitivity: 'base' });
+    const cmp = SORTS[sortKey]?.cmp ?? SORTS[DEFAULT_SORT].cmp;
+    // Name is the tiebreaker for every ordering, so equal rows (very common —
+    // most providers share a compliance rate of 0%) still come out alphabetical
+    // and stable rather than in whatever order the API returned them.
+    return [...filtered].sort((a, b) => cmp(a, b) || byName(a, b));
+  }, [filtered, sortKey]);
 
   const quarters = ['Q1', 'Q2', 'Q3', 'Q4'];
 
@@ -187,6 +230,16 @@ export default function ProvidersDashboardPage() {
           <option value="">All types</option>
           {PROVIDER_TYPES.map((t) => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
         </select>
+        <label className="flex items-center gap-1.5 text-sm text-slate-500">
+          Sort
+          <select value={sortKey} onChange={(e) => chooseSort(e.target.value)}
+            title="Your choice is remembered on this device"
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white text-slate-700">
+            {Object.entries(SORTS).map(([key, { label }]) => (
+              <option key={key} value={key}>{label}</option>
+            ))}
+          </select>
+        </label>
         {/* legend */}
         <div className="flex items-center gap-3 text-[11px] text-slate-500 ml-auto">
           {(['ON_TIME', 'LATE', 'MISSING', 'PENDING'] as PeriodStatus[]).map((s) => (
