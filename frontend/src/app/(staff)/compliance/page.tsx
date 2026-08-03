@@ -12,6 +12,7 @@ import {
   type PeriodStatus,
 } from '@/lib/api/compliance';
 import { extractErrorMessage } from '@/lib/utils';
+import { readErrorMessage } from '@/lib/api/client';
 
 const YEARS = [2026, 2025, 2024];
 
@@ -90,7 +91,7 @@ export default function CompliancePage() {
       const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
       const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
       const res = await fetch(`${base}${complianceApi.noticePath(p.id)}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+      if (!res.ok) throw new Error(await readErrorMessage(res));
       setNotice({ title: `Demand notice · ${p.noticeRef ?? p.periodLabel}`, html: await res.text() });
       // Serving the notice flips ASSESSED→NOTIFIED server-side; refresh the list.
       complianceApi.penalties({ year }).then(setPenalties).catch(() => {});

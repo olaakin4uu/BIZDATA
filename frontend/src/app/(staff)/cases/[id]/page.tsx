@@ -12,6 +12,7 @@ import { agentsApi, AGENT_NAMES, type RiskSignal } from '@/lib/api/agents';
 import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { formatMoney, formatDate, formatDateTime, extractErrorMessage } from '@/lib/utils';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
+import { readErrorMessage } from '@/lib/api/client';
 
 // Mirror of the backend lifecycle state machine (cases.service.ts).
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
@@ -82,7 +83,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
       const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
       const res = await fetch(`${base}/cases/${id}/${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
-      if (!res.ok) throw new Error(`Failed to load (${res.status})`);
+      if (!res.ok) throw new Error(await readErrorMessage(res));
       setReport({ title, html: await res.text() });
     } catch (e) {
       setError(extractErrorMessage(e));
