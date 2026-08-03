@@ -376,7 +376,7 @@ const COLUMN_HINTS: Record<string, string> = {
   sumassured: 'sum assured (₦)',
   residentialstate: 'account holder state of residence',
   accountopeneddate: 'YYYY-MM-DD',
-  tin: 'Tax Identification Number — the strongest taxpayer match key; include it whenever you hold it',
+  tin: 'Tax Identification Number — OPTIONAL, but the strongest match key we have. Include it whenever you hold one; leave blank if you do not.',
   rcnumber: 'CAC registration number for corporate account holders, e.g. RC123456',
   customeraddress: 'account holder / customer address',
   customeremail: 'account holder / customer email',

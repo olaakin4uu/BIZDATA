@@ -15,14 +15,13 @@ import { PrismaService } from '../../prisma/prisma.service';
  *  recordFields — what providers put on each row of a return. NIN, BVN, account
  *    number, phone, account name. This is the provider's compliance surface.
  *
- *  register — what the resolved taxpayer records hold. TIN and CAC RC live ONLY
- *    here, and NOT because providers withhold them: banks do supply TIN (nine of
- *    the KIRS bank-file layouts map a TIN column, and that is where the
- *    register's TIN coverage came from). The reason is that nothing PERSISTS a
- *    submitted TIN per return — DataRecord has no `tin` column, and the portal
- *    path feeds row.tin to resolveTaxpayer purely as a lookup key, then drops
- *    it. So a per-submission TIN fill rate cannot be computed; only the
- *    register's holding can. See the TIN-capture gap noted on the report.
+ *  register — what the resolved taxpayer records hold. CAC RC lives only here.
+ *    TIN now appears in BOTH places and they answer different questions: the
+ *    record fill rate is how often providers supply a TIN on a return, while the
+ *    register figure is how much of the taxpayer population we hold one for. The
+ *    second is fed by the first — a supplied TIN is written onto a matched
+ *    taxpayer that has none (SubmissionsService.enrichTaxpayerTin) — so the
+ *    register number should climb as provider coverage does.
  *
  * NOT gated by the §29 reportable set, unlike the enforcement surfaces. This
  * measures PROVIDER compliance with the return format, not taxpayer liability,
@@ -50,6 +49,8 @@ export class DataQualityService {
       COUNT(DISTINCT r."ninIndex")::bigint               AS nin_distinct,
       COUNT(r."bvn")::bigint                             AS bvn_present,
       COUNT(DISTINCT r."bvnIndex")::bigint               AS bvn_distinct,
+      COUNT(r."tin")::bigint                             AS tin_present,
+      COUNT(DISTINCT r."tinIndex")::bigint               AS tin_distinct,
       COUNT(r."accountNumber")::bigint                   AS acct_present,
       COUNT(DISTINCT r."accountIndex")::bigint           AS acct_distinct,
       COUNT(r."phoneNumber")::bigint                     AS phone_present,
@@ -106,6 +107,8 @@ export class DataQualityService {
           'Compulsory on every return.'),
         this.field('accountNumber', 'Account number', t.acct_present, t.acct_distinct, records,
           'Compulsory. Distinct count is the number of accounts on file.'),
+        this.field('tin', 'TIN', t.tin_present, t.tin_distinct, records,
+          'Optional — the strongest match key (0.97, above BVN). Now retained per return and used to enrich the register.'),
         this.field('accountName', 'Account name', t.name_present, null, records,
           'Compulsory. Used for name-based linkage when identifiers are absent.'),
         this.field('phoneNumber', 'Phone', t.phone_present, null, records,

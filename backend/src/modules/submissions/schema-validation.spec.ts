@@ -108,15 +108,18 @@ describe('DEFAULT_SCHEMAS — one seven-column return for every provider type', 
   it('every provider type exposes exactly the seven columns, in order', () => {
     for (const type of PROVIDER_TYPES) {
       expect(DEFAULT_SCHEMAS[type].columns.map((c) => c.name)).toEqual([
-        'nin', 'accountNumber', 'accountName', 'bvn', 'customerType', 'totalInflow', 'totalOutflow',
+        'nin', 'accountNumber', 'accountName', 'bvn', 'customerType', 'totalInflow', 'totalOutflow', 'tin',
       ]);
     }
   });
 
-  it('makes every column compulsory, with no phase-in', () => {
+  it('makes every column compulsory except tin, with no phase-in', () => {
     for (const type of PROVIDER_TYPES) {
       for (const col of DEFAULT_SCHEMAS[type].columns) {
-        expect(col.required).toBe(true);
+        // tin is deliberately optional: it is the strongest match key and worth
+        // collecting, but a provider that holds none must not have its whole
+        // file rejected by the all-or-nothing row validation.
+        expect(col.required).toBe(col.name !== 'tin');
         expect(col.validation?.enforceFrom).toBeUndefined();
       }
     }
@@ -126,7 +129,7 @@ describe('DEFAULT_SCHEMAS — one seven-column return for every provider type', 
     const names = new Set(BANK.columns.map((c) => c.name));
     for (const gone of [
       'bankCode', 'bankName', 'periodLabel', 'periodQuarter', 'transactionDate', 'openingBalance',
-      'closingBalance', 'transactionCount', 'sector', 'businessType', 'tin', 'rcNumber',
+      'closingBalance', 'transactionCount', 'sector', 'businessType', 'rcNumber',
       'phoneNumber', 'customerEmail', 'customerAddress', 'currency', 'conversionRate',
       'walletId', 'merchantId', 'policyNumber',
     ]) {
@@ -182,6 +185,14 @@ describe('validateRow — required fields (compulsory columns)', () => {
       expect(errors).toContain(`${field} is required`);
     },
   );
+
+  it('accepts a blank tin — the one optional column', () => {
+    expect(validateRow(validRow({ tin: '' }), BANK).ok).toBe(true);
+  });
+
+  it('accepts a tin when supplied', () => {
+    expect(validateRow(validRow({ tin: '12345678-0001' }), BANK).ok).toBe(true);
+  });
 
   it('treats whitespace-only as missing', () => {
     const { ok, errors } = validateRow(validRow({ nin: '   ' }), BANK);
@@ -268,8 +279,8 @@ describe('missingRequiredColumns — file-level guard', () => {
     expect(missing).toContain('bvn');
   });
 
-  it('reports every column as missing when the header is empty — all seven are required', () => {
-    expect(missingRequiredColumns([], BANK)).toEqual(header);
+  it('reports every REQUIRED column when the header is empty — tin excepted', () => {
+    expect(missingRequiredColumns([], BANK)).toEqual(header.filter((h) => h !== 'tin'));
   });
 
   it('is case-insensitive on header names', () => {
