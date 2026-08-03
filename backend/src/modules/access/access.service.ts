@@ -38,7 +38,14 @@ export class AccessService {
     const grant = await this.prisma.accessElevation.findUnique({ where: { id } });
     if (!grant) throw new NotFoundException('Elevation not found');
     if (grant.status !== 'PENDING') throw new BadRequestException(`Elevation is already ${grant.status}`);
-    if (grant.staffId === approver.id) throw new ForbiddenException('Cannot approve your own elevation request');
+    // A SUPER_ADMIN may approve their own elevation, on the system owner's
+    // instruction — the same decision recorded against SELF_APPROVAL_ALLOWED in
+    // access-grant-token.service.ts. Other approver roles still cannot: a
+    // SUPERVISOR self-approving would be an escalation, not a policy choice.
+    const selfApproved = grant.staffId === approver.id;
+    if (selfApproved && approver.role !== 'SUPER_ADMIN') {
+      throw new ForbiddenException('Cannot approve your own elevation request');
+    }
 
     const expiresAt = new Date(Date.now() + ELEVATION_MINUTES * 60_000);
     const updated = await this.prisma.accessElevation.update({
@@ -48,7 +55,7 @@ export class AccessService {
     await this.audit.log({
       actorType: 'STAFF', actorId: approver.id, staffId: approver.id,
       action: 'ELEVATION_APPROVE', entity: 'AccessElevation', entityId: id,
-      beforeJson: { staffId: grant.staffId }, afterJson: { expiresAt },
+      beforeJson: { staffId: grant.staffId }, afterJson: { expiresAt, selfApproved },
     });
     return updated;
   }
