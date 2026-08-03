@@ -13,6 +13,7 @@ import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { formatMoney, formatDate, formatDateTime, extractErrorMessage } from '@/lib/utils';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { readErrorMessage } from '@/lib/api/client';
+import RecordAccessGate from '@/components/access/RecordAccessGate';
 
 // Mirror of the backend lifecycle state machine (cases.service.ts).
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
@@ -76,6 +77,9 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   // a standalone blob tab. `report` holds the fetched HTML.
   const [report, setReport] = useState<{ title: string; html: string } | null>(null);
   const [reportLoading, setReportLoading] = useState<string | null>(null);
+  // Opened when a report is refused for want of access, so the officer lands on
+  // the fix rather than on an error they cannot act on.
+  const [accessGate, setAccessGate] = useState<string | null>(null);
 
   const openReport = async (path: string, title: string) => {
     setReportLoading(title);
@@ -83,6 +87,11 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
       const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
       const res = await fetch(`${base}/cases/${id}/${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (res.status === 403) {
+        // Not a failure to explain — a gate to walk through. Show the steps.
+        setAccessGate(title);
+        throw new Error(await readErrorMessage(res));
+      }
       if (!res.ok) throw new Error(await readErrorMessage(res));
       setReport({ title, html: await res.text() });
     } catch (e) {
@@ -208,6 +217,20 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
       </div>
 
       {error && <div className="mb-4 px-3 py-2 bg-[var(--bad-soft)] border border-[var(--bad)] rounded-lg text-sm text-[var(--bad)]">{error}</div>}
+
+      {accessGate && (
+        <div className="mb-4">
+          <RecordAccessGate
+            scope={{ caseId: id }}
+            label={accessGate}
+            onClose={() => setAccessGate(null)}
+            onUnlocked={() => {
+              setError(null);
+              openReport(accessGate === 'Evidence Bundle' ? 'evidence' : 'tax-report.html', accessGate);
+            }}
+          />
+        </div>
+      )}
 
       {/* Money summary */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">

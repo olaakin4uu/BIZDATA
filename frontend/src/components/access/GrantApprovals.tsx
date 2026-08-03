@@ -6,9 +6,13 @@ import { providersApi, type Provider } from '@/lib/api/providers';
 import { extractErrorMessage, formatDateTime } from '@/lib/utils';
 
 /**
- * SUPER_ADMIN approvals queue for four-eyes raw-record access. Shows pending
- * requests; approving mints a one-time token displayed here to relay to the
- * officer (and emailed to them). You cannot approve your own request.
+ * SUPER_ADMIN approvals queue for raw-record access. Shows pending requests;
+ * approving mints a one-time token displayed here to relay to the officer (and
+ * emailed to them).
+ *
+ * A Super Admin MAY approve their own request — see SELF_APPROVAL_ALLOWED in the
+ * backend's access-grant-token service. Self-approvals are flagged in the audit
+ * record, so this queue is no longer proof that a second person looked.
  */
 export default function GrantApprovals() {
   const [pending, setPending] = useState<AccessGrantToken[]>([]);
@@ -50,7 +54,6 @@ export default function GrantApprovals() {
       <p className="text-xs text-slate-500 mb-4">
         Officers assigned to a provider/case must still get a <strong>Super Admin</strong> to approve each access. Approving
         issues a one-time token (shown here to relay + emailed to the officer); they redeem it with their password to unlock.
-        You cannot approve your own request.
       </p>
 
       {error && <div className="mb-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
