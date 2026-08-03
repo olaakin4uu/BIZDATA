@@ -76,3 +76,40 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   if (!text) return undefined as T;
   return JSON.parse(text) as T;
 }
+
+/**
+ * Pull the server's own explanation out of a failed response.
+ *
+ * A couple of viewers (the case evidence bundle / AI tax report, the compliance
+ * demand notice) deliberately bypass `apiFetch` because they want raw HTML back
+ * rather than JSON. In doing so they threw the response body away and reported
+ * the status alone — so a 403 whose body said exactly what to do next,
+ *
+ *   "You are not assigned to this case. Request (or self-assign, if permitted)
+ *    access before viewing its records."
+ *
+ * reached the user as "Failed to load (403)". The access controls those screens
+ * sit behind are self-service by design; hiding the reason turned every denial
+ * into a support call.
+ *
+ * Falls back to the status when the body carries nothing useful — an HTML error
+ * page from a proxy is not worth showing raw.
+ */
+export async function readErrorMessage(res: Response, fallback?: string): Promise<string> {
+  try {
+    const text = await res.text();
+    if (text) {
+      try {
+        const data = JSON.parse(text) as { message?: unknown; error?: unknown };
+        let m = data.message ?? data.error;
+        if (Array.isArray(m)) m = m.join('; ');
+        if (typeof m === 'string' && m.trim()) return m;
+      } catch {
+        // Not JSON — a proxy error page or plain text. Ignore it.
+      }
+    }
+  } catch {
+    // Body already consumed or unreadable.
+  }
+  return fallback ?? `Failed to load (${res.status})`;
+}

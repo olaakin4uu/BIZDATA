@@ -11,9 +11,16 @@ import { AccessAssignmentService } from './access-assignment.service';
  *
  *  request()  — an ASSIGNED officer (SUPER_ADMIN/ADMIN) asks for access to a
  *               provider/case they're assigned to (reason required).
- *  approve()  — a SUPER_ADMIN (NEVER the requester) approves; a one-time token is
- *               minted: the RAW token is returned to the approver (to relay) and
- *               emailed to the officer; only its SHA-256 hash is stored.
+ *  approve()  — a SUPER_ADMIN approves; a one-time token is minted: the RAW token
+ *               is returned to the approver (to relay) and emailed to the
+ *               officer; only its SHA-256 hash is stored.
+ *
+ *               A SUPER_ADMIN MAY approve their own request. That is a deliberate
+ *               operational decision by the system owner, not an oversight — do
+ *               not "restore" the four-eyes check without asking them. ADMINs
+ *               still cannot approve anything, and a self-approval is recorded as
+ *               such (see SELF_APPROVAL_ALLOWED below) so the audit trail never
+ *               reads as two-person review when one person did it.
  *  redeem()   — the officer submits PASSWORD + token; on success the token starts
  *               a work-session window (reusable until sessionExpiresAt).
  *  verifyActiveSession() — used by the step-up unlock to confirm a live,
@@ -22,6 +29,23 @@ import { AccessAssignmentService } from './access-assignment.service';
  */
 const REDEEM_WINDOW_MIN = 60;      // officer has 60 min after approval to first-redeem
 const SESSION_HOURS = 8;           // once redeemed, reusable for the work session
+
+/**
+ * Whether a SUPER_ADMIN may approve their own grant request.
+ *
+ * Set true on the owner's instruction. The trade it makes is real and worth
+ * stating where the switch lives: with four-eyes enforced, unmasking a
+ * taxpayer's PII takes two people, so a single compromised or curious
+ * SUPER_ADMIN account cannot do it alone. With self-approval allowed, it can.
+ *
+ * What is NOT given up: every approval is still audited, still SUPER_ADMIN-only,
+ * still requires a prior assignment with a written reason, and a self-approval is
+ * flagged `selfApproved` in the audit record — so "who reviewed this?" always has
+ * a truthful answer, even when the answer is "nobody else".
+ *
+ * Flip to false to restore two-person approval.
+ */
+const SELF_APPROVAL_ALLOWED = true;
 
 @Injectable()
 export class AccessGrantTokenService {
@@ -71,12 +95,15 @@ export class AccessGrantTokenService {
     return { id: created.id, status: created.status };
   }
 
-  /** SUPER_ADMIN approves a pending request (four-eyes: cannot be the requester). */
+  /** SUPER_ADMIN approves a pending request. May be the requester — see SELF_APPROVAL_ALLOWED. */
   async approve(approver: { id: string; role: string }, id: string) {
     if (approver.role !== 'SUPER_ADMIN') throw new ForbiddenException('Only a Super Admin may approve access grants.');
     const req = await this.prisma.accessGrantToken.findUnique({ where: { id } });
     if (!req) throw new NotFoundException('Request not found.');
-    if (req.staffId === approver.id) throw new ForbiddenException('Four-eyes: you cannot approve your own access request.');
+    const selfApproved = req.staffId === approver.id;
+    if (selfApproved && !SELF_APPROVAL_ALLOWED) {
+      throw new ForbiddenException('Four-eyes: you cannot approve your own access request.');
+    }
     if (req.status !== 'PENDING') throw new BadRequestException(`Request is ${req.status.toLowerCase()}, not pending.`);
 
     // Mint a human-relayable one-time token (10 hex chars, uppercased).
@@ -92,7 +119,10 @@ export class AccessGrantTokenService {
     await this.audit.log({
       actorType: 'STAFF', actorId: approver.id, staffId: approver.id,
       action: 'GRANT_TOKEN_APPROVE', entity: req.providerId ? 'DataProvider' : 'UnderdeclarationCase',
-      entityId: (req.providerId ?? req.caseId)!, afterJson: { id, requester: req.staffId, redeemWindowMin: REDEEM_WINDOW_MIN },
+      entityId: (req.providerId ?? req.caseId)!,
+      // `selfApproved` is the whole point of recording this: without it the log
+      // cannot distinguish a reviewed grant from an unreviewed one.
+      afterJson: { id, requester: req.staffId, redeemWindowMin: REDEEM_WINDOW_MIN, selfApproved },
     });
 
     // Email the officer the token (no-op until SMTP is configured — the raw token
