@@ -58,7 +58,7 @@ export class CasesController {
     await this.access.assertCaseAccess({ id: u.id, role: u.role }, id);
     // Four-eyes: also require a live, SUPER_ADMIN-approved grant token session.
     await this.grant.assertActiveSession(u.id, { caseId: id });
-    return this.service.evidenceBundle(id, { id: u.id, email: u.email });
+    return this.service.evidenceBundle(id, { id: u.id, email: u.email, firstName: u.firstName, lastName: u.lastName });
   }
 
   @Patch(':id/status')
