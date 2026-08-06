@@ -159,7 +159,9 @@ export class ProvidersController {
     const providerId = await this.service.providerIdForSubmission(submissionId);
     await this.access.assertProviderAccess({ id: staffId, role: u.role }, providerId);
     await this.grant.assertActiveSession(staffId, { providerId });
-    const { filename, csv } = await this.service.exportUploadCsv(submissionId, staffId);
+    const { filename, csv } = await this.service.exportUploadCsv(submissionId, staffId, {
+      email: u.email, firstName: u.firstName, lastName: u.lastName,
+    });
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
