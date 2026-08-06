@@ -1,40 +1,12 @@
 import 'dotenv/config';
-import { PrismaClient, Prisma } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
 import * as bcrypt from 'bcrypt';
-import { createCipheriv, createHmac, randomBytes, createHash } from 'crypto';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
-
-// PII encryption — MUST mirror CryptoService so the app can decrypt/match seed data.
-function loadKey(env: string, salt: string): Buffer {
-  const raw = process.env[env];
-  if (raw) return Buffer.from(raw, 'base64');
-  return createHash('sha256').update(`${salt}:${process.env.JWT_SECRET || 'bizdata-dev-secret'}`).digest();
-}
-const ENC_KEY = loadKey('PII_ENC_KEY', 'pii-enc');
-const IDX_KEY = loadKey('PII_INDEX_KEY', 'pii-index');
-function encrypt(pt: string | null | undefined): string | null {
-  if (pt == null || pt === '') return null;
-  const iv = randomBytes(12);
-  const c = createCipheriv('aes-256-gcm', ENC_KEY, iv);
-  const ct = Buffer.concat([c.update(pt, 'utf8'), c.final()]);
-  return `v1.${iv.toString('base64')}.${c.getAuthTag().toString('base64')}.${ct.toString('base64')}`;
-}
-function blindIndex(v: string | null | undefined): string | null {
-  if (v == null || v === '') return null;
-  return createHmac('sha256', IDX_KEY).update(String(v).trim()).digest('hex');
-}
-function encodeIds(src: { nin?: string | null; bvn?: string | null; tin?: string | null }) {
-  return {
-    ninEnc: encrypt(src.nin), ninIndex: blindIndex(src.nin),
-    bvnEnc: encrypt(src.bvn), bvnIndex: blindIndex(src.bvn),
-    tinEnc: encrypt(src.tin), tinIndex: blindIndex(src.tin),
-  };
-}
 
 async function main() {
   console.log('Seeding BizData...');
@@ -139,130 +111,18 @@ async function main() {
     }
   }
 
-  // 4. Taxpayers, declared incomes, and observed flows (2025)
-  // `declared` is the explicit assessable income (null = nothing declared).
-  // `flows` are per-provider observed inflow/outflow used to exercise the engine.
-  const SCAN_YEAR = 2025;
-  const taxpayers: Array<{
-    nin?: string; bvn?: string; tin?: string; cacRcNumber?: string;
-    type: string; firstName?: string; lastName?: string; businessName?: string;
-    stateOfResidence: string; declared: number | null;
-    flows: Array<{ code: string; inflow: number; outflow: number }>;
-  }> = [
-    // Individuals
-    { nin: '12345678901', bvn: '22200000001', tin: '1000000001', type: 'INDIVIDUAL', firstName: 'Adamu', lastName: 'Bello', stateOfResidence: 'Kano',
-      declared: 2_000_000, flows: [ { code: 'CBN-057', inflow: 9_500_000, outflow: 3_000_000 }, { code: 'CBN-058', inflow: 6_000_000, outflow: 2_000_000 }, { code: 'NCC-OPAY', inflow: 2_500_000, outflow: 500_000 } ] }, // CRITICAL: big gap, 3 providers
-    { nin: '12345678902', bvn: '22200000002', tin: '1000000002', type: 'INDIVIDUAL', firstName: 'Chinwe', lastName: 'Okafor', stateOfResidence: 'Lagos',
-      declared: 8_000_000, flows: [ { code: 'CBN-057', inflow: 9_000_000, outflow: 4_000_000 } ] }, // clean: ~12% gap < threshold
-    { nin: '12345678903', bvn: '22200000003', tin: '1000000003', type: 'INDIVIDUAL', firstName: 'Tunde', lastName: 'Adekunle', stateOfResidence: 'Oyo',
-      declared: 1_000_000, flows: [ { code: 'CBN-PSTK', inflow: 6_000_000, outflow: 5_900_000 } ] }, // pass-through: normalized down, lower confidence
-    { nin: '12345678904', bvn: '22200000004', tin: '1000000004', type: 'INDIVIDUAL', firstName: 'Fatima', lastName: 'Yusuf', stateOfResidence: 'Kaduna',
-      declared: null, flows: [ { code: 'NCC-OPAY', inflow: 4_200_000, outflow: 1_000_000 } ] }, // NO_DECLARATION
-    { nin: '12345678905', bvn: '22200000005', tin: '1000000005', type: 'INDIVIDUAL', firstName: 'Emeka', lastName: 'Nwosu', stateOfResidence: 'Enugu',
-      declared: 30_000_000, flows: [ { code: 'CBN-058', inflow: 31_000_000, outflow: 12_000_000 } ] }, // clean
-    // Corporates
-    { cacRcNumber: 'RC-1001', tin: '2000000001', type: 'CORPORATE', businessName: 'Sahel Trading Ltd', stateOfResidence: 'Kano',
-      declared: 40_000_000, flows: [ { code: 'CBN-057', inflow: 90_000_000, outflow: 30_000_000 }, { code: 'CBN-PSTK', inflow: 35_000_000, outflow: 10_000_000 } ] }, // CIT gap
-    { cacRcNumber: 'RC-1002', tin: '2000000002', type: 'CORPORATE', businessName: 'Lagoon Logistics PLC', stateOfResidence: 'Lagos',
-      declared: 120_000_000, flows: [ { code: 'CBN-058', inflow: 125_000_000, outflow: 60_000_000 } ] }, // clean
-    { cacRcNumber: 'RC-1003', tin: '2000000003', type: 'CORPORATE', businessName: 'Rivers Petroleum Ltd', stateOfResidence: 'Rivers',
-      declared: 200_000_000, flows: [ { code: 'CBN-057', inflow: 480_000_000, outflow: 120_000_000 }, { code: 'CBN-058', inflow: 150_000_000, outflow: 40_000_000 } ] }, // large CIT gap
-    { cacRcNumber: 'RC-1004', tin: '2000000004', type: 'CORPORATE', businessName: 'Northern Foods Co', stateOfResidence: 'Kaduna',
-      declared: 15_000_000, flows: [ { code: 'CBN-PSTK', inflow: 28_000_000, outflow: 9_000_000 } ] },
-    { cacRcNumber: 'RC-1005', tin: '2000000005', type: 'CORPORATE', businessName: 'Capital Tech Holdings', stateOfResidence: 'Abuja',
-      declared: 60_000_000, flows: [ { code: 'NAICOM-AIICO', inflow: 62_000_000, outflow: 20_000_000 } ] }, // clean
-
-    // ── §29-reportable taxpayers that produce real cases ──────────────────────
-    // The rows above were authored before the §29 reporting gate (indiv ≥ ₦50m /
-    // corp ≥ ₦250m per period); none of them clear it, so no case is ever raised.
-    // These do: each crosses its threshold in the 2025 period AND is NON-LLC
-    // (corporate names avoid Ltd/Limited/PLC), so the state assesses PIT on the gap.
-    // Individuals — must reach ₦50m of observed inflow in the period.
-    { nin: '12345678906', bvn: '22200000006', tin: '1000000006', type: 'INDIVIDUAL', firstName: 'Ngozi', lastName: 'Eze', stateOfResidence: 'Lagos',
-      declared: 12_000_000, flows: [ { code: 'CBN-057', inflow: 55_000_000, outflow: 18_000_000 }, { code: 'CBN-058', inflow: 22_000_000, outflow: 6_000_000 } ] }, // CRITICAL: ₦77m observed vs ₦12m declared, 2 providers
-    { nin: '12345678907', bvn: '22200000007', tin: '1000000007', type: 'INDIVIDUAL', firstName: 'Bala', lastName: 'Mohammed', stateOfResidence: 'Kaduna',
-      declared: null, flows: [ { code: 'NCC-OPAY', inflow: 58_000_000, outflow: 9_000_000 } ] }, // HIGH: no declaration at all, ₦58m observed
-    { nin: '12345678908', bvn: '22200000008', tin: '1000000008', type: 'INDIVIDUAL', firstName: 'Yetunde', lastName: 'Bakare', stateOfResidence: 'Ogun',
-      declared: 45_000_000, flows: [ { code: 'CBN-058', inflow: 64_000_000, outflow: 20_000_000 } ] }, // MEDIUM: ₦64m vs ₦45m (~42% gap)
-    // Corporates — must reach ₦250m of observed inflow; names deliberately NON-LLC.
-    { cacRcNumber: 'RC-1006', tin: '2000000006', type: 'CORPORATE', businessName: 'Kano Grain Merchants', stateOfResidence: 'Kano',
-      declared: 90_000_000, flows: [ { code: 'CBN-057', inflow: 210_000_000, outflow: 70_000_000 }, { code: 'CBN-PSTK', inflow: 120_000_000, outflow: 30_000_000 } ] }, // CRITICAL: ₦330m observed vs ₦90m declared
-    { cacRcNumber: 'RC-1007', tin: '2000000007', type: 'CORPORATE', businessName: 'Delta Agro Ventures', stateOfResidence: 'Delta',
-      declared: 220_000_000, flows: [ { code: 'CBN-058', inflow: 300_000_000, outflow: 110_000_000 } ] }, // MEDIUM: ₦300m vs ₦220m (~36% gap)
-  ];
-
-  // Provider lookup by code
-  const provRows = await prisma.dataProvider.findMany({ select: { id: true, providerCode: true, providerType: true } });
-  const provByCode = new Map(provRows.map((p) => [p.providerCode, p]));
-
-  for (const tp of taxpayers) {
-    const where: any = tp.nin ? { ninIndex: blindIndex(tp.nin) } : { cacRcNumber: tp.cacRcNumber };
-    let row = await prisma.taxpayer.findFirst({ where });
-    if (!row) {
-      row = await prisma.taxpayer.create({
-        data: {
-          ...encodeIds(tp),
-          cacRcNumber: tp.cacRcNumber || null,
-          type: tp.type as any,
-          firstName: tp.firstName || null,
-          lastName: tp.lastName || null,
-          businessName: tp.businessName || null,
-          stateOfResidence: tp.stateOfResidence,
-        },
-      });
-    } else {
-      await prisma.taxpayer.update({ where: { id: row.id }, data: encodeIds(tp) });
-    }
-
-    if (tp.declared != null) {
-      await prisma.declaredIncome.upsert({
-        where: { taxpayerId_year: { taxpayerId: row.id, year: SCAN_YEAR } },
-        update: { assessableIncome: new Prisma.Decimal(tp.declared) },
-        create: { taxpayerId: row.id, year: SCAN_YEAR, assessableIncome: new Prisma.Decimal(tp.declared), source: 'MANUAL_IMPORT' },
-      });
-    }
-
-    // Seed observed flows per-taxpayer, but only if this taxpayer has none yet.
-    // (Per-taxpayer guard so re-running seed adds flows for newly-added taxpayers
-    // without duplicating flows for ones already carrying records.)
-    const alreadyHasRecords = await prisma.dataRecord.count({ where: { taxpayerId: row.id } });
-    if (alreadyHasRecords === 0) {
-      const accountName = tp.businessName || `${tp.firstName} ${tp.lastName}`;
-      for (const flow of tp.flows) {
-        const prov = provByCode.get(flow.code);
-        if (!prov) continue;
-        const submission = await prisma.dataSubmission.create({
-          data: {
-            providerId: prov.id,
-            periodLabel: String(SCAN_YEAR),
-            periodYear: SCAN_YEAR,
-            fileName: `seed-${prov.providerCode}-${SCAN_YEAR}.csv`,
-            recordCount: 1, acceptedCount: 1, rejectedCount: 0,
-            status: 'ACCEPTED', processedAt: new Date(),
-          },
-        });
-        await prisma.dataRecord.create({
-          data: {
-            submissionId: submission.id,
-            providerId: prov.id,
-            providerType: prov.providerType,
-            taxpayerId: row.id,
-            nin: encrypt(tp.nin),
-            bvn: encrypt(tp.bvn),
-            accountName,
-            matchMethod: tp.nin ? 'NIN' : 'TIN',
-            matchConfidence: new Prisma.Decimal(tp.nin ? 0.98 : 0.97),
-            periodLabel: String(SCAN_YEAR),
-            periodYear: SCAN_YEAR,
-            totalInflow: new Prisma.Decimal(flow.inflow),
-            totalOutflow: new Prisma.Decimal(flow.outflow),
-            transactionCount: Math.floor(flow.inflow / 50_000),
-          },
-        });
-      }
-    }
-  }
-  console.log(`  Taxpayers seeded: ${taxpayers.length} (observed flows added for any taxpayer missing them)`);
+  // 4. Demo taxpayers/declared-income/observed-flows block REMOVED 2026-08-06.
+  // It used to seed 15 fully-synthetic taxpayers (sequential fake NIN/BVN/TIN,
+  // fictional names/companies) with fabricated declared-income and bank-flow
+  // scenarios to exercise the underdeclaration engine. Because this entrypoint
+  // runs on every boot (see docker-entrypoint.sh), that demo data was silently
+  // re-upserting itself back into a live, public-facing KIRS instance on every
+  // restart — discovered when a staff member noticed declared-income figures
+  // with no Tax-app connection and no audit trail. The 15 taxpayers + their
+  // data_records/data_submissions/risk_signals were hard-deleted from prod; this
+  // block is gone so they can never come back via a routine restart. If demo
+  // data is needed again (e.g. for a sandbox/staging instance only), write a
+  // separate opt-in script — never wire demo data into the every-boot path.
   console.log('Done.');
 }
 
