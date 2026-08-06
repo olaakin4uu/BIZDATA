@@ -50,9 +50,11 @@ export class TaxReportController {
     await this.access.assertCaseAccess({ id: u.id, role: u.role }, id);
     await this.grant.assertActiveSession(u.id, { caseId: id });
     const report = await this.svc.taxReport(c.taxpayerId, { year: year ? parseInt(year, 10) : c.year });
+    const tenant = await this.prisma.tenant.findFirst({ select: { shortName: true } });
+    const officerName = [u.firstName, u.lastName].filter(Boolean).join(' ') || u.email || u.id;
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
-    res.send(renderTaxReportHtml(report));
+    res.send(renderTaxReportHtml(report, { orgShort: tenant?.shortName || undefined, officerName }));
   }
 
   @Post('taxpayers/:id/tax-payment')
