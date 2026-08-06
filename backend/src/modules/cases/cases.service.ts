@@ -428,6 +428,51 @@ export class CasesService {
     return html;
   }
 
+  /** Flat source-record rows for the evidence bundle's "Export to Excel" — same
+   *  underlying query as evidenceBundle(), reshaped for a spreadsheet instead
+   *  of the grouped provider/account HTML tables. */
+  async evidenceExportRows(id: string): Promise<{ title: string; columns: { key: string; header: string }[]; rows: Record<string, unknown>[] }> {
+    const c = await this.prisma.underdeclarationCase.findUnique({ where: { id }, include: { taxpayer: true } });
+    if (!c) throw new NotFoundException('Case not found');
+    const tp = c.taxpayer;
+    const name = tp.businessName || [tp.firstName, tp.lastName].filter(Boolean).join(' ') || 'Unknown';
+
+    const records = await this.prisma.dataRecord.findMany({
+      where: { taxpayerId: c.taxpayerId, periodYear: c.year },
+      include: { provider: { select: { name: true } } },
+      orderBy: [{ provider: { name: 'asc' } }, { accountNumber: 'asc' }, { totalInflow: 'desc' }],
+    });
+
+    const rows = records.map((r) => {
+      const pl = (r.payload ?? {}) as { transactionDate?: string };
+      return {
+        provider: r.provider?.name ?? r.providerType,
+        accountNumber: r.accountNumber ?? '',
+        accountName: r.accountName ?? '',
+        transactionDate: pl.transactionDate ?? '',
+        period: r.periodLabel,
+        inflow: Number(r.totalInflow ?? 0),
+        outflow: Number(r.totalOutflow ?? 0),
+        matchMethod: r.matchMethod ?? '',
+      };
+    });
+
+    return {
+      title: `Evidence Bundle — ${name} (${c.year})`,
+      columns: [
+        { key: 'provider', header: 'Provider' },
+        { key: 'accountNumber', header: 'Account #' },
+        { key: 'accountName', header: 'Account Name' },
+        { key: 'transactionDate', header: 'Date' },
+        { key: 'period', header: 'Period' },
+        { key: 'inflow', header: 'Inflow' },
+        { key: 'outflow', header: 'Outflow' },
+        { key: 'matchMethod', header: 'Match' },
+      ],
+      rows,
+    };
+  }
+
   /** Move a case through its lifecycle, enforcing the allowed-transition map. */
   async transition(id: string, dto: { to: CaseStatus; notes?: string; recoveredAmount?: number }, staffId: string) {
     const current = await this.prisma.underdeclarationCase.findUnique({ where: { id } });

@@ -77,6 +77,36 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   // a standalone blob tab. `report` holds the fetched HTML.
   const [report, setReport] = useState<{ title: string; html: string } | null>(null);
   const [reportLoading, setReportLoading] = useState<string | null>(null);
+  const [excelLoading, setExcelLoading] = useState<string | null>(null);
+
+  // Direct file download (Excel export) — unlike openReport, this never
+  // touches the iframe viewer; the file just saves to the officer's machine,
+  // watermarked the same way (org + officer name) as the in-app document.
+  const downloadExport = async (path: string, title: string) => {
+    setExcelLoading(title);
+    try {
+      const base = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
+      const token = typeof window !== 'undefined' ? localStorage.getItem('bizdata_staff_token') : null;
+      const res = await fetch(`${base}/cases/${id}/${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+      if (res.status === 403) {
+        setAccessGate(title);
+        throw new Error(await readErrorMessage(res));
+      }
+      if (!res.ok) throw new Error(await readErrorMessage(res));
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      const match = /filename="?([^";]+)"?/.exec(cd);
+      const filename = match?.[1] || `${path.replace('.xlsx', '')}.xlsx`;
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = filename; a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setError(extractErrorMessage(e));
+    } finally {
+      setExcelLoading(null);
+    }
+  };
   // Opened when a report is refused for want of access, so the officer lands on
   // the fix rather than on an error they cannot act on.
   const [accessGate, setAccessGate] = useState<string | null>(null);
@@ -206,11 +236,27 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
             {reportLoading === 'AI Tax Report' ? 'Loading…' : 'AI Tax Report'}
           </button>
           <button
+            onClick={() => downloadExport('tax-report.xlsx', 'AI Tax Report (Excel)')}
+            disabled={excelLoading !== null}
+            title="Export the AI Tax Report to Excel — confidentiality watermark included"
+            className="px-2 py-1.5 text-xs font-medium rounded-lg border border-sky-300 text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+          >
+            {excelLoading === 'AI Tax Report (Excel)' ? '…' : 'Excel'}
+          </button>
+          <button
             onClick={() => openReport('evidence', 'Evidence Bundle')}
             disabled={reportLoading !== null}
             className="px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
           >
             {reportLoading === 'Evidence Bundle' ? 'Loading…' : 'Evidence bundle'}
+          </button>
+          <button
+            onClick={() => downloadExport('evidence.xlsx', 'Evidence Bundle (Excel)')}
+            disabled={excelLoading !== null}
+            title="Export the Evidence Bundle to Excel — confidentiality watermark included"
+            className="px-2 py-1.5 text-xs font-medium rounded-lg border border-slate-300 text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+          >
+            {excelLoading === 'Evidence Bundle (Excel)' ? '…' : 'Excel'}
           </button>
           <StatusBadge status={c.status} className="px-3 py-1" />
         </div>

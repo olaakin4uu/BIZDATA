@@ -9,7 +9,7 @@ import { ToolRegistry } from './tools/tool-registry';
 import { ToolExecutor } from './tools/tool-executor';
 import { DraftProposer } from './approval/draft-proposer';
 import { IrisDraftService } from './approval/iris-draft.service';
-import { ExportService } from './export/export.service';
+import { ExportModule } from './export/export.module';
 import { ListCasesTool } from './tools/read/list-cases.tool';
 import { ExplainCaseTool } from './tools/read/explain-case.tool';
 import { TaxpayerSummaryTool } from './tools/read/taxpayer-summary.tool';
@@ -24,7 +24,7 @@ import { DraftNoticeTool } from './tools/action/draft-notice.tool';
  * ScanModule/CasesModule are imported for the action tools' commit() step.
  */
 @Module({
-  imports: [ScanModule, CasesModule],
+  imports: [ScanModule, CasesModule, ExportModule],
   controllers: [IrisController],
   providers: [
     LlmFactory,
@@ -34,7 +34,6 @@ import { DraftNoticeTool } from './tools/action/draft-notice.tool';
     IrisService,
     DraftProposer,
     IrisDraftService,
-    ExportService,
     // Tools
     ListCasesTool,
     ExplainCaseTool,
