@@ -70,33 +70,47 @@ export class ReportableService {
     // stable if monthly submissions ever arrive. Raw SQL so the quarter
     // normalisation, threshold comparison and type join run in one grouped query.
     const yearFilter = opts.year ? `AND dr."periodYear" = ${Number(opts.year)}` : '';
-    const rows = await this.prisma.$queryRawUnsafe<{ taxpayerId: string }[]>(
-      `SELECT q."taxpayerId"
-         FROM (
-           SELECT dr."taxpayerId",
-                  -- Normalise period → quarter key. YYYY-Qn passes through; YYYY-MM
-                  -- maps to its quarter; anything else (e.g. bare YYYY) keys on the
-                  -- label as-is so it still buckets consistently with itself.
-                  CASE
-                    WHEN dr."periodLabel" ~ '^[0-9]{4}-Q[1-4]$' THEN dr."periodLabel"
-                    WHEN dr."periodLabel" ~ '^[0-9]{4}-[0-9]{2}$'
-                      THEN left(dr."periodLabel", 4) || '-Q'
-                           || ((cast(substr(dr."periodLabel", 6, 2) AS int) - 1) / 3 + 1)::text
-                    ELSE dr."periodLabel"
-                  END AS quarter_key,
-                  t.type, SUM(dr."totalInflow") AS q_inflow
-             FROM data_records dr
-             JOIN taxpayers t ON t.id = dr."taxpayerId"
-            WHERE dr."taxpayerId" IS NOT NULL ${yearFilter}
-              -- Account-opening records (₦0, identity-only) never count toward the
-              -- statutory threshold. IS DISTINCT FROM also keeps legacy rows whose
-              -- payload has no recordKind key (NULL) — those remain reportable.
-              AND (dr.payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
-            GROUP BY dr."taxpayerId", quarter_key, t.type
-         ) q
-        WHERE (q.type = 'INDIVIDUAL' AND q.q_inflow >= ${indiv})
-           OR (q.type = 'CORPORATE'  AND q.q_inflow >= ${corp})
-        GROUP BY q."taxpayerId"`,
+    // This GROUP BY runs over the full data_records table (millions of rows) on
+    // every cache-miss call — confirmed at 3.3s on prod with default work_mem
+    // (4MB), the same disk-based-sort issue found in the /data-quality endpoint
+    // (see bizdata-data-quality-slow-query memory). SET LOCAL scopes a larger
+    // work_mem to just this transaction/query so it can't starve other
+    // concurrent queries on the memory-constrained host. This is the single
+    // heaviest call behind /dashboard, /cases and /analytics, all of which
+    // gate through here.
+    const rows = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL work_mem = '64MB'`);
+        return tx.$queryRawUnsafe<{ taxpayerId: string }[]>(
+          `SELECT q."taxpayerId"
+             FROM (
+               SELECT dr."taxpayerId",
+                      -- Normalise period → quarter key. YYYY-Qn passes through; YYYY-MM
+                      -- maps to its quarter; anything else (e.g. bare YYYY) keys on the
+                      -- label as-is so it still buckets consistently with itself.
+                      CASE
+                        WHEN dr."periodLabel" ~ '^[0-9]{4}-Q[1-4]$' THEN dr."periodLabel"
+                        WHEN dr."periodLabel" ~ '^[0-9]{4}-[0-9]{2}$'
+                          THEN left(dr."periodLabel", 4) || '-Q'
+                               || ((cast(substr(dr."periodLabel", 6, 2) AS int) - 1) / 3 + 1)::text
+                        ELSE dr."periodLabel"
+                      END AS quarter_key,
+                      t.type, SUM(dr."totalInflow") AS q_inflow
+                 FROM data_records dr
+                 JOIN taxpayers t ON t.id = dr."taxpayerId"
+                WHERE dr."taxpayerId" IS NOT NULL ${yearFilter}
+                  -- Account-opening records (₦0, identity-only) never count toward the
+                  -- statutory threshold. IS DISTINCT FROM also keeps legacy rows whose
+                  -- payload has no recordKind key (NULL) — those remain reportable.
+                  AND (dr.payload->>'recordKind') IS DISTINCT FROM 'ACCOUNT_OPENED'
+                GROUP BY dr."taxpayerId", quarter_key, t.type
+             ) q
+            WHERE (q.type = 'INDIVIDUAL' AND q.q_inflow >= ${indiv})
+               OR (q.type = 'CORPORATE'  AND q.q_inflow >= ${corp})
+            GROUP BY q."taxpayerId"`,
+        );
+      },
+      { timeout: 15000 },
     );
     const ids = new Set(rows.map((r) => r.taxpayerId));
     this.cache.set(cacheKey, { at: Date.now(), ids });

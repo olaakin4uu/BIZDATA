@@ -59,36 +59,48 @@ export class DataQualityService {
       COUNT(*) FILTER (WHERE r."nin" IS NULL AND r."bvn" IS NULL)::bigint AS no_identifier,
       AVG(r."matchConfidence")                           AS avg_conf`;
 
-    const [totals, byProviderRows, byMethodRows, byYearRows, register] = await Promise.all([
-      this.prisma.$queryRawUnsafe<any[]>(`SELECT ${COVERAGE_SELECT} FROM data_records r WHERE ${where}`),
-      this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT r."providerId" AS "providerId", p."name" AS "providerName", p."providerType"::text AS "providerType",
-                ${COVERAGE_SELECT}
-           FROM data_records r JOIN data_providers p ON p.id = r."providerId"
-          WHERE ${where}
-          GROUP BY r."providerId", p."name", p."providerType"
-          ORDER BY COUNT(*) DESC`,
-      ),
-      this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT COALESCE(r."matchMethod", 'UNMATCHED') AS method, COUNT(*)::bigint AS c, AVG(r."matchConfidence") AS avg_conf
-           FROM data_records r WHERE ${where} GROUP BY 1 ORDER BY 2 DESC`,
-      ),
-      this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT r."periodYear" AS year, ${COVERAGE_SELECT}
-           FROM data_records r WHERE ${where} GROUP BY r."periodYear" ORDER BY r."periodYear" DESC`,
-      ),
-      this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT COUNT(*)::bigint                             AS taxpayers,
-                COUNT("tinIndex")::bigint                    AS with_tin,
-                COUNT("ninIndex")::bigint                    AS with_nin,
-                COUNT("bvnIndex")::bigint                    AS with_bvn,
-                COUNT("cacRcNumber")::bigint                 AS with_rc,
-                COUNT("identityVerifiedAt")::bigint          AS id_verified,
-                COUNT(*) FILTER (WHERE "type" = 'CORPORATE')::bigint AS corporates,
-                COUNT(*) FILTER (WHERE "type" = 'CORPORATE' AND "cacRcNumber" IS NOT NULL)::bigint AS corporates_with_rc
-           FROM taxpayers`,
-      ),
-    ]);
+    // data_records is large enough (millions of rows) that Postgres' default
+    // work_mem (4MB) forces the COUNT(DISTINCT ...) aggregations below into
+    // disk-based external merge sorts — this is what made the endpoint take
+    // 17.5s (confirmed via EXPLAIN ANALYZE). SET LOCAL scopes a larger
+    // work_mem to just this transaction so it can't starve other concurrent
+    // queries on the memory-constrained host.
+    const [totals, byProviderRows, byMethodRows, byYearRows, register] = await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRawUnsafe(`SET LOCAL work_mem = '64MB'`);
+        return Promise.all([
+          tx.$queryRawUnsafe<any[]>(`SELECT ${COVERAGE_SELECT} FROM data_records r WHERE ${where}`),
+          tx.$queryRawUnsafe<any[]>(
+            `SELECT r."providerId" AS "providerId", p."name" AS "providerName", p."providerType"::text AS "providerType",
+                    ${COVERAGE_SELECT}
+               FROM data_records r JOIN data_providers p ON p.id = r."providerId"
+              WHERE ${where}
+              GROUP BY r."providerId", p."name", p."providerType"
+              ORDER BY COUNT(*) DESC`,
+          ),
+          tx.$queryRawUnsafe<any[]>(
+            `SELECT COALESCE(r."matchMethod", 'UNMATCHED') AS method, COUNT(*)::bigint AS c, AVG(r."matchConfidence") AS avg_conf
+               FROM data_records r WHERE ${where} GROUP BY 1 ORDER BY 2 DESC`,
+          ),
+          tx.$queryRawUnsafe<any[]>(
+            `SELECT r."periodYear" AS year, ${COVERAGE_SELECT}
+               FROM data_records r WHERE ${where} GROUP BY r."periodYear" ORDER BY r."periodYear" DESC`,
+          ),
+          tx.$queryRawUnsafe<any[]>(
+            `SELECT COUNT(*)::bigint                             AS taxpayers,
+                    COUNT("tinIndex")::bigint                    AS with_tin,
+                    COUNT("ninIndex")::bigint                    AS with_nin,
+                    COUNT("bvnIndex")::bigint                    AS with_bvn,
+                    COUNT("cacRcNumber")::bigint                 AS with_rc,
+                    COUNT("identityVerifiedAt")::bigint          AS id_verified,
+                    COUNT(*) FILTER (WHERE "type" = 'CORPORATE')::bigint AS corporates,
+                    COUNT(*) FILTER (WHERE "type" = 'CORPORATE' AND "cacRcNumber" IS NOT NULL)::bigint AS corporates_with_rc
+               FROM taxpayers`,
+          ),
+        ]);
+      },
+      { timeout: 30000 },
+    );
 
     const t = totals[0] ?? {};
     const records = Number(t.records ?? 0);

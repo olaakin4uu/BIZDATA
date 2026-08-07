@@ -75,7 +75,7 @@ export interface CaseStats {
 export const casesApi = {
   stats: (year?: number) => apiFetch<CaseStats>(`/cases/stats${year ? `?year=${year}` : ''}`),
   list: (
-    params: { year?: number; status?: CaseStatus; riskLevel?: RiskLevel; assignedToId?: string; sort?: 'estimatedTaxDue' | 'confidence'; page?: number; limit?: number } = {},
+    params: { year?: number; status?: CaseStatus; riskLevel?: RiskLevel; assignedToId?: string; q?: string; sort?: 'estimatedTaxDue' | 'confidence'; page?: number; limit?: number } = {},
   ) => {
     const qs = new URLSearchParams();
     Object.entries(params).forEach(([k, v]) => {

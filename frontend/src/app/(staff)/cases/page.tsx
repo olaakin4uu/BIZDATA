@@ -1,5 +1,5 @@
 'use client';
-import { Suspense, useEffect, useMemo, useState } from 'react';
+import { Suspense, useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
@@ -57,14 +57,22 @@ function CasesListInner() {
   const [sort, setSort] = useState<SortKey>('estimatedTaxDue');
   const [mine, setMine] = useState(false);
   const [q, setQ] = useState('');
+  const [debouncedQ, setDebouncedQ] = useState('');
   const [page, setPage] = useState(1);
   const [cases, setCases] = useState<UnderdeclarationCase[] | null>(null);
   const [total, setTotal] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
 
+  // Debounce the search box so every keystroke doesn't fire a request — the
+  // search now hits the server across all cases, not just the loaded page.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQ(q.trim()), 300);
+    return () => clearTimeout(t);
+  }, [q]);
+
   // Reset to the first page whenever a server-side filter/sort changes.
-  useEffect(() => { setPage(1); }, [status, riskLevel, year, sort, mine]);
+  useEffect(() => { setPage(1); }, [status, riskLevel, year, sort, mine, debouncedQ]);
 
   useEffect(() => {
     let active = true;
@@ -75,6 +83,7 @@ function CasesListInner() {
         riskLevel: riskLevel || undefined,
         year: year || undefined,
         assignedToId: mine ? userId : undefined,
+        q: debouncedQ || undefined,
         sort,
         page,
         limit: PAGE_SIZE,
@@ -82,21 +91,7 @@ function CasesListInner() {
       .then((r) => { if (!active) return; setCases(r.cases); setTotal(r.total); })
       .catch((e) => { if (!active) return; setCases(null); setTotal(0); setError(extractErrorMessage(e)); });
     return () => { active = false; };
-  }, [status, riskLevel, year, sort, mine, page, userId, reloadKey]);
-
-  // Text search runs client-side over the loaded page: taxpayer names are plain,
-  // but TINs are encrypted at rest server-side, so the API can't search them —
-  // it narrows the current page by taxpayer name / TIN.
-  const term = q.trim().toLowerCase();
-  const filtered = useMemo(() => {
-    if (!cases) return [];
-    if (!term) return cases;
-    return cases.filter((c) => {
-      const name = caseDisplayName(c).toLowerCase();
-      const tin = (c.taxpayer?.tin ?? '').toLowerCase();
-      return name.includes(term) || tin.includes(term);
-    });
-  }, [cases, term]);
+  }, [status, riskLevel, year, sort, mine, debouncedQ, page, userId, reloadKey]);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const from = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -166,9 +161,7 @@ function CasesListInner() {
         </label>
         {cases && !error && (
           <span className="pb-2 text-xs text-[var(--ink-3)]">
-            {term
-              ? `${filtered.length} match${filtered.length === 1 ? '' : 'es'} on this page`
-              : `${total} case${total === 1 ? '' : 's'}`}
+            {total} case{total === 1 ? '' : 's'}
           </span>
         )}
       </div>
@@ -183,10 +176,10 @@ function CasesListInner() {
           </div>
         ) : cases === null ? (
           <p className="text-xs text-[var(--ink-3)] p-6">Loading…</p>
-        ) : filtered.length === 0 ? (
+        ) : cases.length === 0 ? (
           <div className="p-8 text-center">
-            {term ? (
-              <p className="text-sm text-[var(--ink-2)]">No cases on this page match “{q.trim()}”.</p>
+            {debouncedQ ? (
+              <p className="text-sm text-[var(--ink-2)]">No cases match “{debouncedQ}”.</p>
             ) : (
               <>
                 <p className="text-sm text-[var(--ink-2)]">No cases match these filters.</p>
@@ -209,7 +202,7 @@ function CasesListInner() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
+                {cases.map((c) => (
                   <tr
                     key={c.id}
                     onClick={() => router.push(`/cases/${c.id}`)}
@@ -244,9 +237,8 @@ function CasesListInner() {
         )}
       </div>
 
-      {/* Pagination — server-side pages. Hidden while a text search narrows the
-          current page (the filter is client-side, so paging would be misleading). */}
-      {cases && !error && !term && total > PAGE_SIZE && (
+      {/* Pagination — fully server-side, including while a search term is set. */}
+      {cases && !error && total > PAGE_SIZE && (
         <div className="flex items-center justify-between mt-4 text-sm">
           <span className="text-xs text-[var(--ink-3)]">Showing {from}–{to} of {total}</span>
           <div className="flex items-center gap-2">

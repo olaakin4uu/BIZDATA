@@ -10,7 +10,7 @@ const ANALYTICS_YEARS = Array.from({ length: 4 }, (_, i) => new Date().getFullYe
 
 export default function AnalyticsPage() {
   const [tab, setTab] = useState<Tab>('provider');
-  const [year, setYear] = useState<number | ''>('');
+  const [year, setYear] = useState<number | ''>(new Date().getFullYear());
   const [prov, setProv] = useState<ProviderAnalytics | null>(null);
   const [sect, setSect] = useState<SectorAnalytics | null>(null);
   const [err, setErr] = useState<string | null>(null);

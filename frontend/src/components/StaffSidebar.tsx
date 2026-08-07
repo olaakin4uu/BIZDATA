@@ -39,7 +39,7 @@ export const NAV: NavItem[] = [
   { href: '/metrics', label: 'Model & Fairness', icon: 'trend', section: 'Governance' },
   { href: '/governance', label: 'Governance', icon: 'gavel' },
   { href: '/audit', label: 'Audit Logs', icon: 'scroll' },
-  { href: '/access', label: 'Sensitive Access', icon: 'unlock' },
+  { href: '/access', label: 'Access Requests', icon: 'unlock' },
   { href: '/dpo', label: 'Data Protection', icon: 'shield' },
   { href: '/schemas', label: 'Schemas', icon: 'dna' },
   { href: '/notifications', label: 'Alerts', icon: 'bell', section: 'Admin' },

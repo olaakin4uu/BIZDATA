@@ -139,16 +139,32 @@ export class CasesService {
     if (query.status) extra.push(Prisma.sql`c."status"::text = ${String(query.status)}`);
     if (query.riskLevel) extra.push(Prisma.sql`c."riskLevel"::text = ${String(query.riskLevel)}`);
     if (query.assignedToId) extra.push(Prisma.sql`c."assignedToId" = ${String(query.assignedToId)}`);
+    // Free-text search, server-side across the whole reportable set (not just the
+    // loaded page). Taxpayer name is plain, so ILIKE works; TIN is encrypted at
+    // rest, so only an exact match via the deterministic blind index can be
+    // matched — a partial TIN still won't hit, same limit as before this was
+    // made global, just no longer silently scoped to one page.
+    const q = typeof query.q === 'string' ? query.q.trim() : '';
+    if (q) {
+      const like = `%${q}%`;
+      const tinHash = this.crypto.blindIndex(q);
+      extra.push(Prisma.sql`(
+        t."firstName" ILIKE ${like} OR t."lastName" ILIKE ${like} OR t."businessName" ILIKE ${like}
+        OR (COALESCE(t."firstName", '') || ' ' || COALESCE(t."lastName", '')) ILIKE ${like}
+        OR t."tinIndex" = ${tinHash}
+      )`);
+    }
     const whereSql = this.caseWhereSql(ids, year, extra);
     const orderSql = query.sort === 'confidence' ? Prisma.sql`c."confidence" DESC` : Prisma.sql`c."estimatedTaxDue" DESC`;
+    const joinSql = q ? Prisma.sql`JOIN taxpayers t ON t."id" = c."taxpayerId"` : Prisma.empty;
 
     // 1) resolve just this page's case ids + the true total (both array-bound).
     const [idRows, countRows] = await Promise.all([
       this.prisma.$queryRaw<{ id: string }[]>(Prisma.sql`
-        SELECT c."id" FROM underdeclaration_cases c
+        SELECT c."id" FROM underdeclaration_cases c ${joinSql}
          WHERE ${whereSql} ORDER BY ${orderSql} LIMIT ${limit} OFFSET ${(page - 1) * limit}`),
       this.prisma.$queryRaw<{ count: bigint }[]>(Prisma.sql`
-        SELECT COUNT(*)::bigint AS count FROM underdeclaration_cases c WHERE ${whereSql}`),
+        SELECT COUNT(*)::bigint AS count FROM underdeclaration_cases c ${joinSql} WHERE ${whereSql}`),
     ]);
     const total = Number(countRows[0]?.count ?? 0);
     const pageIds = idRows.map((r) => r.id);
