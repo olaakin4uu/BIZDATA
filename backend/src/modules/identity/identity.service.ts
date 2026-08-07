@@ -5,6 +5,7 @@ import { CryptoService } from '../../common/services/crypto.service';
 import { IdentityProvider } from './identity-provider.interface';
 import { MockIdentityProvider } from './providers/mock-identity.provider';
 import { NibssIdentityProvider } from './providers/nibss-identity.provider';
+import { FailClosedIdentityProvider } from './providers/fail-closed-identity.provider';
 
 /**
  * Phase 4 — bring "invisible" individuals into the tax net by resolving the BVN
@@ -27,9 +28,15 @@ export class IdentityService {
     this.logger.log(`Identity provider: ${this.provider.name}`);
   }
 
-  /** Pick the provider from env — mock by default, real NIBSS when configured. */
+  /**
+   * Pick the provider from env. No silent default: an unset/unrecognised
+   * IDENTITY_PROVIDER fails closed rather than falling back to the mock, which
+   * would otherwise fabricate a fake NIN for every resolution on a production
+   * box with no real NIBSS credentials configured. `mock` must be requested
+   * explicitly (local dev/demo only).
+   */
   private selectProvider(): IdentityProvider {
-    const choice = (process.env.IDENTITY_PROVIDER || 'mock').toLowerCase();
+    const choice = (process.env.IDENTITY_PROVIDER || '').toLowerCase();
     if (choice === 'nibss') {
       return new NibssIdentityProvider({
         baseUrl: process.env.NIBSS_BASE_URL,
@@ -37,12 +44,19 @@ export class IdentityService {
         clientSecret: process.env.NIBSS_CLIENT_SECRET,
       });
     }
-    return new MockIdentityProvider();
+    if (choice === 'mock') {
+      return new MockIdentityProvider();
+    }
+    return new FailClosedIdentityProvider();
   }
 
-  /** Provider name + whether it is the production source (for the UI banner). */
+  /** Provider name + whether it is mock/unconfigured (for the UI banner). */
   status() {
-    return { provider: this.provider.name, isMock: this.provider.name === 'MOCK' };
+    return {
+      provider: this.provider.name,
+      isMock: this.provider.name === 'MOCK',
+      unconfigured: this.provider.name === 'UNCONFIGURED',
+    };
   }
 
   /** How many taxpayers can be resolved / are already verified. */
@@ -52,7 +66,14 @@ export class IdentityService {
       this.prisma.taxpayer.count({ where: { identityVerifiedAt: { not: null } } }),
       this.prisma.taxpayer.count(),
     ]);
-    return { resolvable, verified, total, provider: this.provider.name, isMock: this.provider.name === 'MOCK' };
+    return {
+      resolvable,
+      verified,
+      total,
+      provider: this.provider.name,
+      isMock: this.provider.name === 'MOCK',
+      unconfigured: this.provider.name === 'UNCONFIGURED',
+    };
   }
 
   /**

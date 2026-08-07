@@ -6,6 +6,7 @@ export interface IdentityStatus {
   total: number;
   provider: string;
   isMock: boolean;
+  unconfigured: boolean;
 }
 
 export const identityApi = {

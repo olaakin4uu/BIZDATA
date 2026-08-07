@@ -96,10 +96,11 @@ export default function TaxNetPage() {
               Bridge each BVN to its linked NIN via {idStatus.isMock ? 'the identity service' : idStatus.provider} to bring
               them a step closer to the net. {idStatus.verified > 0 && <span className="text-emerald-700 font-medium">{idStatus.verified.toLocaleString()} already verified.</span>}
               {idStatus.isMock && <span className="ml-1 text-amber-700">Running in demo mode — NINs are synthetic until NIBSS is connected.</span>}
+              {idStatus.unconfigured && <span className="ml-1 text-rose-700">No identity provider is configured — resolution is unavailable until NIBSS is connected.</span>}
             </p>
           </div>
-          <button onClick={() => setIdOpen(true)}
-            className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg whitespace-nowrap">
+          <button onClick={() => setIdOpen(true)} disabled={idStatus.unconfigured}
+            className="px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-sm font-semibold rounded-lg whitespace-nowrap disabled:opacity-50 disabled:cursor-not-allowed">
             🪪 Resolve identities…
           </button>
         </div>
@@ -371,7 +372,7 @@ function ResolveIdentityModal({ onClose, onDone, status }: { onClose: () => void
         ) : (
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={run} loading={busy}>Resolve now</Button>
+            <Button onClick={run} loading={busy} disabled={status.unconfigured}>Resolve now</Button>
           </div>
         )
       }
@@ -383,6 +384,12 @@ function ResolveIdentityModal({ onClose, onDone, status }: { onClose: () => void
         {status.isMock && (
           <div className="rounded-lg bg-amber-50 border border-amber-200 px-3 py-2 text-xs text-amber-800">
             Demo mode: resolved NINs are synthetic. Connect NIBSS (set IDENTITY_PROVIDER=nibss) for authoritative resolution.
+          </div>
+        )}
+        {status.unconfigured && (
+          <div className="rounded-lg bg-rose-50 border border-rose-200 px-3 py-2 text-xs text-rose-800">
+            No identity provider is configured. Set IDENTITY_PROVIDER=nibss (with NIBSS credentials) for real resolution,
+            or IDENTITY_PROVIDER=mock for local development only.
           </div>
         )}
         {result ? (
