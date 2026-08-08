@@ -38,6 +38,10 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
   const [showUserForm, setShowUserForm] = useState(false);
   const [showUploads, setShowUploads] = useState(false);
   const [resetFor, setResetFor] = useState<ProviderUserRecord | null>(null);
+  // Held by the PARENT, not the form: creating a user closes the form, which
+  // would unmount any state it owned — and the invite link is shown exactly
+  // once, so losing it means having to reset the brand-new account.
+  const [userHandOff, setUserHandOff] = useState<HandOffCredentials | null>(null);
 
   const [year, setYear] = useState(CURRENT_YEAR);
   const [compliance, setCompliance] = useState<ProviderCompliance | null>(null);
@@ -230,7 +234,14 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
           </button>
         </div>
         {showUserForm && (
-          <NewUserForm providerId={provider.id} onCreated={() => { setShowUserForm(false); refresh(); }} onCancel={() => setShowUserForm(false)} />
+          <NewUserForm
+            providerId={provider.id}
+            onCreated={(creds) => { setShowUserForm(false); refresh(); if (creds) setUserHandOff(creds); }}
+            onCancel={() => setShowUserForm(false)}
+          />
+        )}
+        {userHandOff && (
+          <CredentialHandOff credentials={userHandOff} onDone={() => setUserHandOff(null)} />
         )}
         {provider.users && provider.users.length > 0 ? (
           <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -443,30 +454,22 @@ function EditProviderForm({ provider, onSaved, onCancel }: { provider: Provider;
   );
 }
 
-function NewUserForm({ providerId, onCreated, onCancel }: { providerId: string; onCreated: () => void; onCancel: () => void }) {
+function NewUserForm({ providerId, onCreated, onCancel }: { providerId: string; onCreated: (credentials?: HandOffCredentials) => void; onCancel: () => void }) {
   const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'COMPLIANCE_OFFICER', phone: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Held after a successful create so the password can be handed over. The
-  // list refreshes underneath, but the panel stays until dismissed — navigating
-  // away loses the only copy of the password.
-  const [handOff, setHandOff] = useState<HandOffCredentials | null>(null);
-
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setError(null);
     try {
-      // No password field: the server generates one and returns it once.
+      // No password field: the server issues a one-time link and returns it once.
+      // Hand it straight to the parent — this component is about to unmount.
       const created = await providersApi.createUser(providerId, form);
-      onCreated();
-      if (created.credentials) setHandOff(created.credentials);
+      onCreated(created.credentials);
     }
     catch (err) { setError(extractErrorMessage(err)); }
     finally { setBusy(false); }
   };
 
-  if (handOff) {
-    return <CredentialHandOff credentials={handOff} onDone={() => { setHandOff(null); onCancel(); }} />;
-  }
   return (
     <form onSubmit={submit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3 mb-4">
       {error && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
