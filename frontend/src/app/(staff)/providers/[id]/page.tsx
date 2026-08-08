@@ -386,10 +386,29 @@ function MiniKpi({ label, value, hint, valueClass }: { label: string; value: str
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`text-3xl font-bold mt-1 tabular-nums ${valueClass}`}>{value}</p>
-      <p className="text-xs text-slate-400 mt-1">{hint}</p>
+      <p
+        className={`${kpiValueSize(value)} font-bold mt-1 tabular-nums leading-tight break-words ${valueClass}`}
+        title={String(value)}
+      >
+        {value}
+      </p>
+      <p className="text-xs text-slate-400 mt-1 leading-snug">{hint}</p>
     </div>
   );
+}
+
+/**
+ * Same rule as the tiles on /providers: step the headline down by length so a
+ * money figure never overflows a tile sized for "0%". Kept identical in both
+ * places deliberately — the two screens sit side by side in the same workflow
+ * and a different scale between them reads as a rendering fault.
+ */
+function kpiValueSize(value: string | number): string {
+  const n = String(value).length;
+  if (n <= 6) return 'text-3xl';
+  if (n <= 9) return 'text-2xl';
+  if (n <= 13) return 'text-xl';
+  return 'text-lg';
 }
 
 function Info({ label, value, className }: { label: string; value: React.ReactNode; className?: string }) {

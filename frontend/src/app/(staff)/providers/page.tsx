@@ -391,8 +391,31 @@ function Kpi({ label, value, hint, tone }: { label: string; value: string | numb
   return (
     <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${tones[tone]}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
-      <p className={`text-3xl font-bold mt-1 tabular-nums ${valColor[tone]}`}>{value}</p>
-      <p className="text-xs text-slate-400 mt-1">{hint}</p>
+      <p
+        className={`${kpiValueSize(value)} font-bold mt-1 tabular-nums leading-tight break-words ${valColor[tone]}`}
+        title={String(value)}
+      >
+        {value}
+      </p>
+      <p className="text-xs text-slate-400 mt-1 leading-snug">{hint}</p>
     </div>
   );
+}
+
+/**
+ * Size the headline to what it actually says.
+ *
+ * These tiles hold values of wildly different widths — "48" next to
+ * "₦19,250,000" — and a fixed text-3xl overflows the narrow ones the moment the
+ * money figure grows a digit. Stepping the size down by length keeps every tile
+ * on one line at any realistic magnitude, while short values stay as large as
+ * they were. The full value is also on the title attribute, so nothing is ever
+ * unreadable even if a future figure outgrows the smallest step.
+ */
+function kpiValueSize(value: string | number): string {
+  const n = String(value).length;
+  if (n <= 6) return 'text-3xl';   // 48, 0%, 104
+  if (n <= 9) return 'text-2xl';   // ₦350,000
+  if (n <= 13) return 'text-xl';   // ₦19,250,000
+  return 'text-lg';                // ₦1,234,567,890 and beyond
 }
