@@ -1,3 +1,25 @@
+/**
+ * The access hand-off returned when a provider login is created or reset.
+ *
+ * Deliberately contains NO password: the provider sets their own via a one-time
+ * link, so nobody at the Revenue Service ever knows their secret. Only the SHA-256
+ * of the token is stored, so this link cannot be recovered afterwards — reissue
+ * by resetting the account.
+ */
+export interface HandOffCredentials {
+  portalUrl: string;
+  username: string;
+  /** One-time set-password link. Shown once; expires. */
+  inviteUrl: string;
+  /** ISO timestamp the link stops working. */
+  expiresAt: string;
+  mustChangePassword: boolean;
+  /** True when SMTP is configured and the email actually went out. */
+  emailed: boolean;
+  /** Ready-to-send plain-text message for the copy button. */
+  note: string;
+}
+
 import { apiFetch } from './client';
 
 export interface Provider {
@@ -118,18 +140,20 @@ export const providersApi = {
   // provider users
   listUsers: (providerId: string) =>
     apiFetch<ProviderUserRecord[]>(`/providers/${providerId}/users`),
+  // password is OPTIONAL — omit it and the server generates one, returning the
+  // credential note exactly once in `credentials`.
   createUser: (
     providerId: string,
-    dto: { email: string; password: string; firstName: string; lastName: string; role?: string; phone?: string },
-  ) => apiFetch<ProviderUserRecord>(`/providers/${providerId}/users`, { method: 'POST', body: dto }),
+    dto: { email: string; password?: string; firstName: string; lastName: string; role?: string; phone?: string },
+  ) => apiFetch<ProviderUserRecord & { credentials?: HandOffCredentials }>(
+    `/providers/${providerId}/users`, { method: 'POST', body: dto }),
   getUser: (id: string) => apiFetch<ProviderUserRecord>(`/provider-users/${id}`),
   updateUser: (id: string, dto: Partial<ProviderUserRecord>) =>
     apiFetch<ProviderUserRecord>(`/provider-users/${id}`, { method: 'PATCH', body: dto }),
-  resetUserPassword: (id: string, newPassword: string) =>
-    apiFetch<{ success: boolean }>(`/provider-users/${id}/reset-password`, {
-      method: 'POST',
-      body: { newPassword },
-    }),
+  // Omit newPassword to have the server generate one and return the note.
+  resetUserPassword: (id: string, newPassword?: string) =>
+    apiFetch<{ success: boolean; credentials?: HandOffCredentials }>(
+      `/provider-users/${id}/reset-password`, { method: 'POST', body: { newPassword } }),
 
   // uploads (submission envelopes — metadata only, no step-up needed)
   listUploads: (providerId: string) =>

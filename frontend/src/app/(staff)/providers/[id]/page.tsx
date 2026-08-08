@@ -3,10 +3,10 @@ import { useEffect, useState, use as usePromise } from 'react';
 import Link from 'next/link';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import ProviderUploadsModal from '@/components/providers/ProviderUploadsModal';
-import PasswordInput from '@/components/PasswordInput';
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/Button';
-import { providersApi, type Provider, type ProviderUserRecord } from '@/lib/api/providers';
+import { providersApi, type Provider, type ProviderUserRecord, type HandOffCredentials } from '@/lib/api/providers';
+import CredentialHandOff from '@/components/providers/CredentialHandOff';
 import { complianceApi, type ProviderCompliance, type PeriodStatus } from '@/lib/api/compliance';
 import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, SECTION_29_PROVIDER_TYPES, formatDate, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
 
@@ -319,15 +319,18 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
 }
 
 function ResetPasswordModal({ user, onClose, onDone }: { user: ProviderUserRecord; onClose: () => void; onDone: () => void }) {
-  const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
-  const [done, setDone] = useState(false);
+  const [handOff, setHandOff] = useState<HandOffCredentials | null>(null);
 
   const submit = async () => {
-    if (pw.length < 8) { setErr('Password must be at least 8 characters.'); return; }
     setBusy(true); setErr(null);
-    try { await providersApi.resetUserPassword(user.id, pw); setDone(true); }
+    try {
+      // No password argument — the server generates one and returns it once,
+      // exactly as it does when the account is first created.
+      const res = await providersApi.resetUserPassword(user.id);
+      setHandOff(res.credentials ?? null);
+    }
     catch (e) { setErr(extractErrorMessage(e)); }
     finally { setBusy(false); }
   };
@@ -336,42 +339,38 @@ function ResetPasswordModal({ user, onClose, onDone }: { user: ProviderUserRecor
     <Modal
       open
       onClose={onClose}
-      size="sm"
+      size={handOff ? 'md' : 'sm'}
       title={`Reset password — ${user.firstName} ${user.lastName}`}
       footer={
-        done ? (
+        handOff ? (
           <div className="flex justify-end">
             <Button onClick={onDone}>Done</Button>
           </div>
         ) : (
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={onClose}>Cancel</Button>
-            <Button onClick={submit} loading={busy} disabled={pw.length < 8}>Reset password</Button>
+            <Button onClick={submit} loading={busy}>Generate reset link</Button>
           </div>
         )
       }
     >
-      <p className="-mt-1 text-xs text-[var(--ink-3)]">
-        Set a temporary password. {user.email} will be <strong>forced to change it</strong> on their next login.
-      </p>
-      {done ? (
-        <div className="mt-4 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2 text-sm text-emerald-700">
-          Password reset. Share the temporary password securely — the user must change it on first login.
-        </div>
+      {handOff ? (
+        <CredentialHandOff credentials={handOff} />
       ) : (
-        <div className="mt-4 space-y-3">
-          <div>
-            <label htmlFor="reset-temp-password" className="block text-[10px] font-medium text-slate-500 mb-1 uppercase">Temporary password</label>
-            <PasswordInput id="reset-temp-password" value={pw} onChange={(e) => setPw(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && submit()} minLength={8}
-              className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-teal-500" />
-          </div>
-          {err && <p className="text-xs text-rose-600">{err}</p>}
-        </div>
+        <>
+          <p className="-mt-1 text-xs text-[var(--ink-3)]">
+            A one-time set-password link will be generated for <strong>{user.email}</strong> and shown once
+            here. Their current password stops working immediately and any open session is signed out —
+            they regain access only through the link.
+          </p>
+          {err && (
+            <div className="mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">{err}</div>
+          )}
+        </>
       )}
     </Modal>
   );
 }
-
 function MiniKpi({ label, value, hint, valueClass }: { label: string; value: string | number; hint: string; valueClass: string }) {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
@@ -445,14 +444,29 @@ function EditProviderForm({ provider, onSaved, onCancel }: { provider: Provider;
 }
 
 function NewUserForm({ providerId, onCreated, onCancel }: { providerId: string; onCreated: () => void; onCancel: () => void }) {
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', password: '', role: 'COMPLIANCE_OFFICER', phone: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', role: 'COMPLIANCE_OFFICER', phone: '' });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Held after a successful create so the password can be handed over. The
+  // list refreshes underneath, but the panel stays until dismissed — navigating
+  // away loses the only copy of the password.
+  const [handOff, setHandOff] = useState<HandOffCredentials | null>(null);
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setBusy(true); setError(null);
-    try { await providersApi.createUser(providerId, form); onCreated(); }
-    catch (err) { setError(extractErrorMessage(err)); setBusy(false); }
+    try {
+      // No password field: the server generates one and returns it once.
+      const created = await providersApi.createUser(providerId, form);
+      onCreated();
+      if (created.credentials) setHandOff(created.credentials);
+    }
+    catch (err) { setError(extractErrorMessage(err)); }
+    finally { setBusy(false); }
   };
+
+  if (handOff) {
+    return <CredentialHandOff credentials={handOff} onDone={() => { setHandOff(null); onCancel(); }} />;
+  }
   return (
     <form onSubmit={submit} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 space-y-3 mb-4">
       {error && <div className="px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{error}</div>}
@@ -460,7 +474,11 @@ function NewUserForm({ providerId, onCreated, onCancel }: { providerId: string; 
         <input required placeholder="First name" value={form.firstName} onChange={(e) => setForm({ ...form, firstName: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         <input required placeholder="Last name" value={form.lastName} onChange={(e) => setForm({ ...form, lastName: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
         <input required type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm col-span-2" />
-        <PasswordInput required placeholder="Password (min 8 chars)" minLength={8} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} className="w-full px-3 py-2 border border-slate-300 rounded-lg text-sm" wrapperClassName="col-span-2" />
+        <p className="col-span-2 rounded-lg bg-slate-50 px-3 py-2 text-[11px] text-slate-500 ring-1 ring-slate-200">
+          No password is set here. A one-time link is generated and shown once after you create the
+          account — emailed to the provider when email is configured, otherwise ready to copy and send.
+          They choose their own password, so nobody here ever knows it.
+        </p>
         <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
           {PROVIDER_USER_ROLES.map((r) => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}</select>
         <input placeholder="Phone (optional)" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />

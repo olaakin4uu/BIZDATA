@@ -37,7 +37,9 @@ export class ProviderUsersController {
 
   @Post('provider-users/:id/reset-password')
   @Roles('SUPER_ADMIN', 'ADMIN')
-  resetPassword(@Param('id') id: string, @Body() body: { newPassword: string }, @CurrentStaff() u: any) {
-    return this.service.resetPassword(id, body.newPassword, u.id);
+  // newPassword is OPTIONAL: omit it and the service generates one, returning
+  // the credential note for hand-off exactly as account creation does.
+  resetPassword(@Param('id') id: string, @Body() body: { newPassword?: string }, @CurrentStaff() u: any) {
+    return this.service.resetPassword(id, body?.newPassword, u.id);
   }
 }
