@@ -3,6 +3,7 @@ import * as bcrypt from 'bcrypt';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { MailService } from '../../common/services/mail.service';
+import { primaryFrontendUrl } from '../../common/env.util';
 import {
   generateInviteToken, hashInviteToken, generateUnusablePassword,
   buildInviteNote, INVITE_TTL_MS,
@@ -221,7 +222,7 @@ export class ProviderUsersService {
       data: { tokenHash: hashInviteToken(raw), userType: 'PROVIDER', userId: opts.userId, expiresAt },
     });
 
-    const base = (process.env.FRONTEND_URL || 'http://localhost:3000').replace(/\/$/, '');
+    const base = primaryFrontendUrl() || 'http://localhost:3000';
     const inviteUrl = `${base}/provider/reset-password?token=${raw}`;
     const portalUrl = `${base}/provider/login`;
     const note = buildInviteNote({

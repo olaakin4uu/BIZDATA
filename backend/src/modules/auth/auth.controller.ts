@@ -11,6 +11,7 @@ import { StaffAuthGuard } from '../../common/guards/staff-auth.guard';
 import { ProviderAuthGuard } from '../../common/guards/provider-auth.guard';
 import { CurrentStaff } from '../../common/decorators/current-staff.decorator';
 import { CurrentProviderUser } from '../../common/decorators/current-provider-user.decorator';
+import { primaryFrontendUrl } from '../../common/env.util';
 
 class LoginDto {
   @IsEmail() email: string;
@@ -59,7 +60,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Request a staff password-reset link (always returns 200)' })
   staffForgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: any) {
     return this.service.requestPasswordReset(
-      'STAFF', dto.email, process.env.FRONTEND_URL || '', req.ip, req.headers?.['user-agent'],
+      'STAFF', dto.email, primaryFrontendUrl(), req.ip, req.headers?.['user-agent'],
     );
   }
 
@@ -110,7 +111,7 @@ export class AuthController {
   @ApiOperation({ summary: 'Request a provider password-reset link (always returns 200)' })
   providerForgotPassword(@Body() dto: ForgotPasswordDto, @Req() req: any) {
     return this.service.requestPasswordReset(
-      'PROVIDER', dto.email, process.env.FRONTEND_URL || '', req.ip, req.headers?.['user-agent'],
+      'PROVIDER', dto.email, primaryFrontendUrl(), req.ip, req.headers?.['user-agent'],
     );
   }
 
