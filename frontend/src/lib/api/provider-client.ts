@@ -37,7 +37,11 @@ export async function providerApiFetch<T>(path: string, options: ProviderApiFetc
   });
 
   if (!res.ok) {
-    if (res.status === 401 && typeof window !== 'undefined') {
+    // The login endpoint's own 401 (wrong email/password) is a real auth
+    // failure, not a session expiry — let it fall through to the normal
+    // error-throwing path below so the caller gets a message instead of
+    // `undefined` (which crashed provider/login/page.tsx reading `.user`).
+    if (res.status === 401 && typeof window !== 'undefined' && !path.includes('/login')) {
       // Clear the raw token AND the persisted store snapshot, else the login
       // guard bounces back and the app loops ("blinking").
       localStorage.removeItem('bizdata_provider_token');
