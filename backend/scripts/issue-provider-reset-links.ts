@@ -31,6 +31,7 @@
 import 'dotenv/config';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
+import { ConfigModule } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaModule } from '../src/prisma/prisma.module';
@@ -38,7 +39,13 @@ import { PrismaService } from '../src/prisma/prisma.service';
 import { CommonModule } from '../src/common/common.module';
 import { ProviderUsersService } from '../src/modules/provider-users/provider-users.service';
 
-@Module({ imports: [PrismaModule, CommonModule], providers: [ProviderUsersService] })
+// ConfigModule is registered globally by AppModule, which this script does not
+// boot. Without it CommonModule's JWT strategies have no ConfigService and the
+// context fails to construct — nothing to do with the reset itself.
+@Module({
+  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, CommonModule],
+  providers: [ProviderUsersService],
+})
 class ScriptModule {}
 
 function arg(name: string): string | undefined {
