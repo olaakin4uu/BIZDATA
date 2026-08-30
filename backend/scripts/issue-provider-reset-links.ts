@@ -31,20 +31,28 @@
 import 'dotenv/config';
 import { Module } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
-import { ConfigModule } from '@nestjs/config';
 import * as fs from 'fs';
 import * as path from 'path';
 import { PrismaModule } from '../src/prisma/prisma.module';
 import { PrismaService } from '../src/prisma/prisma.service';
-import { CommonModule } from '../src/common/common.module';
+import { AuditService } from '../src/common/services/audit.service';
+import { MailService } from '../src/common/services/mail.service';
 import { ProviderUsersService } from '../src/modules/provider-users/provider-users.service';
 
-// ConfigModule is registered globally by AppModule, which this script does not
-// boot. Without it CommonModule's JWT strategies have no ConfigService and the
-// context fails to construct — nothing to do with the reset itself.
+// The two services ProviderUsersService actually needs, provided directly.
+//
+// Importing CommonModule instead would drag in the passport JWT strategies,
+// which read ConfigService — available in the app only because AppModule
+// registers ConfigModule globally. They authenticate HTTP requests and this
+// script makes none, so constructing them was pure liability: the context
+// failed before reaching any provider. AuditService needs only Prisma and
+// MailService reads process.env, so neither needs anything more.
+//
+// AuditService specifically must be the real one: it chains each entry to the
+// hash of the previous, and that chain is checked.
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), PrismaModule, CommonModule],
-  providers: [ProviderUsersService],
+  imports: [PrismaModule],
+  providers: [ProviderUsersService, AuditService, MailService],
 })
 class ScriptModule {}
 
