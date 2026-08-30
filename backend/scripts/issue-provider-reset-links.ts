@@ -21,9 +21,16 @@
  * Mail is not configured on the findata server, so nothing is sent to the
  * institutions; every link comes back in the CSV for hand-off by a person.
  *
- * Usage:
- *   npx tsx scripts/issue-provider-reset-links.ts --actor=<staff-user-id>
- *   npx tsx scripts/issue-provider-reset-links.ts --actor=<staff-user-id> --commit
+ * Usage — ts-node, NOT tsx:
+ *   npx ts-node scripts/issue-provider-reset-links.ts --actor=<staff-user-id>
+ *   npx ts-node scripts/issue-provider-reset-links.ts --actor=<staff-user-id> --commit
+ *
+ * ⚠ The other scripts here run under `npx tsx`, and this one must not. tsx uses
+ * esbuild, which does not emit `design:paramtypes`, so Nest injects NOTHING into
+ * a constructor and every dependency arrives undefined. It fails at the first
+ * use — "Cannot read properties of undefined (reading 'dataProviderUser')" — not
+ * at wiring time, so it looks like a database fault rather than a build one. The
+ * other scripts are unaffected because they use a plain PrismaClient with no DI.
  *
  * The CSV holds live credentials. It is written 0600, and should be deleted
  * once the links have been handed over.
