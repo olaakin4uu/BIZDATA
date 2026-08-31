@@ -24,6 +24,11 @@
  * Usage — ts-node, NOT tsx:
  *   npx ts-node scripts/issue-provider-reset-links.ts --actor=<staff-user-id>
  *   npx ts-node scripts/issue-provider-reset-links.ts --actor=<staff-user-id> --commit
+ *   npx ts-node scripts/issue-provider-reset-links.ts --actor=<id> --only=a@b.com,c@d.com --commit
+ *
+ * --only exists because the alternative is dangerous: a provider onboarded after
+ * a run needs ONE link, and re-running the whole script to get it would reset the
+ * other forty-seven and invalidate every link already handed out.
  *
  * ⚠ The other scripts here run under `npx tsx`, and this one must not. tsx uses
  * esbuild, which does not emit `design:paramtypes`, so Nest injects NOTHING into
@@ -76,6 +81,10 @@ function csvCell(v: unknown): string {
 async function main() {
   const commit = process.argv.includes('--commit');
   const actorId = arg('actor');
+  const only = (arg('only') ?? '')
+    .split(',')
+    .map((e) => e.trim().toLowerCase())
+    .filter(Boolean);
 
   if (!actorId) {
     throw new Error('--actor=<staff-user-id> is required: every reset is audited against a real person.');
@@ -97,7 +106,10 @@ async function main() {
   }
 
   const users = await prisma.dataProviderUser.findMany({
-    where: { isActive: true },
+    where: {
+      isActive: true,
+      ...(only.length ? { email: { in: only, mode: 'insensitive' as const } } : {}),
+    },
     select: {
       id: true,
       email: true,
@@ -109,9 +121,21 @@ async function main() {
     orderBy: [{ provider: { name: 'asc' } }, { email: 'asc' }],
   });
 
+  // A typo in --only would otherwise silently issue nothing and report success.
+  if (only.length) {
+    const found = new Set(users.map((u) => u.email.toLowerCase()));
+    const missing = only.filter((e) => !found.has(e));
+    if (missing.length) {
+      throw new Error(`No active provider user for: ${missing.join(', ')}`);
+    }
+  }
+
   const everLoggedIn = users.filter((u) => u.lastLoginAt).length;
   console.log(`Actor:      ${actor.email} (${actor.role})`);
-  console.log(`Recipients: ${users.length} active provider users`);
+  console.log(
+    `Recipients: ${users.length} active provider user${users.length === 1 ? '' : 's'}` +
+      (only.length ? ' (filtered by --only)' : ''),
+  );
   console.log(`Of those:   ${everLoggedIn} have a working password that this will invalidate`);
   console.log(`Mode:       ${commit ? 'COMMIT — passwords will be reset' : 'DRY RUN — nothing will change'}`);
   console.log('');
@@ -160,7 +184,9 @@ async function main() {
   }
 
   const stamp = new Date().toISOString().slice(0, 10);
-  const out = path.join(process.cwd(), `provider-reset-links-${stamp}.csv`);
+  // A filtered run must not overwrite the full run's file.
+  const suffix = only.length ? `-partial-${Date.now()}` : '';
+  const out = path.join(process.cwd(), `provider-reset-links-${stamp}${suffix}.csv`);
   fs.writeFileSync(out, rows.join('\n') + '\n', { mode: 0o600 });
 
   console.log('');
