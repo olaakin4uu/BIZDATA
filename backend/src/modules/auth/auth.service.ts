@@ -401,18 +401,30 @@ export class AuthService {
     }
 
     const hash = await bcrypt.hash(newPassword, 10);
-    // Set password, move the epoch (evicts sessions), and force a change on next
-    // login — then burn the token, all in one transaction.
+    // Set password, move the epoch (evicts sessions), CLEAR the forced-change
+    // flag, then burn the token — all in one transaction.
+    //
+    // The flag is cleared, not set, because THIS is the path where the account
+    // holder chooses their own password: they proved control of the account with
+    // a single-use, expiring, hashed token and typed the secret themselves.
+    // Nobody else ever saw it, so there is nothing left to force a change over.
+    //
+    // Setting it here (as this did until 2026-09-02) meant an invited user set a
+    // password from their link, signed in, and was immediately held on the
+    // profile screen demanding they set one AGAIN — with the dashboard and
+    // submissions locked behind it. The flag belongs on the paths that issue a
+    // TEMPORARY secret somebody else generated: account creation and an
+    // admin-initiated reset, both of which still set it in ProviderUsersService.
     await this.prisma.$transaction(async (tx) => {
       if (userType === 'STAFF') {
         await tx.user.update({
           where: { id: record.userId },
-          data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: true },
+          data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: false },
         });
       } else {
         await tx.dataProviderUser.update({
           where: { id: record.userId },
-          data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: true },
+          data: { passwordHash: hash, passwordChangedAt: new Date(), mustChangePassword: false },
         });
       }
       await tx.passwordResetToken.update({
