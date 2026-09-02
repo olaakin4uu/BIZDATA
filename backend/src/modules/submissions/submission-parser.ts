@@ -19,6 +19,27 @@ export interface FieldDef {
     /** Named format check applied to string values. */
     format?: 'email' | 'date' | 'currency';
     /**
+     * This column carries an identifier, so a value that shows the digits were
+     * DAMAGED in export must be rejected rather than stored.
+     *
+     * Aimed at the one unambiguous case: a spreadsheet converting a long number
+     * to scientific notation (0123456789 → 1.23457E+09), which destroys the
+     * original digits irrecoverably. Length-checked columns (nin, bvn) already
+     * catch this; this exists for the identifier columns that CANNOT carry a
+     * length rule because their values are legitimately different lengths.
+     */
+    identifier?: boolean;
+    /**
+     * When the FILING PROVIDER is a bank, warn if an all-digit value in this
+     * column is not this many digits — the signature of a NUBAN whose leading
+     * zero was eaten by Excel.
+     *
+     * A warning, never an error: a bank may legitimately report a domiciliary
+     * account, a card or another identifier that is not a 10-digit NUBAN, and
+     * such a row must still file. Non-bank providers skip the check entirely.
+     */
+    bankAccountDigits?: number;
+    /**
      * Grace period for a compulsory field. When set on a `required` column, a
      * blank value is a WARNING (row still accepted) BEFORE this date, and a hard
      * ERROR (row rejected) ON/AFTER it. ISO date, e.g. '2027-01-01'. The actual
@@ -100,7 +121,13 @@ export const LIMITED_LIABILITY_CUSTOMER_TYPES: readonly CustomerType[] = [
  */
 export const RETURN_COLUMNS: FieldDef[] = [
   { name: 'nin', required: true, type: 'string', validation: { length: 11 } },       // National Identity Number
-  { name: 'accountNumber', required: true, type: 'string' },                         // NUBAN for banks; wallet/merchant/policy id otherwise
+  // NUBAN for banks; wallet/merchant/policy id otherwise. Deliberately carries
+  // no `length`: the values are legitimately different lengths per provider
+  // type. That left it the ONLY identifier nothing checked, so a NUBAN with its
+  // leading zero stripped by Excel filed silently and was stored wrong with no
+  // signal to anyone. `identifier` rejects the unrecoverable case (scientific
+  // notation) and `bankAccountDigits` warns on the recoverable one.
+  { name: 'accountNumber', required: true, type: 'string', validation: { identifier: true, bankAccountDigits: 10 } },
   { name: 'accountName', required: true, type: 'string' },                           // name on the account
   { name: 'bvn', required: true, type: 'string', validation: { length: 11 } },       // Bank Verification Number
   { name: 'customerType', required: true, type: 'string', validation: { enum: [...CUSTOMER_TYPES] } },
@@ -111,8 +138,19 @@ export const RETURN_COLUMNS: FieldDef[] = [
   // banks already supply it in nine of the file layouts we receive, so it is
   // worth collecting — but a provider that genuinely holds no TIN for an account
   // must not have its entire file rejected by the all-or-nothing row validation.
-  { name: 'tin', required: false, type: 'string' },
+  { name: 'tin', required: false, type: 'string', validation: { identifier: true } },
 ];
+
+/**
+ * A number a spreadsheet has rewritten in scientific notation — 1.23457E+09,
+ * 1E+09. The original digits are GONE, so this can never be repaired downstream
+ * and must be refused at the door.
+ *
+ * Deliberately narrow: it demands either a decimal point or a signed exponent,
+ * both of which Excel always emits. A bare `12E34` is left alone, because that
+ * is a plausible merchant or policy identifier rather than a mangled number.
+ */
+const SCIENTIFIC_NOTATION_RE = /^[+-]?(?:\d+\.\d+[eE][+-]?\d+|\d+[eE][+-]\d+)$/;
 
 /**
  * When the seven-column return replaced the old per-type templates. A provider
@@ -330,6 +368,28 @@ export function validateRow(
         if (digits.length !== v.length || digits.length !== raw.length) {
           errors.push(`${col.name} must be exactly ${v.length} digits`);
         }
+      }
+      // Identifier damaged in export. Rejected, not warned: the digits cannot be
+      // recovered from the value, so accepting it would store a number that is
+      // simply wrong while reporting the submission as a success.
+      if (v.identifier && SCIENTIFIC_NOTATION_RE.test(raw)) {
+        errors.push(
+          `${col.name} "${raw}" is in scientific notation — the original digits have been lost. ` +
+            `Format the column as Text in your spreadsheet and export again.`,
+        );
+      }
+      // A bank's account number that is all digits but not NUBAN length. Warned,
+      // not rejected — see bankAccountDigits. The row still files.
+      if (
+        v.bankAccountDigits != null &&
+        schema.providerType === 'BANK' &&
+        /^\d+$/.test(raw) &&
+        raw.length !== v.bankAccountDigits
+      ) {
+        warnings.push(
+          `${col.name} "${raw}" is ${raw.length} digits — a NUBAN is ${v.bankAccountDigits}. ` +
+            `Check the leading zero was not dropped in export.`,
+        );
       }
       // Enumerated values (case-insensitive), e.g. customerType.
       if (v.enum && !v.enum.map((e) => e.toUpperCase()).includes(raw.toUpperCase())) {

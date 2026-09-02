@@ -287,3 +287,66 @@ describe('missingRequiredColumns — file-level guard', () => {
     expect(missingRequiredColumns(header.map((h) => h.toUpperCase()), BANK)).toEqual([]);
   });
 });
+
+/**
+ * accountNumber is the only identifier column that cannot carry a length rule —
+ * a NUBAN, a wallet id and a policy number are legitimately different lengths.
+ * That left it entirely unchecked, so a value Excel had damaged filed silently
+ * and was stored wrong while the submission reported success.
+ *
+ * Two guards now, matched to whether the damage is recoverable:
+ *   scientific notation  → ERROR   (digits destroyed, nothing can repair it)
+ *   wrong NUBAN length   → WARNING (digits intact, provider can judge it)
+ */
+describe('validateRow — identifier damaged in export', () => {
+  const FINTECH = DEFAULT_SCHEMAS.FINTECH;
+
+  it.each(['1.23457E+09', '1.23457e+09', '1E+09', '1.23457E9', '9.87654E-05'])(
+    'rejects an accountNumber a spreadsheet rewrote as %s',
+    (mangled) => {
+      const { ok, errors } = validateRow(validRow({ accountNumber: mangled }), BANK);
+      expect(ok).toBe(false);
+      expect(errors.join(' ')).toContain('scientific notation');
+    },
+  );
+
+  it('rejects a tin in scientific notation too', () => {
+    const { ok, errors } = validateRow(validRow({ tin: '1.23457E+09' }), BANK);
+    expect(ok).toBe(false);
+    expect(errors.join(' ')).toContain('scientific notation');
+  });
+
+  // The check must not fire on identifiers that merely contain an E. A bare
+  // 12E34 is a plausible merchant or policy reference, not a mangled number.
+  it.each(['12E34', '0123456788', 'DOM-00123', 'WALLET-9E', 'A1E5B'])(
+    'leaves the legitimate identifier %s alone',
+    (id) => {
+      const { errors } = validateRow(validRow({ accountNumber: id }), BANK);
+      expect(errors.join(' ')).not.toContain('scientific notation');
+    },
+  );
+
+  it('warns — but does not reject — when a bank files a short NUBAN', () => {
+    const { ok, errors, warnings } = validateRow(validRow({ accountNumber: '123456788' }), BANK);
+    expect(ok).toBe(true); // the row still files
+    expect(errors).toEqual([]);
+    expect(warnings.join(' ')).toContain('9 digits');
+    expect(warnings.join(' ')).toContain('leading zero');
+  });
+
+  it('stays quiet on a correct 10-digit NUBAN', () => {
+    expect(validateRow(validRow({ accountNumber: '0123456788' }), BANK).warnings).toEqual([]);
+  });
+
+  // Only banks file NUBANs. A wallet id of another length is normal elsewhere.
+  it('does not warn a non-bank provider about NUBAN length', () => {
+    const { ok, warnings } = validateRow(validRow({ accountNumber: '123456788' }), FINTECH);
+    expect(ok).toBe(true);
+    expect(warnings).toEqual([]);
+  });
+
+  // A bank may legitimately report something that is not a NUBAN at all.
+  it('does not warn a bank about a non-numeric account identifier', () => {
+    expect(validateRow(validRow({ accountNumber: 'DOM-00123456' }), BANK).warnings).toEqual([]);
+  });
+});

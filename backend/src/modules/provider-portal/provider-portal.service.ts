@@ -107,7 +107,7 @@ export class ProviderPortalService {
     guidance.push(
       `#`,
       `# Columns (${cols.length} total, ${requiredNow} required now${softCols.length ? `, ${softCols.length} required from ${enforceDate}` : ''}):`,
-      ...cols.map((c) => `#   ${c.name} — ${columnSpec(c, enforceDate)}`),
+      ...cols.map((c) => `#   ${c.name} — ${columnSpec(c, enforceDate, type)}`),
       `#`,
     );
 
@@ -320,7 +320,7 @@ function exampleValue(c: FieldDef): string {
  * `enforceDate` is the resolved grace-period date (from config) shown on
  * soft-required columns.
  */
-function columnSpec(c: FieldDef, enforceDate?: string): string {
+function columnSpec(c: FieldDef, enforceDate?: string, providerType?: string): string {
   // A soft-required column (grace period active) reads as "required from DATE",
   // not a flat REQUIRED — it's accepted-with-warning until then.
   const soft = c.required && !!c.validation?.enforceFrom;
@@ -339,6 +339,15 @@ function columnSpec(c: FieldDef, enforceDate?: string): string {
   if (c.validation?.format === 'email') parts.push('valid email address');
   if (c.validation?.format === 'date') parts.push('date — YYYY-MM-DD preferred; DD/MM/YYYY also accepted');
   if (c.validation?.format === 'currency') parts.push('3-letter code, e.g. NGN');
+
+  // Identifier integrity. These two exist because accountNumber cannot carry a
+  // length rule, so without them a value Excel had damaged filed in silence.
+  if (c.validation?.identifier) {
+    parts.push('export as Text — a value in scientific notation (e.g. 1.23457E+09) is REJECTED');
+  }
+  if (c.validation?.bankAccountDigits != null && providerType === 'BANK') {
+    parts.push(`${c.validation.bankAccountDigits} digits for a NUBAN — keep the leading zero, or the row files with a warning`);
+  }
 
   // A friendly hint for well-known columns.
   const hint = COLUMN_HINTS[c.name.toLowerCase()];
