@@ -349,7 +349,25 @@ export function validateRow(
     if (col.type === 'decimal' || col.type === 'integer') {
       const n = Number(raw);
       if (Number.isNaN(n)) {
-        errors.push(`${col.name} must be a number`);
+        // Echo the offending value and name the exact fault, so the fix is
+        // obvious from the error list alone. No silent coercion: a money
+        // figure is corrected at source, never guessed at here.
+        const shown = raw.length > 40 ? `${raw.slice(0, 40)}…` : raw;
+        const stripped = raw.replace(/[,  ]/g, '');
+        if (!Number.isNaN(Number(stripped))) {
+          errors.push(
+            `${col.name} "${shown}" must be a plain number — remove the thousands separators ` +
+              `(format the column as Number before export)`,
+          );
+        } else if (!Number.isNaN(Number(stripped.replace(/^[₦$#N]/i, '')))) {
+          errors.push(`${col.name} "${shown}" must be a plain number — remove the currency sign`);
+        } else if (/^\(.+\)$/.test(stripped) && !Number.isNaN(Number(stripped.slice(1, -1)))) {
+          errors.push(
+            `${col.name} "${shown}" must be a plain number — use a minus sign for negatives, not parentheses`,
+          );
+        } else {
+          errors.push(`${col.name} "${shown}" must be a number`);
+        }
         continue;
       }
       if (col.type === 'integer' && !Number.isInteger(n)) {

@@ -260,9 +260,28 @@ describe('validateRow — format checks', () => {
   });
 
   it('rejects non-numeric amounts and enforces min', () => {
-    expect(validateRow(validRow({ totalInflow: 'lots' }), BANK).errors).toContain('totalInflow must be a number');
+    expect(validateRow(validRow({ totalInflow: 'lots' }), BANK).errors).toContain('totalInflow "lots" must be a number');
     expect(validateRow(validRow({ totalInflow: '-5' }), BANK).errors).toContain('totalInflow must be at least 0');
     expect(validateRow(validRow({ totalOutflow: '-5' }), BANK).errors).toContain('totalOutflow must be at least 0');
+  });
+
+  it('names the exact fault on formatted amounts, echoing the value (no silent coercion)', () => {
+    const comma = validateRow(validRow({ totalInflow: '2,500,000.00' }), BANK);
+    expect(comma.ok).toBe(false);
+    expect(comma.errors.join(' ')).toContain('"2,500,000.00" must be a plain number');
+    expect(comma.errors.join(' ')).toContain('thousands separators');
+
+    const naira = validateRow(validRow({ totalInflow: 'N250000' }), BANK);
+    expect(naira.ok).toBe(false);
+    expect(naira.errors.join(' ')).toContain('remove the currency sign');
+
+    const parens = validateRow(validRow({ totalOutflow: '(5000)' }), BANK);
+    expect(parens.ok).toBe(false);
+    expect(parens.errors.join(' ')).toContain('minus sign for negatives');
+
+    // A long garbage value is truncated in the echo, never dumped whole.
+    const long = validateRow(validRow({ totalInflow: 'x'.repeat(80) }), BANK);
+    expect(long.errors.some((e) => e.length < 120 && e.includes('must be a number'))).toBe(true);
   });
 });
 
