@@ -155,6 +155,8 @@ export default function ExamPage() {
 
   // ── exam ───────────────────────────────────────────────────────────────────
   const low = remaining <= 60_000;
+  // Rendered rather than hardcoded so the copy stays true if EXAM_DURATION_MS moves.
+  const totalMin = Math.max(1, Math.round((state?.durationMs ?? 0) / 60_000));
   return (
     <div className="min-h-screen bg-[var(--canvas)] pb-28">
       {/* sticky countdown header */}
@@ -162,7 +164,9 @@ export default function ExamPage() {
         <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
           <div>
             <div className="text-sm font-semibold text-[var(--ink)]">FinData Aptitude Test</div>
-            <div className="text-[11px] text-[var(--ink-3)]">Answer all sections before time runs out.</div>
+            <div className="text-[11px] text-[var(--ink-3)]">
+              {totalMin} minutes · answers save as you go · submits automatically at zero
+            </div>
           </div>
           <div
             className={`rounded-lg px-3 py-1.5 font-mono text-lg font-bold tabular-nums ${
@@ -176,6 +180,40 @@ export default function ExamPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4">
+        {/* Briefing. The old line ("Answer all sections before time runs out") told
+            candidates to hurry without answering what they actually worry about:
+            whether work is being saved, what happens at zero, and where the marks
+            are. Part 1 is scored on completion alone, so a candidate who rushes
+            past it to reach the questions throws away up to half the total for
+            nothing - that is the point worth making loudest. */}
+        <section className="mt-6 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+          <h2 className="text-sm font-semibold text-[var(--ink)]">Before you start</h2>
+          <ul className="mt-2 space-y-1.5 text-xs text-[var(--ink-3)]">
+            <li>
+              <span className="font-medium text-[var(--ink)]">Time.</span> {totalMin} minutes in total, timed
+              by the server. The clock keeps running if you close the tab, and it cannot be paused or restarted.
+            </li>
+            <li>
+              <span className="font-medium text-[var(--ink)]">Your work is saved as you go.</span> Every field
+              and every answer is stored the moment you complete it, so reloading the page will not lose anything.
+            </li>
+            <li>
+              <span className="font-medium text-[var(--ink)]">At zero the test submits itself</span> with whatever
+              you have entered. Nothing you have already answered is discarded.
+            </li>
+            <li>
+              <span className="font-medium text-[var(--ink)]">Both parts are worth 50%.</span> Part 1 is marked on
+              completion alone - every field filled in the right format earns its share, so a complete form scores
+              the full 50 without a single question answered. Part 2 is {state?.questions.length ?? 0}{' '}
+              multiple-choice questions.
+            </li>
+            <li>
+              <span className="font-medium text-[var(--ink)]">Suggested approach.</span> Complete Part 1 first -
+              it is quick and guaranteed - then spend what is left on the questions.
+            </li>
+          </ul>
+        </section>
+
         {/* Part 1 */}
         <section className="mt-6">
           <div className="flex items-baseline gap-2">
