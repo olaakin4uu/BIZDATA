@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/Button';
 import { Input, Select } from '@/components/Field';
+import { Modal } from '@/components/Modal';
 import { candidateApi, candToken, mmss, TOPIC_LABEL, type ExamState } from '../lib';
 
 export default function ExamPage() {
@@ -13,6 +14,7 @@ export default function ExamPage() {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [remaining, setRemaining] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   const deadlineRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -157,6 +159,19 @@ export default function ExamPage() {
   const low = remaining <= 60_000;
   // Rendered rather than hardcoded so the copy stays true if EXAM_DURATION_MS moves.
   const totalMin = Math.max(1, Math.round((state?.durationMs ?? 0) / 60_000));
+
+  // What is still outstanding, for the pre-submit check.
+  // NOTE: this can only detect an EMPTY field, never a badly formatted one. The
+  // validators live in PART1_FIELDS on the server and publicPart1Fields() strips
+  // them deliberately, so the dialog says "not filled in" and never claims a form
+  // is correct - promising that and then scoring it lower would be worse than
+  // saying nothing.
+  const p1Fields = state?.part1Fields ?? [];
+  const emptyCount = p1Fields.filter((f) => !(part1[f.key] ?? '').trim()).length;
+  const unanswered = Math.max(0, (state?.questions.length ?? 0) - Object.keys(answers).length);
+  const nothingOutstanding = emptyCount === 0 && unanswered === 0;
+  // Part 1 is completion-scored and worth 50, so empty fields have a knowable price.
+  const marksAtRisk = p1Fields.length ? Math.round((emptyCount / p1Fields.length) * 50) : 0;
   return (
     <div className="min-h-screen bg-[var(--canvas)] pb-28">
       {/* sticky countdown header */}
@@ -308,11 +323,84 @@ export default function ExamPage() {
           <span className="text-xs text-[var(--ink-3)]">
             {Object.keys(answers).length}/{state?.questions.length} answered
           </span>
-          <Button size="lg" loading={submitting} onClick={doSubmit}>
+          <Button size="lg" loading={submitting} onClick={() => setConfirmOpen(true)}>
             Submit test
           </Button>
         </div>
       </div>
+
+      {/* Pre-submit check. Deliberately gates ONLY the button: the countdown calls
+          doSubmit() directly, so expiry still submits silently. Putting the dialog
+          in front of doSubmit() itself would leave the automatic submission waiting
+          on a click nobody is there to make, turning a safe auto-submit into a lost
+          paper. It confirms rather than blocks - finishing early is a legitimate
+          choice on a five-minute sitting. */}
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title={nothingOutstanding ? 'Submit your test?' : 'You have not finished'}
+        size="sm"
+        footer={
+          <div className="flex justify-end gap-2">
+            <Button
+              variant={nothingOutstanding ? 'secondary' : 'primary'}
+              onClick={() => setConfirmOpen(false)}
+            >
+              {nothingOutstanding ? 'Keep checking' : 'Go back'}
+            </Button>
+            <Button
+              variant={nothingOutstanding ? 'primary' : 'secondary'}
+              loading={submitting}
+              onClick={() => {
+                setConfirmOpen(false);
+                doSubmit();
+              }}
+            >
+              {nothingOutstanding ? 'Submit now' : 'Submit anyway'}
+            </Button>
+          </div>
+        }
+      >
+        {nothingOutstanding ? (
+          <p className="text-sm text-[var(--ink-2)]">
+            You have completed every field and answered every question. There is still{' '}
+            <span className="font-semibold text-[var(--ink)]">{mmss(remaining)}</span> on the clock — you can
+            keep checking your work, or submit now. Submitting is final.
+          </p>
+        ) : (
+          <div className="space-y-3 text-sm text-[var(--ink-2)]">
+            <ul className="space-y-1">
+              {emptyCount > 0 && (
+                <li>
+                  <span className="font-semibold text-[var(--ink)]">
+                    {emptyCount} of {p1Fields.length} personal details
+                  </span>{' '}
+                  are not filled in.
+                </li>
+              )}
+              {unanswered > 0 && (
+                <li>
+                  <span className="font-semibold text-[var(--ink)]">
+                    {unanswered} of {state?.questions.length} questions
+                  </span>{' '}
+                  are unanswered.
+                </li>
+              )}
+            </ul>
+            {emptyCount > 0 && (
+              <p>
+                Part 1 is marked on completion, so those fields are worth about{' '}
+                <span className="font-semibold text-[var(--ink)]">{marksAtRisk} of its 50 points</span> — usually
+                a few seconds each.
+              </p>
+            )}
+            <p>
+              You still have <span className="font-semibold text-[var(--ink)]">{mmss(remaining)}</span> left.
+              Submitting now is final and cannot be undone.
+            </p>
+          </div>
+        )}
+      </Modal>
     </div>
   );
 }
