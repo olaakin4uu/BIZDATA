@@ -15,6 +15,14 @@ export default function ExamPage() {
   const [remaining, setRemaining] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Two steps rather than one long scroll, and deliberately NOT one question per
+  // page. The sitting is five minutes for seven fields and ten questions - about
+  // thirty seconds a question - so nine extra page transitions would spend the
+  // scarcest thing in the test. Paging also hides what is coming: a candidate
+  // could run out of time on question four having never seen five to ten, which
+  // turns a time-management problem into an invisible one. Splitting the two
+  // PARTS costs one transition and matches how the paper is actually scored.
+  const [step, setStep] = useState<'details' | 'questions'>('details');
 
   const deadlineRef = useRef(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -123,6 +131,14 @@ export default function ExamPage() {
     candidateApi.saveAnswer(qid, idx).catch(onError);
   };
 
+  const goToQuestions = () => {
+    // Flush the last field first: saveField only fires on blur, and clicking
+    // Continue does not always blur the control that still has focus.
+    saveField();
+    setStep('questions');
+    window.scrollTo({ top: 0 });
+  };
+
   const finish = () => {
     candToken.clear();
     router.replace('/assessment');
@@ -195,6 +211,8 @@ export default function ExamPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-4">
+        {step === 'details' && (
+          <>
         {/* Briefing. The old line ("Answer all sections before time runs out") told
             candidates to hurry without answering what they actually worry about:
             whether work is being saved, what happens at zero, and where the marks
@@ -266,17 +284,45 @@ export default function ExamPage() {
             )}
           </div>
         </section>
+          </>
+        )}
 
-        {/* Part 2 */}
+        {step === 'questions' && (
         <section className="mt-8">
           <div className="flex items-baseline gap-2">
             <h2 className="text-base font-semibold text-[var(--ink)]">Part 2 — Questions</h2>
             <span className="text-xs text-[var(--ink-3)]">Worth 50% · {state?.questions.length} questions</span>
           </div>
           <p className="text-xs text-[var(--ink-3)] mt-0.5 mb-3">Choose the best answer for each.</p>
+          {/* Jump-to strip. This is what makes paging unnecessary: it gives the
+              navigation a paged layout would provide while keeping the thing a
+              paged layout takes away - seeing at a glance which questions are
+              still outstanding, so the easy ones can be banked first. */}
+          <div className="sticky top-[57px] z-10 -mx-4 mb-3 border-y border-[var(--line)] bg-[var(--surface)]/95 px-4 py-2 backdrop-blur">
+            <div className="flex flex-wrap gap-1.5">
+              {state?.questions.map((q, i) => {
+                const done = answers[q.questionId] != null;
+                return (
+                  <button
+                    key={q.questionId}
+                    type="button"
+                    onClick={() => document.getElementById(`q-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                    aria-label={`Go to question ${i + 1}${done ? ', answered' : ', not answered'}`}
+                    className={`h-7 w-7 rounded-full text-xs font-semibold transition-colors ${
+                      done
+                        ? 'bg-teal-600 text-white'
+                        : 'border border-[var(--line)] bg-[var(--surface)] text-[var(--ink-3)] hover:bg-[var(--surface-2)]'
+                    }`}
+                  >
+                    {i + 1}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
           <div className="space-y-4">
             {state?.questions.map((q, i) => (
-              <div key={q.questionId} className="rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
+              <div key={q.questionId} id={`q-${i}`} className="scroll-mt-32 rounded-xl border border-[var(--line)] bg-[var(--surface)] p-4">
                 <div className="flex items-center gap-2 mb-2">
                   <span className="inline-flex h-6 w-6 items-center justify-center rounded-full bg-teal-600 text-xs font-bold text-white">
                     {i + 1}
@@ -315,17 +361,40 @@ export default function ExamPage() {
             ))}
           </div>
         </section>
+        )}
       </main>
 
       {/* submit bar */}
       <div className="fixed bottom-0 inset-x-0 border-t border-[var(--line)] bg-[var(--surface)]/95 backdrop-blur">
-        <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between">
-          <span className="text-xs text-[var(--ink-3)]">
-            {Object.keys(answers).length}/{state?.questions.length} answered
-          </span>
-          <Button size="lg" loading={submitting} onClick={() => setConfirmOpen(true)}>
-            Submit test
-          </Button>
+        <div className="mx-auto max-w-3xl px-4 py-3 flex items-center justify-between gap-3">
+          {step === 'details' ? (
+            <>
+              <span className="text-xs text-[var(--ink-3)]">
+                {p1Fields.length - emptyCount}/{p1Fields.length} details completed
+              </span>
+              <Button size="lg" onClick={goToQuestions}>
+                Continue to questions
+              </Button>
+            </>
+          ) : (
+            <>
+              {/* Going back must stay possible: Part 1 is half the marks, and a
+                  candidate who spots a blank field should not have to abandon it. */}
+              <button
+                type="button"
+                onClick={() => { setStep('details'); window.scrollTo({ top: 0 }); }}
+                className="text-xs font-medium text-[var(--ink-3)] underline underline-offset-2 hover:text-[var(--ink)]"
+              >
+                Back to details{emptyCount > 0 ? ` (${emptyCount} blank)` : ''}
+              </button>
+              <span className="text-xs text-[var(--ink-3)]">
+                {Object.keys(answers).length}/{state?.questions.length} answered
+              </span>
+              <Button size="lg" loading={submitting} onClick={() => setConfirmOpen(true)}>
+                Submit test
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
