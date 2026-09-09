@@ -8,6 +8,8 @@ import {
   normalizePeriodLabel,
   parseCsvText,
   explainHeaderProblem,
+  detectSpreadsheetKind,
+  spreadsheetConversionAdvice,
   DEFAULT_SCHEMAS,
   PROVIDER_TYPES,
   CUSTOMER_TYPES,
@@ -470,5 +472,51 @@ describe('explainHeaderProblem — say what is actually wrong with the header', 
     const msg = explainHeaderProblem({ headers, missing: ['totalOutflow'], schema, providerTypeLabel: 'BANK' });
     expect(msg).toMatch(/missing a required column: totalOutflow/);
     expect(msg).not.toMatch(/nin/); // don't dump the whole list at them
+  });
+});
+
+describe('detectSpreadsheetKind — a rename does not change the bytes', () => {
+  const zip = (extra = '') => Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from(extra.padEnd(60, ' '))]);
+
+  it('spots an OpenDocument spreadsheet, whatever it is called', () => {
+    // .ods stores an uncompressed `mimetype` member first — that is the tell.
+    expect(detectSpreadsheetKind(zip('mimetypeapplication/vnd.oasis.opendocument.spreadsheet'))).toBe('ods');
+  });
+
+  it('spots an Excel .xlsx', () => {
+    expect(detectSpreadsheetKind(zip('[Content_Types].xml'))).toBe('xlsx');
+    expect(detectSpreadsheetKind(zip('xl/workbook.xml'))).toBe('xlsx');
+  });
+
+  it('spots a legacy .xls (OLE compound file)', () => {
+    expect(detectSpreadsheetKind(Buffer.from([0xd0, 0xcf, 0x11, 0xe0, 0, 0, 0, 0]))).toBe('xls');
+  });
+
+  it('calls an unrecognised archive a zip, not a spreadsheet', () => {
+    expect(detectSpreadsheetKind(zip('something/else.txt'))).toBe('zip');
+  });
+
+  it('passes real CSV text through untouched', () => {
+    expect(detectSpreadsheetKind(Buffer.from('nin,accountNumber,bvn\n123,456,789\n'))).toBeNull();
+    expect(detectSpreadsheetKind(Buffer.from('short'))).toBeNull();
+  });
+});
+
+describe('spreadsheetConversionAdvice — the right menu for the right program', () => {
+  it('sends an .ods user to LibreOffice, not Excel', () => {
+    const msg = spreadsheetConversionAdvice('ods');
+    expect(msg).toMatch(/LibreOffice/);
+    expect(msg).toMatch(/Text CSV/);
+    // "CSV (Comma delimited)" is Excel's wording and does not exist in LibreOffice.
+    expect(msg).not.toMatch(/Comma delimited/);
+  });
+
+  it('sends an Excel user to Excel', () => {
+    expect(spreadsheetConversionAdvice('xlsx')).toMatch(/CSV \(Comma delimited\)/);
+    expect(spreadsheetConversionAdvice('xls')).toMatch(/Excel/);
+  });
+
+  it('tells a zip uploader to send the file itself', () => {
+    expect(spreadsheetConversionAdvice('zip')).toMatch(/not a zipped copy/);
   });
 });

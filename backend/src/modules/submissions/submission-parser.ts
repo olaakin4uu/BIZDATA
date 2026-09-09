@@ -537,6 +537,53 @@ function headerKey(h: string): string {
  * did read so the provider can see what we saw, and suggest renames for columns
  * that are present under a different spelling.
  */
+/**
+ * What was actually uploaded, by CONTENT not by file name.
+ *
+ * .xlsx and .ods are both ZIP archives and .xls is an OLE compound file, so a
+ * rename to .csv changes nothing about the bytes — the parser then reads
+ * binary as a header row. Sniffing the magic bytes is the only reliable test,
+ * and telling the provider which program to convert from matters: "Save As
+ * CSV" is under a different menu item in LibreOffice than in Excel.
+ */
+export function detectSpreadsheetKind(buf: Buffer): 'xlsx' | 'ods' | 'xls' | 'zip' | null {
+  if (buf.length < 8) return null;
+  const isZip = buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07);
+  if (isZip) {
+    // Both formats name themselves in the first entry of the archive: ODS
+    // stores an uncompressed `mimetype` member first, xlsx names its content
+    // types part. Read a small window rather than unzipping anything.
+    const head = buf.subarray(0, 400).toString('latin1');
+    if (head.includes('opendocument.spreadsheet')) return 'ods';
+    if (head.includes('[Content_Types].xml') || head.includes('xl/')) return 'xlsx';
+    return 'zip';
+  }
+  const isOle = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+  return isOle ? 'xls' : null;
+}
+
+/** How to get a CSV out of whatever they actually uploaded. */
+export function spreadsheetConversionAdvice(kind: 'xlsx' | 'ods' | 'xls' | 'zip'): string {
+  switch (kind) {
+    case 'ods':
+      return (
+        'This file is an OpenDocument spreadsheet (.ods), not a CSV. In LibreOffice or OpenOffice choose ' +
+        'File → Save As, set "File type" to Text CSV (.csv), tick "Edit filter settings" and confirm the ' +
+        'field delimiter is a comma, then upload the .csv file.'
+      );
+    case 'xls':
+    case 'xlsx':
+      return (
+        'This file is an Excel workbook, not a CSV. In Excel choose File → Save As and set the type to ' +
+        'CSV (Comma delimited) (*.csv), then upload the .csv file.'
+      );
+    default:
+      return (
+        'This file is a compressed archive, not a CSV. Upload the .csv file itself, not a zipped copy.'
+      );
+  }
+}
+
 export function explainHeaderProblem(opts: {
   headers: string[];
   missing: string[];

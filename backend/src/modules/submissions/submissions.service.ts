@@ -10,6 +10,8 @@ import {
   validateRow,
   missingRequiredColumns,
   explainHeaderProblem,
+  detectSpreadsheetKind,
+  spreadsheetConversionAdvice,
   parsePeriod,
   periodHasEnded,
   dateInPeriod,
@@ -32,19 +34,6 @@ export class SubmissionsService {
     private crypto: CryptoService,
     private pii: PiiAccessService,
   ) {}
-
-  /**
-   * Is this an Excel workbook rather than text? .xlsx is a ZIP ("PK"),
-   * legacy .xls is an OLE compound file. Renaming either to .csv leaves the
-   * bytes unchanged, so extension checks miss it — and the parser then reads
-   * binary noise as a header and reports every column missing.
-   */
-  private looksLikeWorkbook(buf: Buffer): boolean {
-    if (buf.length < 8) return false;
-    const zip = buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07);
-    const ole = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
-    return zip || ole;
-  }
 
   /**
    * Where the real header row is, when it is not the first line.
@@ -175,7 +164,7 @@ export class SubmissionsService {
     const receiptHash = await this.issueReceipt(submission);
 
     try {
-      const result = await this.processFile(submission.id, opts.fileBuffer, provider.providerType, provider.id, provider.providerCode, opts.periodLabel);
+      const result = await this.processFile(submission.id, opts.fileBuffer, provider.providerType, provider.id, provider.providerCode, opts.periodLabel, opts.fileName);
       await this.audit.log({
         actorType: opts.submittedByStaffId ? 'STAFF' : 'PROVIDER_USER',
         actorId: opts.submittedByStaffId || opts.submittedByUserId,
@@ -430,16 +419,29 @@ export class SubmissionsService {
     return { uploadId, status: 'ABORTED' };
   }
 
-  private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string, submissionPeriodLabel?: string) {
+  private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string, submissionPeriodLabel?: string, fileName?: string) {
     // Check the file TYPE before anything else. An .xlsx renamed to .csv parses
     // as binary noise, which trips whichever guard happens to run first — and
     // "No data rows found" sends the provider looking for missing rows in a
     // spreadsheet that is full of them.
-    if (this.looksLikeWorkbook(buffer)) {
+    // Submissions are CSV only. Checked by NAME as well as by content: a
+    // spreadsheet saved straight to .ods/.xlsx is the common mistake, and
+    // refusing it by extension gives the clearer message before we ever try to
+    // read the bytes as text.
+    const ext = (fileName ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+    if (ext && ext !== 'csv' && ext !== 'txt') {
       throw new BadRequestException(
-        'This file is an Excel workbook, not a CSV. Open it in Excel and choose ' +
-        'File → Save As → CSV (Comma delimited), then upload the .csv file. ' +
-        'Renaming an .xlsx to .csv does not convert it — it must actually be saved as CSV.',
+        `Returns must be uploaded as a CSV file. This one is a .${ext} file. ` +
+        `Open it in your spreadsheet program, choose File → Save As, set the type to CSV ` +
+        `("CSV (Comma delimited)" in Excel, "Text CSV" in LibreOffice), then upload the .csv file.`,
+      );
+    }
+
+    const kind = detectSpreadsheetKind(buffer);
+    if (kind) {
+      throw new BadRequestException(
+        `${spreadsheetConversionAdvice(kind)} Renaming the file to .csv does not convert it — 
+         it has to be saved as CSV.`.replace(/\s+/g, ' '),
       );
     }
 
@@ -465,7 +467,6 @@ export class SubmissionsService {
           headers,
           missing,
           schema,
-          looksBinary: this.looksLikeWorkbook(buffer),
           headerFoundOnLine: this.findHeaderLine(csvText, schema),
           providerTypeLabel: providerType.replace(/_/g, ' '),
         }),
