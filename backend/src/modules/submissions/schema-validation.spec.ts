@@ -6,6 +6,7 @@ import {
   periodHasEnded,
   dateInPeriod,
   normalizePeriodLabel,
+  parseCsvText,
   DEFAULT_SCHEMAS,
   PROVIDER_TYPES,
   CUSTOMER_TYPES,
@@ -182,7 +183,10 @@ describe('validateRow — required fields (compulsory columns)', () => {
     (field) => {
       const { ok, errors } = validateRow(validRow({ [field]: '' }), BANK);
       expect(ok).toBe(false);
-      expect(errors).toContain(`${field} is required`);
+      // Messages are read by a bank's compliance officer: name the column the
+      // way their header spells it, and say what to put there.
+      expect(errors.some((e) => /is empty/.test(e))).toBe(true);
+      expect(errors.join(' ')).not.toMatch(new RegExp(`${field} is required`));
     },
   );
 
@@ -197,7 +201,7 @@ describe('validateRow — required fields (compulsory columns)', () => {
   it('treats whitespace-only as missing', () => {
     const { ok, errors } = validateRow(validRow({ nin: '   ' }), BANK);
     expect(ok).toBe(false);
-    expect(errors).toContain('nin is required');
+    expect(errors.some((e) => e.startsWith('NIN is empty'))).toBe(true);
   });
 
   it('ignores extra columns a provider still sends from an older, wider export', () => {
@@ -215,7 +219,7 @@ describe('validateRow — no grace period on any column', () => {
     for (const ctx of [{ now: new Date('2026-08-01') }, { now: new Date('2027-06-01') }]) {
       const { ok, errors, warnings } = validateRow(validRow({ customerType: '' }), BANK, ctx);
       expect(ok).toBe(false);
-      expect(errors).toContain('customerType is required');
+      expect(errors.some((e) => e.startsWith('Customer type is empty'))).toBe(true);
       expect(warnings).toEqual([]); // never a soft warning
     }
   });
@@ -235,13 +239,14 @@ describe('validateRow — no grace period on any column', () => {
 
 describe('validateRow — format checks', () => {
   it('rejects a NIN that is not exactly 11 digits', () => {
-    expect(validateRow(validRow({ nin: '123' }), BANK).errors).toContain('nin must be exactly 11 digits');
-    expect(validateRow(validRow({ nin: 'abcdefghijk' }), BANK).errors).toContain('nin must be exactly 11 digits');
-    expect(validateRow(validRow({ nin: '123456789012' }), BANK).errors).toContain('nin must be exactly 11 digits');
+    // Say WHAT is wrong with the value, not merely restate the rule.
+    expect(validateRow(validRow({ nin: '123' }), BANK).errors.join(' ')).toMatch(/NIN is 3 digits, not 11/);
+    expect(validateRow(validRow({ nin: 'abcdefghijk' }), BANK).errors.join(' ')).toMatch(/other than digits/);
+    expect(validateRow(validRow({ nin: '123456789012' }), BANK).errors.join(' ')).toMatch(/12 digits, not 11/);
   });
 
   it('rejects a BVN that is not exactly 11 digits', () => {
-    expect(validateRow(validRow({ bvn: '2221234567' }), BANK).errors).toContain('bvn must be exactly 11 digits');
+    expect(validateRow(validRow({ bvn: '2221234567' }), BANK).errors.join(' ')).toMatch(/BVN is 10 digits, not 11/);
   });
 
   it('accepts every CAC class, case-insensitively', () => {
@@ -254,15 +259,18 @@ describe('validateRow — format checks', () => {
   it('rejects a customerType outside the CAC classes', () => {
     const { ok, errors } = validateRow(validRow({ customerType: 'CORPORATE' }), BANK);
     expect(ok).toBe(false); // the old catch-all value is no longer a valid class
-    expect(errors).toContain(
-      'customerType must be one of: INDIVIDUAL, BUSINESS_NAME, PRIVATE_LIMITED, PUBLIC_LIMITED, LIMITED_BY_GUARANTEE, INCORPORATED_TRUSTEES',
-    );
+    expect(errors.join(' ')).toMatch(/Customer type "CORPORATE" is not one we recognise/);
   });
 
   it('rejects non-numeric amounts and enforces min', () => {
-    expect(validateRow(validRow({ totalInflow: 'lots' }), BANK).errors).toContain('totalInflow "lots" must be a number');
-    expect(validateRow(validRow({ totalInflow: '-5' }), BANK).errors).toContain('totalInflow must be at least 0');
-    expect(validateRow(validRow({ totalOutflow: '-5' }), BANK).errors).toContain('totalOutflow must be at least 0');
+    expect(validateRow(validRow({ totalInflow: 'lots' }), BANK).errors.join(' '))
+      .toMatch(/Total inflow "lots" is not a number/);
+    // A negative amount gets the FIX, not just the rule: money out belongs in
+    // the outflow column, which is the mistake this actually catches.
+    expect(validateRow(validRow({ totalInflow: '-5' }), BANK).errors.join(' '))
+      .toMatch(/cannot be negative.*Total outflow/);
+    expect(validateRow(validRow({ totalOutflow: '-5' }), BANK).errors.join(' '))
+      .toMatch(/Total outflow is -5 — it cannot be negative/);
   });
 
   it('names the exact fault on formatted amounts, echoing the value (no silent coercion)', () => {
@@ -281,7 +289,7 @@ describe('validateRow — format checks', () => {
 
     // A long garbage value is truncated in the echo, never dumped whole.
     const long = validateRow(validRow({ totalInflow: 'x'.repeat(80) }), BANK);
-    expect(long.errors.some((e) => e.length < 120 && e.includes('must be a number'))).toBe(true);
+    expect(long.errors.some((e) => e.length < 140 && e.includes('is not a number'))).toBe(true);
   });
 });
 
@@ -367,5 +375,48 @@ describe('validateRow — identifier damaged in export', () => {
   // A bank may legitimately report something that is not a NUBAN at all.
   it('does not warn a bank about a non-numeric account identifier', () => {
     expect(validateRow(validRow({ accountNumber: 'DOM-00123456' }), BANK).warnings).toEqual([]);
+  });
+});
+
+describe('parseCsvText — row numbers point at the uploaded file', () => {
+  // The downloaded template ships a '#' guidance block and invites the provider
+  // to leave it in. Numbering only the surviving lines therefore reported every
+  // error out by the size of that block — silently, and in the one direction
+  // guaranteed to waste the provider's time.
+  const withGuidance = [
+    '# FinData return template — BANK provider',      // line 1
+    '# For: ACCESS BANK LTD',                          // line 2
+    '#',                                               // line 3
+    '# Columns (8 total, 7 required now):',            // line 4
+    '',                                                // line 5 (blank)
+    'nin,accountNumber,accountName,bvn,customerType,totalInflow,totalOutflow', // line 6 = header
+    '12345678901,0123456788,A ONE,22212345678,INDIVIDUAL,100,50',              // line 7
+    '',                                                // line 8 (blank)
+    '12345678901,0123456789,A TWO,22212345678,INDIVIDUAL,200,60',              // line 9
+    ',,,,,,',                                          // line 10 (all-empty artefact)
+    '12345678901,0123456790,A THREE,22212345678,INDIVIDUAL,300,70',            // line 11
+  ].join('\n');
+
+  it('reports the TRUE line number, not the index among surviving rows', () => {
+    const { rows, lineNumbers } = parseCsvText(withGuidance);
+    expect(rows).toHaveLength(3);
+    // Naive numbering would have said 2, 3, 4 — sending the provider 5+ lines wrong.
+    expect(lineNumbers).toEqual([7, 9, 11]);
+  });
+
+  it('still parses the data correctly around the skipped lines', () => {
+    const { headers, rows } = parseCsvText(withGuidance);
+    expect(headers[0]).toBe('nin');
+    expect(rows.map((r) => r.accountName)).toEqual(['A ONE', 'A TWO', 'A THREE']);
+  });
+
+  it('is 1-based against the raw file, so line 1 is the first line', () => {
+    const plain = 'nin,accountName\n12345678901,ONLY ROW';
+    const { lineNumbers } = parseCsvText(plain);
+    expect(lineNumbers).toEqual([2]); // header is line 1
+  });
+
+  it('returns an empty result, not a crash, for a file with no data rows', () => {
+    expect(parseCsvText('# only comments\n\n')).toEqual({ headers: [], rows: [], lineNumbers: [] });
   });
 });

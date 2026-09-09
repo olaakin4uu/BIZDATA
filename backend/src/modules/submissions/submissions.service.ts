@@ -387,7 +387,7 @@ export class SubmissionsService {
 
   private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string, submissionPeriodLabel?: string) {
     const csvText = buffer.toString('utf8');
-    const { headers, rows } = parseCsvText(csvText);
+    const { headers, rows, lineNumbers } = parseCsvText(csvText);
     if (rows.length === 0) {
       throw new BadRequestException('No data rows found in the file. Add at least one record beneath the header row.');
     }
@@ -404,7 +404,7 @@ export class SubmissionsService {
       );
     }
 
-    return this.processRows(submissionId, rows, providerType, providerId, providerCode, 2, submissionPeriodLabel);
+    return this.processRows(submissionId, rows, providerType, providerId, providerCode, 2, submissionPeriodLabel, lineNumbers);
   }
 
   /** Resolve the active schema for a provider type: stored override else default. */
@@ -446,7 +446,15 @@ export class SubmissionsService {
     providerCode?: string,
     rowOffset = 1,
     submissionPeriodLabel?: string,
+    /**
+     * True 1-based line numbers in the uploaded file, index-aligned with `rows`.
+     * Errors quote these so a provider can open their file and land on the right
+     * line. Absent for the JSON ingest path, which has no file to point at — it
+     * falls back to the row's ordinal.
+     */
+    lineNumbers?: number[],
   ) {
+    const lineOf = (i: number) => lineNumbers?.[i] ?? i + rowOffset;
     const rows = rawRows;
     const schema = await this.resolveSchema(providerType);
     const enforceBvnCheckDigit = process.env.BVN_CHECKDIGIT_ENFORCED === 'true';
@@ -466,7 +474,7 @@ export class SubmissionsService {
     {
       const preErrors: { row: number; messages: string[] }[] = [];
       const preWarnings: { row: number; messages: string[] }[] = [];
-      const seenInFile = new Set<string>();
+      const seenInFile = new Map<string, number>();
       for (let i = 0; i < rows.length; i++) {
         const row = rows[i];
         if (!row.periodLabel && row.periodQuarter) row.periodLabel = row.periodQuarter;
@@ -480,19 +488,19 @@ export class SubmissionsService {
         if ((row.transactionCount == null || row.transactionCount === '') && row.totalCreditTransactions != null) {
           row.transactionCount = row.totalCreditTransactions;
         }
-        const rn = i + rowOffset;
+        const rn = lineOf(i);
         const msgs: string[] = [];
 
         const { errors: errs, warnings: warns } = validateRow(row, schema, validationCtx);
         msgs.push(...errs);
-        if (!parsePeriod(row.periodLabel)) msgs.push('Invalid periodLabel');
+        if (!parsePeriod(row.periodLabel)) msgs.push(`Period "${row.periodLabel ?? ''}" is not one we can read — use 2026-Q1, 2026-03 or 2026`);
         // The transaction date must fall inside the period being reported — a
         // provider cannot file (say) 2026-Q2 with rows dated in a different or
         // future quarter. transactionDate is already required + parsed above.
         if (row.transactionDate) {
           const inPeriod = dateInPeriod(row.transactionDate, row.periodLabel);
           if (inPeriod === false) {
-            msgs.push(`transactionDate ${row.transactionDate} is outside the reporting period ${row.periodLabel}`);
+            msgs.push(`Transaction date ${row.transactionDate} falls outside ${row.periodLabel} — a return may only contain rows from the period being filed`);
           }
         }
         const integrity = validateIngestionRow(row as any, providerType, row.bankCode || providerCode);
@@ -502,11 +510,20 @@ export class SubmissionsService {
         msgs.push(...integrity);
 
         // In-file duplicate (period + account) — collision within THIS file.
+        // Name the line it collides with: "appears more than once" leaves the
+        // provider to search 170 rows for the twin, which is the whole job.
         const idx = this.crypto.blindIndex(row.accountNumber || null);
         if (idx) {
           const key = `${row.periodLabel}::${idx}`;
-          if (seenInFile.has(key)) msgs.push('Duplicate: this account + period appears more than once in the file');
-          else seenInFile.add(key);
+          const firstSeen = seenInFile.get(key);
+          if (firstSeen != null) {
+            msgs.push(
+              `This account is already reported on line ${firstSeen} for ${row.periodLabel} — ` +
+                `each account should appear once per period. Combine the two rows, or remove this one.`,
+            );
+          } else {
+            seenInFile.set(key, rn);
+          }
         }
 
         if (msgs.length && preErrors.length < 100) preErrors.push({ row: rn, messages: msgs });
@@ -566,7 +583,7 @@ export class SubmissionsService {
       if ((row.transactionCount == null || row.transactionCount === '') && row.totalCreditTransactions != null) {
         row.transactionCount = row.totalCreditTransactions;
       }
-      const rn = i + rowOffset;
+      const rn = lineOf(i);
 
       const { ok, errors: errs } = validateRow(row, schema);
       if (!ok) {
@@ -599,7 +616,18 @@ export class SubmissionsService {
         const dupKey = `${row.periodLabel}::${accountIndex}`;
         if (seenKeys.has(dupKey)) {
           rejected++;
-          if (errors.length < 100) errors.push({ row: rn, messages: ['Duplicate: this account + period was already submitted'] });
+          if (errors.length < 100) {
+            errors.push({
+              row: rn,
+              // Distinct from the in-file duplicate above: this account+period is
+              // already stored from an EARLIER submission, so the provider must
+              // know it is not their current file that is wrong.
+              messages: [
+                `This account has already been submitted for ${row.periodLabel} in an earlier return — ` +
+                  `remove the row, or request a resubmission if the earlier figures were wrong.`,
+              ],
+            });
+          }
           continue;
         }
         seenKeys.add(dupKey);
