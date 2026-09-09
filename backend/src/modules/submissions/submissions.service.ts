@@ -9,6 +9,7 @@ import {
   parseCsvText,
   validateRow,
   missingRequiredColumns,
+  explainHeaderProblem,
   parsePeriod,
   periodHasEnded,
   dateInPeriod,
@@ -31,6 +32,50 @@ export class SubmissionsService {
     private crypto: CryptoService,
     private pii: PiiAccessService,
   ) {}
+
+  /**
+   * Is this an Excel workbook rather than text? .xlsx is a ZIP ("PK"),
+   * legacy .xls is an OLE compound file. Renaming either to .csv leaves the
+   * bytes unchanged, so extension checks miss it — and the parser then reads
+   * binary noise as a header and reports every column missing.
+   */
+  private looksLikeWorkbook(buf: Buffer): boolean {
+    if (buf.length < 8) return false;
+    const zip = buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07);
+    const ole = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+    return zip || ole;
+  }
+
+  /**
+   * Where the real header row is, when it is not the first line.
+   *
+   * A bank export routinely carries a title, branch name or date stamp above the
+   * column headings. The parser takes the first non-comment line as the header,
+   * so one decorative line makes every column look missing. Finding the true
+   * header lets us tell the provider exactly which lines to delete instead of
+   * sending them back to the template.
+   *
+   * Returns a 1-based line number in the RAW file, or undefined if the first
+   * usable line already is the header.
+   */
+  private findHeaderLine(csvText: string, schema: SchemaTemplate): number | undefined {
+    const required = schema.columns.filter((c) => c.required).map((c) => c.name.toLowerCase());
+    if (!required.length) return undefined;
+    const lines = csvText.replace(/^\uFEFF/, '').split(/\r?\n/);
+    let firstUsable = -1;
+    for (let i = 0; i < lines.length && i < 200; i++) {
+      const text = lines[i].trim();
+      if (!text || text.startsWith('#')) continue;
+      if (firstUsable < 0) firstUsable = i;
+      const cells = new Set(text.split(',').map((c) => c.trim().replace(/^"|"$/g, '').toLowerCase()));
+      // Most of the required names on one line: that is the header, wherever it sits.
+      const hits = required.filter((r) => cells.has(r)).length;
+      if (hits >= Math.ceil(required.length * 0.6)) {
+        return i === firstUsable ? undefined : i + 1;
+      }
+    }
+    return undefined;
+  }
 
   /** Decrypt the PII columns on a data record for display, masking unless allowed. */
   private decryptRecord<T extends { accountNumber?: string | null; bvn?: string | null; nin?: string | null }>(r: T, allowClear: boolean): T {
@@ -386,10 +431,27 @@ export class SubmissionsService {
   }
 
   private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string, submissionPeriodLabel?: string) {
+    // Check the file TYPE before anything else. An .xlsx renamed to .csv parses
+    // as binary noise, which trips whichever guard happens to run first — and
+    // "No data rows found" sends the provider looking for missing rows in a
+    // spreadsheet that is full of them.
+    if (this.looksLikeWorkbook(buffer)) {
+      throw new BadRequestException(
+        'This file is an Excel workbook, not a CSV. Open it in Excel and choose ' +
+        'File → Save As → CSV (Comma delimited), then upload the .csv file. ' +
+        'Renaming an .xlsx to .csv does not convert it — it must actually be saved as CSV.',
+      );
+    }
+
     const csvText = buffer.toString('utf8');
     const { headers, rows, lineNumbers } = parseCsvText(csvText);
     if (rows.length === 0) {
-      throw new BadRequestException('No data rows found in the file. Add at least one record beneath the header row.');
+      throw new BadRequestException(
+        headers.length
+          ? 'Your file has a header row but no data beneath it. Add at least one record under the header, then upload again.'
+          : 'This file has no readable rows. It should be a CSV whose first line is the template header row, ' +
+            'with one record per line beneath it.',
+      );
     }
 
     // File-level guard: reject a wrong / mismatched file up front (e.g. the wrong
@@ -399,8 +461,14 @@ export class SubmissionsService {
     const missing = missingRequiredColumns(headers, schema);
     if (missing.length) {
       throw new BadRequestException(
-        `Your file is missing required column${missing.length > 1 ? 's' : ''}: ${missing.join(', ')}. ` +
-        `Download the latest ${providerType.replace(/_/g, ' ')} template and use its header row.`,
+        explainHeaderProblem({
+          headers,
+          missing,
+          schema,
+          looksBinary: this.looksLikeWorkbook(buffer),
+          headerFoundOnLine: this.findHeaderLine(csvText, schema),
+          providerTypeLabel: providerType.replace(/_/g, ' '),
+        }),
       );
     }
 

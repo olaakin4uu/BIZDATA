@@ -227,8 +227,12 @@ export function parseCsvText(csvText: string): {
     .split(/\r?\n/)
     .map((line, i) => ({ text: line.trim(), lineNo: i + 1 }))
     .filter((l) => l.text && !l.text.startsWith('#'));
-  if (numbered.length < 2) return { headers: [], rows: [], lineNumbers: [] };
+  if (numbered.length === 0) return { headers: [], rows: [], lineNumbers: [] };
   const headers = splitCsvLine(numbered[0].text).map((h) => h.trim());
+  // A header with nothing under it still RETURNS its headers. Reporting no
+  // headers conflates "this isn't a CSV" with "you forgot the data", and those
+  // need opposite advice.
+  if (numbered.length === 1) return { headers, rows: [], lineNumbers: [] };
   const rows: Record<string, string>[] = [];
   const lineNumbers: number[] = [];
   for (let i = 1; i < numbered.length; i++) {
@@ -515,6 +519,112 @@ export function validateRow(
  * upload reject a wrong/mismatched file up front with a clear message instead of
  * failing every row with confusing per-row errors.
  */
+/** Loose key for comparing headers: case, spaces, underscores and dashes ignored. */
+function headerKey(h: string): string {
+  return h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Explain a header the parser could not use.
+ *
+ * "Your file is missing required columns: nin, accountNumber, …" listing EVERY
+ * column is the least informative thing we can say: when all of them are absent
+ * the columns are almost never the problem — the file is an Excel workbook, or
+ * semicolon-separated, or the header row is not where we looked. Listing them
+ * tells the provider to go and add columns that are, in fact, already there.
+ *
+ * So: name the actual cause where we can identify it, quote the header line we
+ * did read so the provider can see what we saw, and suggest renames for columns
+ * that are present under a different spelling.
+ */
+export function explainHeaderProblem(opts: {
+  headers: string[];
+  missing: string[];
+  schema: SchemaTemplate;
+  /** True when the uploaded bytes are an Excel/OLE workbook rather than text. */
+  looksBinary?: boolean;
+  /** True 1-based line where the real header row appears, if it is further down. */
+  headerFoundOnLine?: number;
+  providerTypeLabel: string;
+}): string {
+  const { headers, missing, schema, looksBinary, headerFoundOnLine, providerTypeLabel } = opts;
+  const required = schema.columns.filter((c) => c.required).map((c) => c.name);
+  const template = `Download the latest ${providerTypeLabel} template and use its header row.`;
+
+  // 1. Not a CSV at all. By far the most common cause of "every column missing".
+  if (looksBinary) {
+    return (
+      'This file is an Excel workbook, not a CSV. Open it in Excel and choose ' +
+      'File → Save As → CSV (Comma delimited), then upload the .csv file. ' +
+      'Uploading an .xlsx renamed to .csv will not work either — it must actually be saved as CSV.'
+    );
+  }
+
+  // 2. The header row is further down — a title, a bank name, a date stamp sits
+  //    above it. Extremely common in bank exports, and the provider cannot guess
+  //    that a decorative first line is what broke the upload.
+  if (headerFoundOnLine && headerFoundOnLine > 1) {
+    const above = headerFoundOnLine - 1;
+    return (
+      `Your column headings are on line ${headerFoundOnLine}, but they must be the first line of the file. ` +
+      `Delete the ${above} line${above > 1 ? 's' : ''} above ${above > 1 ? 'them' : 'it'} — a title, bank name or date ` +
+      `stamp above the headings stops the file being read. (Lines starting with # are ignored, so template guidance may stay.)`
+    );
+  }
+
+  // 3. One column read where several were expected: wrong separator. Excel on a
+  //    machine with a comma decimal mark exports semicolons, which is invisible
+  //    to the person exporting.
+  if (headers.length === 1 && required.length > 1) {
+    const only = headers[0] ?? '';
+    const sep = only.includes(';') ? 'semicolons (;)' : only.includes('\t') ? 'tabs' : only.includes('|') ? 'pipes (|)' : null;
+    if (sep) {
+      return (
+        `Your file separates columns with ${sep}, but a CSV must use commas. ` +
+        `In Excel choose File → Save As → CSV (Comma delimited), or change your regional list separator to a comma, then upload again. ` +
+        `The header we read was: "${only.slice(0, 120)}"`
+      );
+    }
+    return (
+      `We read only one column from the header row: "${only.slice(0, 120)}". ` +
+      `A return needs ${required.length} comma-separated columns. ${template}`
+    );
+  }
+
+  // 4. Columns present under another spelling — name the rename, do not make the
+  //    provider guess which of their headers we meant.
+  const byKey = new Map(headers.map((h) => [headerKey(h), h.trim()]));
+  const renames = missing
+    .map((want) => ({ want, found: byKey.get(headerKey(want)) }))
+    .filter((r) => r.found && r.found !== r.want);
+  if (renames.length) {
+    const list = renames.map((r) => `"${r.found}" → ${r.want}`).join(', ');
+    const stillMissing = missing.filter((m) => !byKey.has(headerKey(m)));
+    return (
+      `Your header row uses different names for ${renames.length === 1 ? 'a required column' : 'some required columns'}. ` +
+      `Rename ${list} — spelling must match exactly, including capitals and with no spaces.` +
+      (stillMissing.length ? ` Also add: ${stillMissing.join(', ')}.` : '')
+    );
+  }
+
+  // 5. Nothing matched at all — quote what we actually read, so the provider can
+  //    see whether we found the header row or something else entirely.
+  if (missing.length === required.length) {
+    const seen = headers.filter(Boolean).slice(0, 8).join(', ');
+    return (
+      `We could not find the template's header row. The first line we read was: ` +
+      `${seen ? `"${seen}"` : '(empty)'}. It must be the column names exactly as the template writes them — ` +
+      `${required.join(', ')} — with any title or notes above it removed (lines starting with # are ignored). ${template}`
+    );
+  }
+
+  // 6. Genuinely absent columns, and only those.
+  return (
+    `Your file is missing ${missing.length === 1 ? 'a required column' : 'required columns'}: ${missing.join(', ')}. ` +
+    `Add ${missing.length === 1 ? 'it' : 'them'} to the header row, spelled exactly as shown. ${template}`
+  );
+}
+
 export function missingRequiredColumns(headers: string[], schema: SchemaTemplate): string[] {
   const present = new Set(headers.map((h) => h.trim().toLowerCase()));
   return schema.columns

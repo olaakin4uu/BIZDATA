@@ -7,6 +7,7 @@ import {
   dateInPeriod,
   normalizePeriodLabel,
   parseCsvText,
+  explainHeaderProblem,
   DEFAULT_SCHEMAS,
   PROVIDER_TYPES,
   CUSTOMER_TYPES,
@@ -418,5 +419,56 @@ describe('parseCsvText — row numbers point at the uploaded file', () => {
 
   it('returns an empty result, not a crash, for a file with no data rows', () => {
     expect(parseCsvText('# only comments\n\n')).toEqual({ headers: [], rows: [], lineNumbers: [] });
+  });
+});
+
+describe('explainHeaderProblem — say what is actually wrong with the header', () => {
+  const schema = DEFAULT_SCHEMAS.BANK;
+  const REQUIRED = schema.columns.filter((c) => c.required).map((c) => c.name);
+  const explain = (o: Partial<Parameters<typeof explainHeaderProblem>[0]>) =>
+    explainHeaderProblem({
+      headers: [], missing: REQUIRED, schema, providerTypeLabel: 'BANK', ...o,
+    });
+
+  it('names an Excel workbook instead of blaming the columns', () => {
+    const msg = explain({ looksBinary: true });
+    expect(msg).toMatch(/Excel workbook, not a CSV/);
+    expect(msg).toMatch(/Save As → CSV/);
+    // Must NOT tell them to add columns that are already in their spreadsheet.
+    expect(msg).not.toMatch(/missing required column/i);
+  });
+
+  it('spots a semicolon-separated export and says how to fix it', () => {
+    const msg = explain({ headers: ['nin;accountNumber;accountName;bvn'] });
+    expect(msg).toMatch(/semicolons/);
+    expect(msg).toMatch(/CSV \(Comma delimited\)/);
+  });
+
+  it('spots a tab-separated export', () => {
+    expect(explain({ headers: ['nin\taccountNumber\tbvn'] })).toMatch(/tabs/);
+  });
+
+  it('tells the provider exactly which header to rename', () => {
+    // The columns ARE there — spelled the way a person would write them.
+    const headers = ['NIN', 'Account Number', 'Account Name', 'BVN', 'Customer Type', 'Total Inflow', 'Total Outflow'];
+    const msg = explainHeaderProblem({
+      headers, missing: ['accountNumber', 'accountName', 'customerType', 'totalInflow', 'totalOutflow'],
+      schema, providerTypeLabel: 'BANK',
+    });
+    expect(msg).toMatch(/"Account Number" → accountNumber/);
+    expect(msg).toMatch(/spelling must match exactly/);
+  });
+
+  it('quotes the line it actually read when nothing matches', () => {
+    const msg = explain({ headers: ['Report of accounts', 'Q1 2026'] });
+    expect(msg).toMatch(/could not find the template's header row/);
+    expect(msg).toMatch(/Report of accounts/);
+  });
+
+  it('lists only the genuinely absent columns when most are present', () => {
+    const headers = ['nin', 'accountNumber', 'accountName', 'bvn', 'customerType', 'totalInflow'];
+    const msg = explainHeaderProblem({ headers, missing: ['totalOutflow'], schema, providerTypeLabel: 'BANK' });
+    expect(msg).toMatch(/missing a required column: totalOutflow/);
+    expect(msg).not.toMatch(/nin/); // don't dump the whole list at them
   });
 });
