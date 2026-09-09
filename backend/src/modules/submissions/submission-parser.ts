@@ -208,28 +208,44 @@ function splitCsvLine(line: string): string[] {
   return out;
 }
 
-export function parseCsvText(csvText: string): { headers: string[]; rows: Record<string, string>[] } {
+export function parseCsvText(csvText: string): {
+  headers: string[];
+  rows: Record<string, string>[];
+  /** 1-based line number IN THE UPLOADED FILE for each row, index-aligned with `rows`. */
+  lineNumbers: number[];
+} {
   // Drop blank lines and comment lines (starting with '#'). Comment lines carry
   // the self-documenting column spec in downloaded templates; ignoring them here
   // means a provider can leave the guidance in and still upload cleanly.
-  const lines = csvText
-    .replace(/^﻿/, '')
+  //
+  // But KEEP each surviving line's ORIGINAL position. Errors are reported by row
+  // number and the provider opens the file they actually sent, so numbering the
+  // survivors sends them to the wrong line — silently out by the size of the
+  // guidance block the template itself invites them to leave in.
+  const numbered = csvText
+    .replace(/^\uFEFF/, '')
     .split(/\r?\n/)
-    .map(l => l.trim())
-    .filter(l => l && !l.startsWith('#'));
-  if (lines.length < 2) return { headers: [], rows: [] };
-  const headers = splitCsvLine(lines[0]).map(h => h.trim());
+    .map((line, i) => ({ text: line.trim(), lineNo: i + 1 }))
+    .filter((l) => l.text && !l.text.startsWith('#'));
+  if (numbered.length === 0) return { headers: [], rows: [], lineNumbers: [] };
+  const headers = splitCsvLine(numbered[0].text).map((h) => h.trim());
+  // A header with nothing under it still RETURNS its headers. Reporting no
+  // headers conflates "this isn't a CSV" with "you forgot the data", and those
+  // need opposite advice.
+  if (numbered.length === 1) return { headers, rows: [], lineNumbers: [] };
   const rows: Record<string, string>[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = splitCsvLine(lines[i]);
+  const lineNumbers: number[] = [];
+  for (let i = 1; i < numbered.length; i++) {
+    const values = splitCsvLine(numbered[i].text);
     // Skip an all-empty row (e.g. ",,,," — a trailing artifact from Excel/CSV
     // exports). Such a row carries no data and would otherwise fail every check.
     if (values.every((v) => v.trim() === '')) continue;
     const row: Record<string, string> = {};
     headers.forEach((h, idx) => { row[h] = values[idx] ?? ''; });
     rows.push(row);
+    lineNumbers.push(numbered[i].lineNo);
   }
-  return { headers, rows };
+  return { headers, rows, lineNumbers };
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -317,6 +333,43 @@ function graceElapsed(col: FieldDef, ctx?: ValidationContext): boolean {
   return now.getTime() >= enforceAt.getTime();
 }
 
+/**
+ * What each column is called in plain language, and what to do when it is wrong.
+ *
+ * Error messages are read by a compliance officer at a bank, not by a developer.
+ * "totalOutflow is required" names a JSON key and states a rule; it does not say
+ * which column of their spreadsheet to look at, nor what a valid value would be.
+ * Every message below names the column as the header spells it, says what is
+ * wrong, and says what to put there — because the provider cannot ask us.
+ */
+const FIELD_LABELS: Record<string, string> = {
+  nin: 'NIN',
+  bvn: 'BVN',
+  tin: 'TIN',
+  accountNumber: 'Account number',
+  accountName: 'Account name',
+  customerType: 'Customer type',
+  totalInflow: 'Total inflow',
+  totalOutflow: 'Total outflow',
+  periodLabel: 'Period',
+};
+
+/** Extra guidance appended to a "blank" error, where the fix is not obvious. */
+const BLANK_HINTS: Record<string, string> = {
+  totalInflow: 'enter the total money received for the period — use 0 if there was none',
+  totalOutflow: 'enter the total money paid out for the period — use 0 if there was none',
+  nin: 'enter the 11-digit National Identity Number',
+  bvn: 'enter the 11-digit Bank Verification Number',
+  accountNumber: 'enter the account, wallet, merchant or policy number',
+  accountName: 'enter the name on the account',
+  customerType: 'enter INDIVIDUAL, or the CAC class of the organisation',
+};
+
+/** Human name for a column, falling back to the header itself. */
+export function fieldLabel(name: string): string {
+  return FIELD_LABELS[name] ?? name;
+}
+
 export function validateRow(
   row: Record<string, string>,
   schema: SchemaTemplate,
@@ -335,9 +388,12 @@ export function validateRow(
       // becomes mandatory on the enforcement date.
       if (col.validation?.enforceFrom && !graceElapsed(col, ctx)) {
         const when = (ctx?.enforceFrom ?? col.validation.enforceFrom);
-        warnings.push(`${col.name} is blank — it becomes required from ${when}`);
+        warnings.push(`${fieldLabel(col.name)} is empty — it becomes compulsory from ${when}`);
       } else {
-        errors.push(`${col.name} is required`);
+        const hint = BLANK_HINTS[col.name];
+        errors.push(
+          `${fieldLabel(col.name)} is empty${hint ? ` — ${hint}` : ' — this column cannot be left blank'}`,
+        );
       }
       continue;
     }
@@ -356,25 +412,31 @@ export function validateRow(
         const stripped = raw.replace(/[,  ]/g, '');
         if (!Number.isNaN(Number(stripped))) {
           errors.push(
-            `${col.name} "${shown}" must be a plain number — remove the thousands separators ` +
+            `${fieldLabel(col.name)} "${shown}" must be a plain number — remove the thousands separators ` +
               `(format the column as Number before export)`,
           );
         } else if (!Number.isNaN(Number(stripped.replace(/^[₦$#N]/i, '')))) {
-          errors.push(`${col.name} "${shown}" must be a plain number — remove the currency sign`);
+          errors.push(`${fieldLabel(col.name)} "${shown}" must be a plain number — remove the currency sign`);
         } else if (/^\(.+\)$/.test(stripped) && !Number.isNaN(Number(stripped.slice(1, -1)))) {
           errors.push(
-            `${col.name} "${shown}" must be a plain number — use a minus sign for negatives, not parentheses`,
+            `${fieldLabel(col.name)} "${shown}" must be a plain number — use a minus sign for negatives, not parentheses`,
           );
         } else {
-          errors.push(`${col.name} "${shown}" must be a number`);
+          errors.push(`${fieldLabel(col.name)} "${shown}" is not a number — enter digits only, e.g. 1500000`);
         }
         continue;
       }
       if (col.type === 'integer' && !Number.isInteger(n)) {
-        errors.push(`${col.name} must be a whole number`);
+        errors.push(`${fieldLabel(col.name)} must be a whole number — no decimals`);
       }
-      if (v?.min != null && n < v.min) errors.push(`${col.name} must be at least ${v.min}`);
-      if (v?.max != null && n > v.max) errors.push(`${col.name} must be at most ${v.max}`);
+      if (v?.min != null && n < v.min) {
+        errors.push(
+          v.min === 0
+            ? `${fieldLabel(col.name)} is ${raw} — it cannot be negative. Report money out under Total outflow, not as a negative inflow.`
+            : `${fieldLabel(col.name)} is ${raw} — it must be at least ${v.min}`,
+        );
+      }
+      if (v?.max != null && n > v.max) errors.push(`${fieldLabel(col.name)} is ${raw} — it must be at most ${v.max}`);
     }
 
     // String constraints
@@ -384,7 +446,13 @@ export function validateRow(
       if (v.length != null) {
         const digits = raw.replace(/\D/g, '');
         if (digits.length !== v.length || digits.length !== raw.length) {
-          errors.push(`${col.name} must be exactly ${v.length} digits`);
+          const what = raw.length === 0 ? 'is empty'
+            : /\D/.test(raw) ? `contains something other than digits ("${raw}")`
+            : `is ${raw.length} digits, not ${v.length} ("${raw}")`;
+          errors.push(
+            `${fieldLabel(col.name)} ${what} — it must be exactly ${v.length} digits, ` +
+              `with no spaces, dashes or letters`,
+          );
         }
       }
       // Identifier damaged in export. Rejected, not warned: the digits cannot be
@@ -392,7 +460,7 @@ export function validateRow(
       // simply wrong while reporting the submission as a success.
       if (v.identifier && SCIENTIFIC_NOTATION_RE.test(raw)) {
         errors.push(
-          `${col.name} "${raw}" is in scientific notation — the original digits have been lost. ` +
+          `${fieldLabel(col.name)} "${raw}" is in scientific notation — the original digits have been lost. ` +
             `Format the column as Text in your spreadsheet and export again.`,
         );
       }
@@ -405,17 +473,19 @@ export function validateRow(
         raw.length !== v.bankAccountDigits
       ) {
         warnings.push(
-          `${col.name} "${raw}" is ${raw.length} digits — a NUBAN is ${v.bankAccountDigits}. ` +
+          `${fieldLabel(col.name)} "${raw}" is ${raw.length} digits — a NUBAN is ${v.bankAccountDigits}. ` +
             `Check the leading zero was not dropped in export.`,
         );
       }
       // Enumerated values (case-insensitive), e.g. customerType.
       if (v.enum && !v.enum.map((e) => e.toUpperCase()).includes(raw.toUpperCase())) {
-        errors.push(`${col.name} must be one of: ${v.enum.join(', ')}`);
+        errors.push(
+          `${fieldLabel(col.name)} "${raw}" is not one we recognise — use one of: ${v.enum.join(', ')}`,
+        );
       }
       // Named formats
       if (v.format === 'email' && !EMAIL_RE.test(raw)) {
-        errors.push(`${col.name} is not a valid email address`);
+        errors.push(`${fieldLabel(col.name)} "${raw}" is not a valid email address`);
       }
       if (v.format === 'date') {
         // Accept common date formats (DD/MM/YYYY, Excel serial, …) and normalise
@@ -426,13 +496,13 @@ export function validateRow(
         if (normalised) {
           row[col.name] = normalised; // self-heal for clean storage
         } else if (col.required) {
-          errors.push(`${col.name} must be a valid date (e.g. 2026-03-31 or 31/03/2026)`);
+          errors.push(`${fieldLabel(col.name)} "${raw}" is not a date we can read — use 2026-03-31 or 31/03/2026`);
         } else {
           warnings.push(`${col.name} "${raw}" is not a recognised date and was left as-is`);
         }
       }
       if (v.format === 'currency' && !CURRENCY_RE.test(raw)) {
-        errors.push(`${col.name} must be a 3-letter currency code (e.g. NGN)`);
+        errors.push(`${fieldLabel(col.name)} "${raw}" must be a 3-letter currency code, e.g. NGN`);
       }
       // Regex pattern (if a schema ever defines one)
       if (v.pattern && !new RegExp(v.pattern).test(raw)) {
@@ -449,6 +519,159 @@ export function validateRow(
  * upload reject a wrong/mismatched file up front with a clear message instead of
  * failing every row with confusing per-row errors.
  */
+/** Loose key for comparing headers: case, spaces, underscores and dashes ignored. */
+function headerKey(h: string): string {
+  return h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Explain a header the parser could not use.
+ *
+ * "Your file is missing required columns: nin, accountNumber, …" listing EVERY
+ * column is the least informative thing we can say: when all of them are absent
+ * the columns are almost never the problem — the file is an Excel workbook, or
+ * semicolon-separated, or the header row is not where we looked. Listing them
+ * tells the provider to go and add columns that are, in fact, already there.
+ *
+ * So: name the actual cause where we can identify it, quote the header line we
+ * did read so the provider can see what we saw, and suggest renames for columns
+ * that are present under a different spelling.
+ */
+/**
+ * What was actually uploaded, by CONTENT not by file name.
+ *
+ * .xlsx and .ods are both ZIP archives and .xls is an OLE compound file, so a
+ * rename to .csv changes nothing about the bytes — the parser then reads
+ * binary as a header row. Sniffing the magic bytes is the only reliable test,
+ * and telling the provider which program to convert from matters: "Save As
+ * CSV" is under a different menu item in LibreOffice than in Excel.
+ */
+export function detectSpreadsheetKind(buf: Buffer): 'xlsx' | 'ods' | 'xls' | 'zip' | null {
+  if (buf.length < 8) return null;
+  const isZip = buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05 || buf[2] === 0x07);
+  if (isZip) {
+    // Both formats name themselves in the first entry of the archive: ODS
+    // stores an uncompressed `mimetype` member first, xlsx names its content
+    // types part. Read a small window rather than unzipping anything.
+    const head = buf.subarray(0, 400).toString('latin1');
+    if (head.includes('opendocument.spreadsheet')) return 'ods';
+    if (head.includes('[Content_Types].xml') || head.includes('xl/')) return 'xlsx';
+    return 'zip';
+  }
+  const isOle = buf[0] === 0xd0 && buf[1] === 0xcf && buf[2] === 0x11 && buf[3] === 0xe0;
+  return isOle ? 'xls' : null;
+}
+
+/** How to get a CSV out of whatever they actually uploaded. */
+export function spreadsheetConversionAdvice(kind: 'xlsx' | 'ods' | 'xls' | 'zip'): string {
+  switch (kind) {
+    case 'ods':
+      return (
+        'This file is an OpenDocument spreadsheet (.ods), not a CSV. In LibreOffice or OpenOffice choose ' +
+        'File → Save As, set "File type" to Text CSV (.csv), tick "Edit filter settings" and confirm the ' +
+        'field delimiter is a comma, then upload the .csv file.'
+      );
+    case 'xls':
+    case 'xlsx':
+      return (
+        'This file is an Excel workbook, not a CSV. In Excel choose File → Save As and set the type to ' +
+        'CSV (Comma delimited) (*.csv), then upload the .csv file.'
+      );
+    default:
+      return (
+        'This file is a compressed archive, not a CSV. Upload the .csv file itself, not a zipped copy.'
+      );
+  }
+}
+
+export function explainHeaderProblem(opts: {
+  headers: string[];
+  missing: string[];
+  schema: SchemaTemplate;
+  /** True when the uploaded bytes are an Excel/OLE workbook rather than text. */
+  looksBinary?: boolean;
+  /** True 1-based line where the real header row appears, if it is further down. */
+  headerFoundOnLine?: number;
+  providerTypeLabel: string;
+}): string {
+  const { headers, missing, schema, looksBinary, headerFoundOnLine, providerTypeLabel } = opts;
+  const required = schema.columns.filter((c) => c.required).map((c) => c.name);
+  const template = `Download the latest ${providerTypeLabel} template and use its header row.`;
+
+  // 1. Not a CSV at all. By far the most common cause of "every column missing".
+  if (looksBinary) {
+    return (
+      'This file is an Excel workbook, not a CSV. Open it in Excel and choose ' +
+      'File → Save As → CSV (Comma delimited), then upload the .csv file. ' +
+      'Uploading an .xlsx renamed to .csv will not work either — it must actually be saved as CSV.'
+    );
+  }
+
+  // 2. The header row is further down — a title, a bank name, a date stamp sits
+  //    above it. Extremely common in bank exports, and the provider cannot guess
+  //    that a decorative first line is what broke the upload.
+  if (headerFoundOnLine && headerFoundOnLine > 1) {
+    const above = headerFoundOnLine - 1;
+    return (
+      `Your column headings are on line ${headerFoundOnLine}, but they must be the first line of the file. ` +
+      `Delete the ${above} line${above > 1 ? 's' : ''} above ${above > 1 ? 'them' : 'it'} — a title, bank name or date ` +
+      `stamp above the headings stops the file being read. (Lines starting with # are ignored, so template guidance may stay.)`
+    );
+  }
+
+  // 3. One column read where several were expected: wrong separator. Excel on a
+  //    machine with a comma decimal mark exports semicolons, which is invisible
+  //    to the person exporting.
+  if (headers.length === 1 && required.length > 1) {
+    const only = headers[0] ?? '';
+    const sep = only.includes(';') ? 'semicolons (;)' : only.includes('\t') ? 'tabs' : only.includes('|') ? 'pipes (|)' : null;
+    if (sep) {
+      return (
+        `Your file separates columns with ${sep}, but a CSV must use commas. ` +
+        `In Excel choose File → Save As → CSV (Comma delimited), or change your regional list separator to a comma, then upload again. ` +
+        `The header we read was: "${only.slice(0, 120)}"`
+      );
+    }
+    return (
+      `We read only one column from the header row: "${only.slice(0, 120)}". ` +
+      `A return needs ${required.length} comma-separated columns. ${template}`
+    );
+  }
+
+  // 4. Columns present under another spelling — name the rename, do not make the
+  //    provider guess which of their headers we meant.
+  const byKey = new Map(headers.map((h) => [headerKey(h), h.trim()]));
+  const renames = missing
+    .map((want) => ({ want, found: byKey.get(headerKey(want)) }))
+    .filter((r) => r.found && r.found !== r.want);
+  if (renames.length) {
+    const list = renames.map((r) => `"${r.found}" → ${r.want}`).join(', ');
+    const stillMissing = missing.filter((m) => !byKey.has(headerKey(m)));
+    return (
+      `Your header row uses different names for ${renames.length === 1 ? 'a required column' : 'some required columns'}. ` +
+      `Rename ${list} — spelling must match exactly, including capitals and with no spaces.` +
+      (stillMissing.length ? ` Also add: ${stillMissing.join(', ')}.` : '')
+    );
+  }
+
+  // 5. Nothing matched at all — quote what we actually read, so the provider can
+  //    see whether we found the header row or something else entirely.
+  if (missing.length === required.length) {
+    const seen = headers.filter(Boolean).slice(0, 8).join(', ');
+    return (
+      `We could not find the template's header row. The first line we read was: ` +
+      `${seen ? `"${seen}"` : '(empty)'}. It must be the column names exactly as the template writes them — ` +
+      `${required.join(', ')} — with any title or notes above it removed (lines starting with # are ignored). ${template}`
+    );
+  }
+
+  // 6. Genuinely absent columns, and only those.
+  return (
+    `Your file is missing ${missing.length === 1 ? 'a required column' : 'required columns'}: ${missing.join(', ')}. ` +
+    `Add ${missing.length === 1 ? 'it' : 'them'} to the header row, spelled exactly as shown. ${template}`
+  );
+}
+
 export function missingRequiredColumns(headers: string[], schema: SchemaTemplate): string[] {
   const present = new Set(headers.map((h) => h.trim().toLowerCase()));
   return schema.columns

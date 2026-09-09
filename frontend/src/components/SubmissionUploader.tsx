@@ -87,6 +87,18 @@ export default function SubmissionUploader({
       setError(`File too large (${formatBytes(f.size)}). Max 100 MB.`);
       return;
     }
+    // Returns are CSV only. The picker's accept filter is advisory — it is
+    // bypassed by drag-and-drop and by choosing "All files" — so check here
+    // too and say so before the provider waits on an upload that cannot succeed.
+    const ext = f.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+    if (ext && ext !== 'csv' && ext !== 'txt') {
+      setError(
+        `Returns must be a CSV file — this is a .${ext} file. In your spreadsheet program choose ` +
+        `File → Save As and set the type to CSV ("CSV (Comma delimited)" in Excel, "Text CSV" in ` +
+        `LibreOffice), then upload the .csv file. Renaming it will not work.`,
+      );
+      return;
+    }
     setFile(f);
   };
 
@@ -184,6 +196,15 @@ export default function SubmissionUploader({
               <>
                 <p className="text-sm font-medium text-[var(--ink)]">Drag a CSV file here</p>
                 <p className="text-xs text-[var(--ink-3)]">or click to browse — max 100 MB</p>
+                {/* Say this BEFORE they pick a file. Uploading a spreadsheet
+                    straight from Excel or LibreOffice is the single most common
+                    failure, and the file name gives no clue that it will be
+                    refused — .ods and .xlsx look like data files to everyone. */}
+                <p className="mt-2 text-xs text-[var(--ink-2)]">
+                  <strong>CSV only.</strong> An Excel (.xlsx) or LibreOffice (.ods) file must be saved as CSV first —
+                  {' '}File → Save As → “CSV (Comma delimited)” in Excel, “Text CSV” in LibreOffice.
+                  {' '}Renaming it to .csv does not convert it.
+                </p>
               </>
             )}
             <input
