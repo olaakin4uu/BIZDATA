@@ -312,9 +312,11 @@ export default function StaffSidebar({ open = false, onClose }: { open?: boolean
             <span className="text-[9px] uppercase tracking-[0.2em] text-slate-500">Powered by</span>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src="/manam-logo-mark.jpeg"
-              alt="MANAM"
-              className="h-6 w-auto rounded bg-white px-2 py-1"
+              src="/bizsphere-logo-mark.png"
+              alt="BizSphere"
+              // On a white plate: the mark's blues are dark and would otherwise
+              // disappear into the navy sidebar ground.
+              className="h-11 w-auto rounded bg-white px-2.5 py-1.5"
             />
           </div>
         </div>
