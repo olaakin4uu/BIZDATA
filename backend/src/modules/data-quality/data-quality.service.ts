@@ -36,7 +36,36 @@ import { PrismaService } from '../../prisma/prisma.service';
 export class DataQualityService {
   constructor(private prisma: PrismaService) {}
 
+  // The aggregation below is five COUNT(DISTINCT …) passes over millions of
+  // rows — measured at ~50s on a 2.3M-record set, which overran the transaction
+  // timeout and returned a 500 rather than a report. Nothing here changes except
+  // when new returns land, so the result is memoised and concurrent callers share
+  // one in-flight computation instead of each starting their own.
+  private static readonly TTL_MS = 300_000;
+  private cache = new Map<string, { at: number; data: unknown }>();
+  private inFlight = new Map<string, Promise<unknown>>();
+
   async identifiers(query: { year?: string; providerId?: string } = {}) {
+    const key = `${query.year ?? 'all'}|${query.providerId ?? 'all'}`;
+    const hit = this.cache.get(key);
+    if (hit && Date.now() - hit.at < DataQualityService.TTL_MS) return hit.data as never;
+
+    const pending = this.inFlight.get(key);
+    if (pending) return (await pending) as never;
+
+    const run = this.computeIdentifiers(query).then((data) => {
+      this.cache.set(key, { at: Date.now(), data });
+      return data;
+    });
+    this.inFlight.set(key, run);
+    try {
+      return (await run) as never;
+    } finally {
+      this.inFlight.delete(key);
+    }
+  }
+
+  private async computeIdentifiers(query: { year?: string; providerId?: string } = {}) {
     const year = query.year ? parseInt(query.year, 10) : undefined;
     const conds: string[] = ['1=1'];
     if (year) conds.push(`r."periodYear" = ${Number(year)}`);
@@ -59,18 +88,17 @@ export class DataQualityService {
       COUNT(*) FILTER (WHERE r."nin" IS NULL AND r."bvn" IS NULL)::bigint AS no_identifier,
       AVG(r."matchConfidence")                           AS avg_conf`;
 
-    // data_records is large enough (millions of rows) that Postgres' default
-    // work_mem (4MB) forces the COUNT(DISTINCT ...) aggregations below into
-    // disk-based external merge sorts — this is what made the endpoint take
-    // 17.5s (confirmed via EXPLAIN ANALYZE). SET LOCAL scopes a larger
-    // work_mem to just this transaction so it can't starve other concurrent
-    // queries on the memory-constrained host.
-    const [totals, byProviderRows, byMethodRows, byYearRows, register] = await this.prisma.$transaction(
-      async (tx) => {
-        await tx.$executeRawUnsafe(`SET LOCAL work_mem = '64MB'`);
-        return Promise.all([
-          tx.$queryRawUnsafe<any[]>(`SELECT ${COVERAGE_SELECT} FROM data_records r WHERE ${where}`),
-          tx.$queryRawUnsafe<any[]>(
+    // These five aggregates are independent read-only counts, so they are issued
+    // concurrently rather than inside one transaction. Sharing a transaction
+    // pinned them to a single connection and therefore ran them in series — on a
+    // 2.3M-record set that was ~123s in total and overran the timeout, returning
+    // a 500. Run concurrently, wall time falls to roughly the slowest single
+    // query. (A larger work_mem was measured at 64/256/512MB and made no
+    // difference here: the cost is COUNT(DISTINCT) over millions of 64-char
+    // blind-index strings, not a spill to disk.)
+    const [totals, byProviderRows, byMethodRows, byYearRows, register] = await Promise.all([
+          this.prisma.$queryRawUnsafe<any[]>(`SELECT ${COVERAGE_SELECT} FROM data_records r WHERE ${where}`),
+          this.prisma.$queryRawUnsafe<any[]>(
             `SELECT r."providerId" AS "providerId", p."name" AS "providerName", p."providerType"::text AS "providerType",
                     ${COVERAGE_SELECT}
                FROM data_records r JOIN data_providers p ON p.id = r."providerId"
@@ -78,15 +106,15 @@ export class DataQualityService {
               GROUP BY r."providerId", p."name", p."providerType"
               ORDER BY COUNT(*) DESC`,
           ),
-          tx.$queryRawUnsafe<any[]>(
+          this.prisma.$queryRawUnsafe<any[]>(
             `SELECT COALESCE(r."matchMethod", 'UNMATCHED') AS method, COUNT(*)::bigint AS c, AVG(r."matchConfidence") AS avg_conf
                FROM data_records r WHERE ${where} GROUP BY 1 ORDER BY 2 DESC`,
           ),
-          tx.$queryRawUnsafe<any[]>(
+          this.prisma.$queryRawUnsafe<any[]>(
             `SELECT r."periodYear" AS year, ${COVERAGE_SELECT}
                FROM data_records r WHERE ${where} GROUP BY r."periodYear" ORDER BY r."periodYear" DESC`,
           ),
-          tx.$queryRawUnsafe<any[]>(
+          this.prisma.$queryRawUnsafe<any[]>(
             `SELECT COUNT(*)::bigint                             AS taxpayers,
                     COUNT("tinIndex")::bigint                    AS with_tin,
                     COUNT("ninIndex")::bigint                    AS with_nin,
@@ -97,10 +125,7 @@ export class DataQualityService {
                     COUNT(*) FILTER (WHERE "type" = 'CORPORATE' AND "cacRcNumber" IS NOT NULL)::bigint AS corporates_with_rc
                FROM taxpayers`,
           ),
-        ]);
-      },
-      { timeout: 30000 },
-    );
+    ]);
 
     const t = totals[0] ?? {};
     const records = Number(t.records ?? 0);

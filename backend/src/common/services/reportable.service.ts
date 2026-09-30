@@ -42,6 +42,16 @@ export class ReportableService {
   private static readonly TTL_MS = 60_000;
   private cache = new Map<string, { at: number; ids: Set<string> }>();
 
+  // In-flight de-duplication ("single flight"). The grouped scan takes ~9s on a
+  // 2.3M-record set, and a single dashboard render fires several endpoints that
+  // all gate through here at once. With only the TTL cache, every one of those
+  // parallel requests missed together and started its own copy of the same 9s
+  // query; they then contended for the same buffers and each stretched to
+  // 20-37s, blowing the transaction timeout and failing the request outright.
+  // Holding the promise means the first caller does the work and the rest await
+  // that same result.
+  private inFlight = new Map<string, Promise<Set<string>>>();
+
   /**
    * The set of taxpayer ids that are reportable. Optionally scoped to a year;
    * otherwise every period on record is considered. Uses one grouped-SQL pass
@@ -57,6 +67,23 @@ export class ReportableService {
       return new Set(hit.ids);
     }
 
+    // Someone else is already computing this exact key — wait for them rather
+    // than starting a second copy of a 9-second scan.
+    const pending = this.inFlight.get(cacheKey);
+    if (pending) return new Set(await pending);
+
+    const run = this.computeReportableIds(cacheKey, opts.year);
+    this.inFlight.set(cacheKey, run);
+    try {
+      return new Set(await run);
+    } finally {
+      this.inFlight.delete(cacheKey);
+    }
+  }
+
+  /** The actual grouped scan. Only ever one of these runs per key at a time. */
+  private async computeReportableIds(cacheKey: string, year?: number): Promise<Set<string>> {
+    const opts = { year };
     const cfg = await this.statutory.active();
     const indiv = cfg.reportingThresholdIndividual;
     const corp = cfg.reportingThresholdCorporate;
@@ -110,13 +137,13 @@ export class ReportableService {
             GROUP BY q."taxpayerId"`,
         );
       },
-      { timeout: 15000 },
+      // Measured at ~9s over 2.3M records. The old 15s ceiling left almost no
+      // headroom, so any contention turned a slow query into a failed request.
+      { timeout: 120_000, maxWait: 30_000 },
     );
     const ids = new Set(rows.map((r) => r.taxpayerId));
     this.cache.set(cacheKey, { at: Date.now(), ids });
-    // Hand back a copy so a caller spreading/mutating the result never touches
-    // the stored set.
-    return new Set(ids);
+    return ids;
   }
 
   /** Convenience: is this one taxpayer reportable? */
