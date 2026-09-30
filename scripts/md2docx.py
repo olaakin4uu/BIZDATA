@@ -94,6 +94,18 @@ MANIFEST = {
              'Integration model: BIZDATA pulls on a schedule\n'
              'Part A — management   ·   Parts B–E — engineering',
     ),
+    # The OGIRS-tailored platform manual — the maintained source for the manual
+    # that had previously existed only as an un-regenerable PDF.
+    'ogirs-manual': dict(
+        src='docs/OGIRS-FINDATA-MANUAL.md',
+        out='OGIRS-FinData-Manual.docx',
+        subtitle='Platform Manual — Ogun State Internal Revenue Service',
+        eyebrow='Platform manual · Prepared for OGIRS',
+        tagline='Every screen, both portals, and the security model — tailored to OGIRS',
+        meta='Version 1.0   ·   For OGIRS review and presentation\n'
+             'Back office · Provider portal · Security model · Integration API\n'
+             'Supersedes the generic manuals of 19 July 2026',
+    ),
     'overview': dict(
         src='docs/INTEGRATION-OVERVIEW.md',
         out='BIZDATA-Revenue-Integration-Overview.docx',

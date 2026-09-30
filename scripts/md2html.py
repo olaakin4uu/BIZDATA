@@ -11,6 +11,7 @@ Reuses the same Markdown subset as md2docx.py: headings, paragraphs, tables,
 fenced code, blockquotes, bullet / numbered / checkbox lists, rules, and inline
 bold, italic, code and links.
 """
+import base64
 import html
 import re
 import sys
@@ -164,6 +165,10 @@ blockquote.risk strong{color:var(--seal)}
 
 /* ── tables ────────────────────────────────────────────────────────────── */
 .tablewrap{overflow-x:auto; margin:1.5rem 0; border:1px solid var(--rule); border-radius:4px}
+figure.shot{margin:1.5rem 0}
+figure.shot img{display:block; width:100%; height:auto; border:1px solid var(--rule); border-radius:4px}
+figure.shot figcaption{margin-top:.5rem; font-size:.85em; color:var(--muted); text-align:center}
+.missing-shot{color:var(--muted)}
 table{border-collapse:collapse; width:100%; font-family:var(--sans); font-size:13.5px}
 thead th{
   background:var(--accent); color:#fff; text-align:left; font-weight:600;
@@ -228,7 +233,8 @@ pre code{background:none; padding:0; font-size:13px; line-height:1.62; display:b
   .wrap{max-width:none}
   body{font-size:10.5pt}
   h2,h3,h4{break-after:avoid}
-  pre,blockquote,.tablewrap{break-inside:avoid}
+  pre,blockquote,.tablewrap,figure.shot{break-inside:avoid}
+  figure.shot img{max-width:100%; height:auto}
   thead th{background:#0F625C!important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   a{color:#000; text-decoration:none}
 }
@@ -296,6 +302,32 @@ def inline(t):
     return ''.join(out)
 
 
+def figure_html(alt, src):
+    """A screen capture as a self-contained <figure>, image inlined as base64.
+
+    Returns a plain note instead of a broken image when the file is missing, so
+    a manual still builds when a capture has not been refreshed yet.
+    """
+    # Image paths in the markdown are written relative to the document that
+    # holds them (docs/…), so try that before falling back to the repo root.
+    if Path(src).is_absolute():
+        p = Path(src)
+    else:
+        for base in (ROOT / 'docs', ROOT):
+            p = base / src
+            if p.exists():
+                break
+    if not p.exists():
+        return ('<p class="missing-shot"><em>[screen capture not available: '
+                + html.escape(src) + ']</em></p>')
+    mime = {'.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg',
+            '.gif': 'image/gif', '.webp': 'image/webp'}.get(p.suffix.lower(), 'image/png')
+    b64 = base64.b64encode(p.read_bytes()).decode('ascii')
+    cap = ('<figcaption>' + inline(alt) + '</figcaption>') if alt else ''
+    return ('<figure class="shot"><img alt="' + html.escape(alt)
+            + '" src="data:' + mime + ';base64,' + b64 + '">' + cap + '</figure>')
+
+
 def highlight(code):
     """Conservative JSON/HTTP tinting — comments, keys, string values."""
     esc = html.escape(code)
@@ -313,7 +345,8 @@ def slug(text):
 SECNUM = re.compile(r'^([A-G]\.\d+(?:\.\d+)*)\s+(.*)$')
 
 
-def convert(md, title, standfirst):
+def convert(md, title, standfirst,
+            eyebrow='Interface requirements · Draft for review'):
     lines = md.split('\n')
     body, toc = [], []
     i, n = 0, len(lines)
@@ -402,6 +435,17 @@ def convert(md, title, standfirst):
             i += 1
             continue
 
+        # A paragraph that is nothing but an image — screen captures in the
+        # manuals. Inlined as a data URI like the CSS and JS, so the .html stays
+        # a single self-contained file and Chrome's print engine needs no
+        # network or file access to render it into the PDF.
+        mimg = re.match(r'^!\[([^\]]*)\]\(([^)]+)\)$', s)
+        if mimg:
+            alt, src = mimg.group(1), mimg.group(2)
+            body.append(figure_html(alt, src))
+            i += 1
+            continue
+
         if s.startswith('>'):
             buf = []
             while i < n and lines[i].strip().startswith('>'):
@@ -482,7 +526,7 @@ def convert(md, title, standfirst):
   <main class="main">
     <div class="wrap">
       <header class="masthead">
-        <p class="eyebrow">Interface requirements · Draft for review</p>
+        <p class="eyebrow">{html.escape(eyebrow)}</p>
         <h1>{html.escape(title)}</h1>
         <p class="standfirst">{html.escape(standfirst)}</p>
         <div class="frontmatter"><dl>{fm}</dl></div>
@@ -503,7 +547,8 @@ def build(key='combined'):
     standfirst = spec['tagline']
     OUT_DIR.mkdir(exist_ok=True)
     out = OUT_DIR / (Path(spec['out']).stem + '.html')
-    out.write_text(convert(md, title, standfirst), encoding='utf-8')
+    eyebrow = spec.get('eyebrow', 'Interface requirements · Draft for review')
+    out.write_text(convert(md, title, standfirst, eyebrow), encoding='utf-8')
     print(f'{key:>16}  ->  {out.relative_to(ROOT)}  ({out.stat().st_size // 1024} KB)')
     return out
 
