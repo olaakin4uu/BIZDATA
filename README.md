@@ -1,6 +1,6 @@
 # BizData
 
-**Multi-source data intelligence platform for revenue authorities.**
+**Financial and Non-Financial Institution Reports Intelligence System, for revenue authorities.**
 
 BizData ingests transaction data from banks, fintechs, telcos, payment processors, FX bureaus, and other regulated data providers, then matches it against declared taxpayer income to detect underdeclaration. Built for Nigerian state and federal tax authorities operating under **NTAA 2025 §29**.
 

@@ -1,4 +1,4 @@
-// BizData — Multi-Source Data Intelligence Platform
+// BizData — Financial and Non-Financial Institution Reports Intelligence System
 // Schema for v1: bank reports first, generic enough for fintechs, telcos, payment processors, FX bureaus, POS, e-commerce.
 
 generator client {

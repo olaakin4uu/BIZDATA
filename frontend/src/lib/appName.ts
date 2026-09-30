@@ -3,4 +3,5 @@
 // Import APP_NAME everywhere the product name is shown to users.
 export const APP_NAME = 'FinData';
 export const APP_TAGLINE = 'Revenue Intelligence';
-export const APP_LONG_NAME = 'FinData — Bank Reports Intelligence System';
+export const APP_LONG_NAME =
+  'FinData — Financial and Non-Financial Institution Reports Intelligence System';

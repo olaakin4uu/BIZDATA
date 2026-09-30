@@ -54,7 +54,7 @@ async function bootstrap() {
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('FinData API')
-    .setDescription('FinData — Multi-Source Data Intelligence Platform')
+    .setDescription('FinData — Financial and Non-Financial Institution Reports Intelligence System')
     .setVersion('1.0')
     .addBearerAuth()
     .build();
