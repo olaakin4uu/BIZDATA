@@ -78,6 +78,40 @@ export interface ProviderUploadArgs {
   file: File;
 }
 
+/* ─── IRIS Upload Assistant ─────────────────────────────────────────────────── */
+
+export interface CanonicalField {
+  name: string;
+  required: boolean;
+  type: string;
+}
+export interface ImportMappingEntry {
+  source: string;
+  target: string; // '' = ignore this column
+  confidence?: number;
+}
+export interface ImportPreviewRow {
+  before: Record<string, string>;
+  after: Record<string, string>;
+}
+export interface ImportIssue {
+  row: number;
+  errors: string[];
+}
+export interface ImportPreview {
+  draftId: string;
+  providerType: string;
+  fileName?: string;
+  aiUsed: boolean;
+  canonicalFields: CanonicalField[];
+  mapping: ImportMappingEntry[];
+  sample: ImportPreviewRow[];
+  stats: { total: number; accept: number; reject: number };
+  issues: ImportIssue[];
+  rules: string[];
+  expiresAt: string;
+}
+
 export const providerPortalApi = {
   me: () => providerApiFetch<ProviderUser>('/provider-portal/me'),
   dashboard: () => providerApiFetch<ProviderDashboard>('/provider-portal/dashboard'),
@@ -113,6 +147,25 @@ export const providerPortalApi = {
       method: 'PATCH',
       body: { currentPassword, newPassword },
     }),
+
+  /** IRIS Upload Assistant — analyze a (possibly messy) CSV and propose a cleanup. */
+  analyzeImport: (args: { file: File; periodLabel: string; periodYear?: number; periodQuarter?: number; periodMonth?: number }) => {
+    const fd = new FormData();
+    fd.append('file', args.file);
+    fd.append('periodLabel', args.periodLabel);
+    if (args.periodYear != null) fd.append('periodYear', String(args.periodYear));
+    if (args.periodQuarter != null) fd.append('periodQuarter', String(args.periodQuarter));
+    if (args.periodMonth != null) fd.append('periodMonth', String(args.periodMonth));
+    return providerApiFetch<ImportPreview>('/provider-portal/import/analyze', { method: 'POST', body: fd });
+  },
+  /** Re-check the provider's edited column mapping without re-uploading. */
+  revalidateImport: (draftId: string, mapping: { source: string; target: string }[]) =>
+    providerApiFetch<ImportPreview>(`/provider-portal/import/${draftId}/revalidate`, { method: 'POST', body: { mapping } }),
+  /** Approve the cleanup → push the corrected file through the normal pipeline. */
+  approveImport: (draftId: string) =>
+    providerApiFetch<Submission>(`/provider-portal/import/${draftId}/approve`, { method: 'POST' }),
+  cancelImport: (draftId: string) =>
+    providerApiFetch<{ status: string }>(`/provider-portal/import/${draftId}/cancel`, { method: 'POST' }),
 
   /** Download the CSV upload template for this provider's type (auth'd blob). */
   downloadTemplate: async () => {

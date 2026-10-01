@@ -14,6 +14,7 @@ import { formatMoney, formatDate, formatDateTime, extractErrorMessage } from '@/
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { readErrorMessage } from '@/lib/api/client';
 import RecordAccessGate from '@/components/access/RecordAccessGate';
+import CaseTriagePanel from '@/components/triage/CaseTriagePanel';
 
 // Mirror of the backend lifecycle state machine (cases.service.ts).
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
@@ -490,6 +491,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
 
         {/* Right: lifecycle actions */}
         <div className="space-y-6">
+          <CaseTriagePanel caseId={id} />
           <Card title="Case actions">
             {/* Assignment — first-class control at the top of the actions rail. */}
             <div className="mb-4 pb-4 border-b border-[var(--line)] space-y-2">

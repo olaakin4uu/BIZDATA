@@ -1128,3 +1128,58 @@ model IrisUsage {
   @@index([createdAt])
   @@map("iris_usage")
 }
+
+/// IRIS Upload Assistant — a staged, provider-approved cleanup of a messy upload.
+/// The raw parsed file is encrypted (cipher); on approval the corrected CSV is
+/// synthesised from cipher+mapping and pushed through the normal upload pipeline,
+/// so every ingestion rule (§29, period-ended, required columns, all-or-nothing)
+/// still applies. Short-lived (expiresAt); never stores clear PII at rest.
+model ImportDraft {
+  id                 String   @id @default(cuid())
+  providerId         String
+  providerUserId     String?
+  fileName           String?
+  cipher             String   @db.Text // AES-256-GCM encrypted JSON { headers, rows }
+  mapping            Json? // resolved column mapping (source header -> canonical field)
+  status             String   @default("PENDING") // PENDING | APPROVED | CANCELLED
+  periodLabel        String
+  periodYear         Int?
+  periodQuarter      Int?
+  periodMonth        Int?
+  totalRows          Int      @default(0)
+  acceptRows         Int      @default(0)
+  rejectRows         Int      @default(0)
+  resultSubmissionId String?
+  expiresAt          DateTime
+  createdAt          DateTime @default(now())
+
+  @@index([providerId, status])
+}
+
+/// IRIS Case Triage — a persisted, human-in-the-loop recommendation for a case.
+/// The engine still computes every figure; this records the AI's recommended
+/// next action + rationale, and (once an officer approves) which transition was
+/// applied — a governance trail of AI recommendation vs officer action.
+model TriageRecommendation {
+  id             String   @id @default(cuid())
+  runId          String? // batch-run grouping (null for a single-case investigation)
+  caseId         String
+  staffId        String // who triggered the triage
+  action         String // ADVANCE_REVIEW | DISMISS | REQUEST_DATA | ISSUE_NOTICE | HOLD
+  confidence     Float    @default(0)
+  priority       Int      @default(0) // 0..100 — urgency/value to act
+  rationale      String   @db.Text
+  keyEvidence    Json?
+  risks          Json?
+  statutoryNotes String?  @db.Text
+  model          String?
+  status         String   @default("PENDING") // PENDING | APPLIED | SKIPPED | SUPERSEDED
+  appliedTo      String? // resulting CaseStatus if applied
+  appliedById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([caseId, status])
+  @@index([runId])
+  @@index([status])
+}

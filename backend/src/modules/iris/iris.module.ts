@@ -4,7 +4,7 @@ import { CasesModule } from '../cases/cases.module';
 import { IrisController } from './iris.controller';
 import { IrisService } from './iris.service';
 import { IrisOrchestrator } from './orchestrator/iris.orchestrator';
-import { LlmFactory } from './llm/llm.factory';
+import { LlmModule } from './llm/llm.module';
 import { ToolRegistry } from './tools/tool-registry';
 import { ToolExecutor } from './tools/tool-executor';
 import { DraftProposer } from './approval/draft-proposer';
@@ -24,10 +24,9 @@ import { DraftNoticeTool } from './tools/action/draft-notice.tool';
  * ScanModule/CasesModule are imported for the action tools' commit() step.
  */
 @Module({
-  imports: [ScanModule, CasesModule, ExportModule],
+  imports: [ScanModule, CasesModule, ExportModule, LlmModule],
   controllers: [IrisController],
   providers: [
-    LlmFactory,
     ToolRegistry,
     ToolExecutor,
     IrisOrchestrator,

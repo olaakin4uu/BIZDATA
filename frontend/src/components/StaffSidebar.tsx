@@ -33,6 +33,7 @@ export const NAV: NavItem[] = [
   { href: '/flagged', label: 'Flagged Review', icon: 'flag' },
   { href: '/agent-signals', label: 'Agent Signals', icon: 'signal' },
   { href: '/cases', label: 'Cases', icon: 'scale', section: 'Enforcement' },
+  { href: '/triage', label: 'Case Triage', icon: 'target' },
   { href: '/compliance', label: 'Compliance', icon: 'calendar' },
   { href: '/cross-state', label: 'Cross-State', icon: 'link' },
   { href: '/portfolios', label: 'Portfolios', icon: 'folder' },

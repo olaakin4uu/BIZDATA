@@ -476,6 +476,11 @@ export class SubmissionsService {
     return this.processRows(submissionId, rows, providerType, providerId, providerCode, 2, submissionPeriodLabel, lineNumbers);
   }
 
+  /** Public accessor (IRIS Upload Assistant): the active schema for a provider type. */
+  async getEffectiveSchema(providerType: string): Promise<SchemaTemplate> {
+    return this.resolveSchema(providerType);
+  }
+
   /** Resolve the active schema for a provider type: stored override else default. */
   private async resolveSchema(providerType: string): Promise<SchemaTemplate> {
     const stored = await this.prisma.providerSchema.findUnique({ where: { providerType: providerType as any } });

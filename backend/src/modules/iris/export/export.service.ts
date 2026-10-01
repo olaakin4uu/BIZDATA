@@ -47,7 +47,7 @@ function pdfBuffer(spec: ReportSpec, watermark: { orgShort: string; officerName:
 
     // Letterhead
     doc.rect(left, doc.y, usable, 3).fill(TEAL);
-    doc.moveDown(0.5).fillColor(TEAL).font('Helvetica-Bold').fontSize(9).text('BIZDATA · Revenue Intelligence', left);
+    doc.moveDown(0.5).fillColor(TEAL).font('Helvetica-Bold').fontSize(9).text('FinData · Revenue Intelligence', left);
     doc.fillColor('#000').font('Helvetica-Bold').fontSize(15).text(spec.title);
     if (spec.subtitle) doc.font('Helvetica').fontSize(9).fillColor('#555').text(spec.subtitle);
     doc.fillColor('#b91c1c').font('Helvetica-Bold').fontSize(7)

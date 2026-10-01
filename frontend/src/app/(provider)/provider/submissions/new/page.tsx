@@ -1,8 +1,10 @@
 'use client';
 import { useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import PageHeader from '@/components/PageHeader';
 import SubmissionUploader from '@/components/SubmissionUploader';
+import UploadAssistant from '@/components/providers/UploadAssistant';
 import Icon from '@/components/Icon';
 import { providerPortalApi } from '@/lib/api/provider-portal';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
@@ -10,10 +12,12 @@ import { extractErrorMessage } from '@/lib/utils';
 import { APP_NAME } from '@/lib/appName';
 
 export default function NewProviderSubmissionPage() {
+  const router = useRouter();
   const user = useProviderAuthStore((s) => s.user);
   const freq = user?.provider?.reportingFrequency ?? 'QUARTERLY';
   const providerType = (user?.provider?.providerType ?? '').replace(/_/g, ' ').toLowerCase();
   const [dlErr, setDlErr] = useState<string | null>(null);
+  const [mode, setMode] = useState<'assistant' | 'classic'>('assistant');
 
   const downloadTemplate = async () => {
     setDlErr(null);
@@ -55,12 +59,35 @@ export default function NewProviderSubmissionPage() {
         </button>
       </div>
 
-      <SubmissionUploader
-        reportingFrequency={freq}
-        submissionLinkPrefix="/provider/submissions"
-        description={`Your reporting frequency is set to ${freq}. Upload a CSV file (up to 100 MB) — a spreadsheet saved as .xlsx or .ods must be converted to CSV first. Every row is validated against the ${providerType || APP_NAME} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
-        onUpload={(payload) => providerPortalApi.upload(payload)}
-      />
+      {/* Choose how to upload: the interactive assistant (fixes messy files) or the classic uploader. */}
+      <div className="mb-4 inline-flex rounded-lg border border-[var(--line)] bg-[var(--surface-2)] p-1 text-sm">
+        <button
+          onClick={() => setMode('assistant')}
+          className={`rounded-md px-3 py-1.5 font-medium transition-colors ${mode === 'assistant' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-[var(--elev-1)]' : 'text-[var(--ink-2)] hover:text-[var(--ink)]'}`}
+        >
+          IRIS Upload Assistant
+        </button>
+        <button
+          onClick={() => setMode('classic')}
+          className={`rounded-md px-3 py-1.5 font-medium transition-colors ${mode === 'classic' ? 'bg-[var(--surface)] text-[var(--ink)] shadow-[var(--elev-1)]' : 'text-[var(--ink-2)] hover:text-[var(--ink)]'}`}
+        >
+          Classic upload
+        </button>
+      </div>
+
+      {mode === 'assistant' ? (
+        <UploadAssistant
+          reportingFrequency={freq}
+          onSubmitted={(id) => router.push(`/provider/submissions/${id}`)}
+        />
+      ) : (
+        <SubmissionUploader
+          reportingFrequency={freq}
+          submissionLinkPrefix="/provider/submissions"
+          description={`Your reporting frequency is set to ${freq}. Upload a CSV file (up to 100 MB) — a spreadsheet saved as .xlsx or .ods must be converted to CSV first. Every row is validated against the ${providerType || APP_NAME} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
+          onUpload={(payload) => providerPortalApi.upload(payload)}
+        />
+      )}
     </div>
   );
 }

@@ -44,6 +44,8 @@ import { PayeModule } from './modules/paye/paye.module';
 import { TaxReportModule } from './modules/tax-report/tax-report.module';
 import { IrisModule } from './modules/iris/iris.module';
 import { AssessmentModule } from './modules/assessment/assessment.module';
+import { IrisUploadModule } from './modules/iris-upload/iris-upload.module';
+import { TriageModule } from './modules/triage/triage.module';
 
 @Module({
   imports: [
@@ -89,6 +91,8 @@ import { AssessmentModule } from './modules/assessment/assessment.module';
     ModelFeedbackModule,
     IrisModule,
     AssessmentModule,
+    IrisUploadModule,
+    TriageModule,
   ],
   providers: [
     // Activate the configured throttler app-wide (it was registered but never
