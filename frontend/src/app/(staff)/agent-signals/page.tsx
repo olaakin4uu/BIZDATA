@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { agentsApi, AGENT_NAMES, type SignalsPage, type SignalSummary, type AgentSeverity } from '@/lib/api/agents';
 import { extractErrorMessage, formatDateTime } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = [CURRENT_YEAR, CURRENT_YEAR - 1, CURRENT_YEAR - 2];
@@ -45,7 +46,7 @@ export default function AgentSignalsPage() {
   const sevCount = (s: string) => summary?.bySeverity.find((x) => x.severity === s)?.count ?? 0;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       {/* Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-7 py-6 mb-8 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-indigo-500/10" />
@@ -110,7 +111,7 @@ export default function AgentSignalsPage() {
       </div>
 
       {/* Signals table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -172,6 +173,6 @@ export default function AgentSignalsPage() {
         Signals are produced when you run the AI analytics agents (Dashboard → Run agents). Click a taxpayer to see their
         full profile, or open their case for the agent findings in context.
       </p>
-    </div>
+    </PageContainer>
   );
 }

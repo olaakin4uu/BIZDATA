@@ -6,6 +6,7 @@ import DataTable, { type Column } from '@/components/DataTable';
 import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { STAFF_ROLES, formatDateTime } from '@/lib/utils';
 import { APP_NAME } from '@/lib/appName';
+import PageContainer from '@/components/PageContainer';
 
 export default function UsersListPage() {
   const [rows, setRows] = useState<StaffUserRecord[]>([]);
@@ -42,7 +43,7 @@ export default function UsersListPage() {
   ];
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Staff users"
         subtitle={`People who can sign in to the ${APP_NAME} back office.`}
@@ -90,6 +91,6 @@ export default function UsersListPage() {
         limit={limit}
         onPageChange={setPage}
       />
-    </div>
+    </PageContainer>
   );
 }

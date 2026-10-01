@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Input, Select } from '@/components/Field';
 import { providersApi } from '@/lib/api/providers';
 import { SECTION_29_PROVIDER_TYPES, PROVIDER_STATUSES, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type FieldKey =
   | 'providerCode'
@@ -116,7 +117,7 @@ export default function NewProviderPage() {
   };
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Register a new provider"
         subtitle="Banks, fintechs, processors, telcos, FX bureaus, POS aggregators, e-commerce."
@@ -221,6 +222,6 @@ export default function NewProviderPage() {
           </Link>
         </div>
       </form>
-    </div>
+    </PageContainer>
   );
 }

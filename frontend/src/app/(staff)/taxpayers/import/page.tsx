@@ -4,6 +4,7 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import { taxpayersApi } from '@/lib/api/taxpayers';
 import { extractErrorMessage, formatBytes } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function ImportTaxpayersPage() {
   const [file, setFile] = useState<File | null>(null);
@@ -25,7 +26,7 @@ export default function ImportTaxpayersPage() {
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Import taxpayers"
         subtitle="Bulk-create or update taxpayer records from a CSV file."
@@ -86,6 +87,6 @@ nin,cacrcnumber,tin,type,firstname,lastname,businessname,phone,email,stateofresi
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

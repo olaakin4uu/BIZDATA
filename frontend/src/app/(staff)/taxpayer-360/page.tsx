@@ -5,6 +5,7 @@ import SensitiveValue from '@/components/SensitiveValue';
 import { Button } from '@/components/Button';
 import { taxpayer360Api, type SearchResult, type Taxpayer360 } from '@/lib/api/taxpayer360';
 import { formatMoney, formatDate, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function Taxpayer360Page() {
   const [q, setQ] = useState('');
@@ -32,7 +33,7 @@ export default function Taxpayer360Page() {
   const tp = profile?.taxpayer;
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <PageContainer>
       <PageHeader title="Taxpayer 360" subtitle="Search by name, TIN, NIN, BVN or CAC number — one view of declared income, observed flows, cases, and risk." />
 
       <form onSubmit={search} className="flex gap-2 my-4">
@@ -158,7 +159,7 @@ export default function Taxpayer360Page() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

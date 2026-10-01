@@ -5,6 +5,7 @@ import { crossStateApi, type ReferralCandidate, type Referral } from '@/lib/api/
 import { formatNaira } from '@/lib/api/cases';
 import { formatDate, extractErrorMessage } from '@/lib/utils';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
+import PageContainer from '@/components/PageContainer';
 
 const YEARS = [2026, 2025, 2024];
 // Endpoints /cross-state/generate and /{id}/send are role-gated on the backend.
@@ -46,7 +47,7 @@ export default function CrossStatePage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader title="Cross-state referrals" subtitle="JRB Act 2025 §15 — refer non-FCT-resident taxpayers to their home State IRS (minimised data: TIN + amounts only)." />
         <div className="flex items-center gap-2">
@@ -119,6 +120,6 @@ export default function CrossStatePage() {
           </div>
         )}
       </div>
-    </div>
+    </PageContainer>
   );
 }

@@ -2,6 +2,7 @@
 import PageHeader from '@/components/PageHeader';
 import ChangePasswordPanel from '@/components/account/ChangePasswordPanel';
 import TwoFactorPanel from '@/components/account/TwoFactorPanel';
+import PageContainer from '@/components/PageContainer';
 
 // Personal "Account & security" page, reached from the user menu (top-right).
 // Holds the things that belong to the signed-in user rather than the tenant:
@@ -9,7 +10,7 @@ import TwoFactorPanel from '@/components/account/TwoFactorPanel';
 // Settings.
 export default function AccountPage() {
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <PageContainer>
       <PageHeader title="Account & security" subtitle="Your password and sign-in security." />
 
       <section className="mb-8">
@@ -22,6 +23,6 @@ export default function AccountPage() {
         <p className="text-xs text-slate-500 mb-3">Add a second factor (an authenticator app) to your sign-in.</p>
         <TwoFactorPanel />
       </section>
-    </div>
+    </PageContainer>
   );
 }

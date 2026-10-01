@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { submissionsApi, type Submission } from '@/lib/api/submissions';
 import { formatBytes, formatDateTime, formatMoney, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Params = Promise<{ id: string }>;
 
@@ -33,7 +34,7 @@ export default function SubmissionDetailPage({ params }: { params: Params }) {
   const errors = sub.validationErrors as Record<string, unknown> | null | undefined;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageContainer>
       <PageHeader
         title={`Submission ${sub.id.slice(0, 8)}`}
         subtitle={`${sub.provider?.name ?? sub.providerId} · period ${sub.periodLabel}`}
@@ -122,7 +123,7 @@ export default function SubmissionDetailPage({ params }: { params: Params }) {
           </div>
         )}
       </section>
-    </div>
+    </PageContainer>
   );
 }
 

@@ -7,6 +7,7 @@ import { formatMoneyShort, extractErrorMessage } from '@/lib/utils';
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Field';
+import PageContainer from '@/components/PageContainer';
 
 const NET_META: Record<NetStatus, { label: string; chip: string; dot: string; desc: string }> = {
   CAPTURED:   { label: 'Captured',   chip: 'bg-emerald-50 text-emerald-700 ring-emerald-200', dot: 'bg-emerald-500', desc: 'Has the truth-of-record ID (RC / TIN)' },
@@ -70,7 +71,7 @@ export default function TaxNetPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       {/* Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-emerald-900 px-7 py-6 mb-8 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-emerald-500/10" />
@@ -114,7 +115,7 @@ export default function TaxNetPage() {
           extra="registerable" onClick={() => { setStatusFilter('UNVERIFIED'); setPage(1); }} active={statusFilter === 'UNVERIFIED'} />
         <SegmentCard title="Invisible" tone="rose" count={s?.invisible.count} inflow={s?.invisible.observedInflow}
           extra="enforcement priority" onClick={() => { setStatusFilter('INVISIBLE'); setPage(1); }} active={statusFilter === 'INVISIBLE'} />
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col justify-between">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col justify-between">
           <div>
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Registered into net</p>
             <p className="text-3xl font-bold text-slate-800 mt-1 tabular-nums">{s ? s.captured.count : '—'}</p>
@@ -163,7 +164,7 @@ export default function TaxNetPage() {
       </div>
 
       {/* Ranked table */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -263,7 +264,7 @@ export default function TaxNetPage() {
       {autoOpen && <AutoRegisterModal onClose={() => setAutoOpen(false)} onDone={(n) => { setMsg(`Auto-registered ${n} taxpayers into the net.`); setAutoOpen(false); load(); }} invisibleCount={s?.invisible.count ?? 0} />}
       {idOpen && idStatus && <ResolveIdentityModal onClose={() => setIdOpen(false)} status={idStatus}
         onDone={(r) => { setMsg(`Resolved ${r} identities via the BVN→NIN bridge.`); setIdOpen(false); identityApi.status().then(setIdStatus); load(); }} />}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -274,7 +275,7 @@ function SegmentCard({ title, tone, count, inflow, extra, onClick, active }: {
   const text: Record<string, string> = { emerald: 'text-emerald-700', amber: 'text-amber-600', rose: 'text-rose-700' };
   return (
     <button onClick={onClick}
-      className={`text-left bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${border[tone]} hover:shadow-md transition-shadow ${active ? 'ring-2 ring-slate-800' : ''}`}>
+      className={`text-left bg-white rounded-xl border border-slate-200 shadow-sm p-5 border-l-4 ${border[tone]} hover:shadow-md transition-shadow ${active ? 'ring-2 ring-slate-800' : ''}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{title}</p>
       <p className={`text-3xl font-bold mt-1 tabular-nums ${text[tone]}`}>{count?.toLocaleString() ?? '—'}</p>
       <p className="text-xs text-slate-400 mt-1">{inflow != null && inflow > 0 ? `${formatMoneyShort(inflow)} observed · ` : ''}{extra}</p>

@@ -4,6 +4,7 @@ import PageHeader from '@/components/PageHeader';
 import { notificationsApi, type Notification } from '@/lib/api/notifications';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { formatDateTime, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const SEV: Record<string, string> = {
   CRITICAL: 'bg-red-100 text-red-800',
@@ -35,7 +36,7 @@ export default function NotificationsPage() {
   const markRead = async (id: string) => { await notificationsApi.markRead(id); load(); };
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader title="Alerts" subtitle="High-value flags, missing submissions, and approaching §41 deadlines." />
         {canGenerate && (
@@ -68,6 +69,6 @@ export default function NotificationsPage() {
           </div>
         ))}
       </div>
-    </div>
+    </PageContainer>
   );
 }

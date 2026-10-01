@@ -6,6 +6,7 @@ import PageHeader from '@/components/PageHeader';
 import PasswordInput from '@/components/PasswordInput';
 import { usersApi } from '@/lib/api/users';
 import { STAFF_ROLES, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function NewStaffUserPage() {
   const router = useRouter();
@@ -35,7 +36,7 @@ export default function NewStaffUserPage() {
   };
 
   return (
-    <div className="p-6 max-w-xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Create staff user"
         actions={<Link href="/users" className="text-sm text-slate-600 hover:text-slate-900">← Back</Link>}
@@ -70,7 +71,7 @@ export default function NewStaffUserPage() {
           </Link>
         </div>
       </form>
-    </div>
+    </PageContainer>
   );
 }
 

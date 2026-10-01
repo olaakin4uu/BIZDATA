@@ -7,6 +7,7 @@ import SubmissionUploader from '@/components/SubmissionUploader';
 import { submissionsApi, type Submission } from '@/lib/api/submissions';
 import { providersApi, type Provider } from '@/lib/api/providers';
 import { SUBMISSION_STATUSES, formatDate, formatBytes, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function SubmissionsPage() {
   const [rows, setRows] = useState<Submission[]>([]);
@@ -65,7 +66,7 @@ export default function SubmissionsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Submissions"
         subtitle="All data files uploaded by providers or staff on their behalf."
@@ -147,6 +148,6 @@ export default function SubmissionsPage() {
         limit={limit}
         onPageChange={setPage}
       />
-    </div>
+    </PageContainer>
   );
 }

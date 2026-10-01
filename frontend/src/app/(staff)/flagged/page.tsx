@@ -7,6 +7,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import Icon from '@/components/Icon';
 import { dataRecordsApi, type DataRecord, type DataRecordStats } from '@/lib/api/data-records';
 import { formatMoney, formatPercent, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 function tpName(t: DataRecord['taxpayer']): string {
   if (!t) return '—';
@@ -71,7 +72,7 @@ export default function FlaggedReviewPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Flagged review"
         subtitle="Records flagged by an underdeclaration scan and still awaiting decision."
@@ -248,6 +249,6 @@ export default function FlaggedReviewPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }

@@ -7,6 +7,7 @@ import { Button } from '@/components/Button';
 import { Input, Select } from '@/components/Field';
 import { taxpayersApi } from '@/lib/api/taxpayers';
 import { TAXPAYER_TYPES, TAXPAYER_STATUSES, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type FieldKey =
   | 'type'
@@ -144,7 +145,7 @@ export default function NewTaxpayerPage() {
   const isIndividual = form.type === 'INDIVIDUAL';
 
   return (
-    <div className="p-6 max-w-2xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Register new taxpayer"
         actions={<Link href="/taxpayers" className="text-sm text-[var(--ink-2)] hover:text-[var(--ink)]">← Back</Link>}
@@ -293,6 +294,6 @@ export default function NewTaxpayerPage() {
           </Link>
         </div>
       </form>
-    </div>
+    </PageContainer>
   );
 }

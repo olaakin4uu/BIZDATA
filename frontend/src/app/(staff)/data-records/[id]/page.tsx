@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { formatMoney, formatPercent, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Params = Promise<{ id: string }>;
 
@@ -55,7 +56,7 @@ export default function DataRecordDetailPage({ params }: { params: Params }) {
   );
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <PageContainer>
       <PageHeader
         title={`Record ${rec.id.slice(0, 8)}`}
         subtitle={`${rec.provider?.name ?? rec.providerId} · ${rec.periodLabel}`}
@@ -163,7 +164,7 @@ export default function DataRecordDetailPage({ params }: { params: Params }) {
           </pre>
         </details>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

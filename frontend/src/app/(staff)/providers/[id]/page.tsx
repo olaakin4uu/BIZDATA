@@ -9,6 +9,7 @@ import { providersApi, type Provider, type ProviderUserRecord, type HandOffCrede
 import CredentialHandOff from '@/components/providers/CredentialHandOff';
 import { complianceApi, type ProviderCompliance, type PeriodStatus } from '@/lib/api/compliance';
 import { PROVIDER_STATUSES, PROVIDER_USER_ROLES, SECTION_29_PROVIDER_TYPES, formatDate, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Params = Promise<{ id: string }>;
 
@@ -83,10 +84,10 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
   if (loading) return <div className="p-6"><LoadingSpinner /></div>;
   if (error || !provider) {
     return (
-      <div className="p-6 max-w-5xl mx-auto">
+      <PageContainer>
         <Link href="/providers" className="text-sm text-slate-600 hover:text-slate-900">← All providers</Link>
         <div className="mt-4 bg-red-50 border border-red-200 text-red-700 text-sm rounded-lg px-4 py-3">{error ?? 'Not found'}</div>
-      </div>
+      </PageContainer>
     );
   }
 
@@ -96,7 +97,7 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
   const totalUploads = provider.submissions?.length ?? 0;
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageContainer>
       {/* ── Header banner ─────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-sky-900 px-7 py-6 mb-6 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-sky-500/10" />
@@ -154,7 +155,7 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
       </div>
 
       {/* ── Quarterly compliance timeline ─────────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-6">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-sm font-semibold text-slate-800">{year} reporting timeline</h2>
           <div className="flex items-center gap-3 text-[11px] text-slate-500">
@@ -325,7 +326,7 @@ export default function ProviderDetailPage({ params }: { params: Params }) {
       {resetFor && (
         <ResetPasswordModal user={resetFor} onClose={() => setResetFor(null)} onDone={() => { setResetFor(null); refresh(); }} />
       )}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -384,7 +385,7 @@ function ResetPasswordModal({ user, onClose, onDone }: { user: ProviderUserRecor
 }
 function MiniKpi({ label, value, hint, valueClass }: { label: string; value: string | number; hint: string; valueClass: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p
         className={`${kpiValueSize(value)} font-bold mt-1 tabular-nums leading-tight break-words ${valueClass}`}

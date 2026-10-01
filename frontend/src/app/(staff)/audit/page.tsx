@@ -4,6 +4,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { auditApi, type AuditLog } from '@/lib/api/audit';
 import { formatDateTime, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const ACTOR_TYPES = ['STAFF', 'PROVIDER_USER', 'SYSTEM'];
 
@@ -56,7 +57,7 @@ export default function AuditPage() {
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
           title="Audit log"
@@ -151,7 +152,7 @@ export default function AuditPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

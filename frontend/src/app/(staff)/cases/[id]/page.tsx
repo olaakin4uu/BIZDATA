@@ -15,6 +15,7 @@ import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { readErrorMessage } from '@/lib/api/client';
 import RecordAccessGate from '@/components/access/RecordAccessGate';
 import CaseTriagePanel from '@/components/triage/CaseTriagePanel';
+import PageContainer from '@/components/PageContainer';
 
 // Mirror of the backend lifecycle state machine (cases.service.ts).
 const TRANSITIONS: Record<CaseStatus, CaseStatus[]> = {
@@ -221,7 +222,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
   const allowed = TRANSITIONS[c.status] ?? [];
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <PageContainer>
       <Link href="/cases" className="text-xs text-teal-700 hover:underline">← All cases</Link>
       <div className="flex items-start justify-between flex-wrap gap-3 mt-2">
         <PageHeader
@@ -640,7 +641,7 @@ export default function CaseDetailPage({ params }: { params: Promise<{ id: strin
           />
         )}
       </Modal>
-    </div>
+    </PageContainer>
   );
 }
 

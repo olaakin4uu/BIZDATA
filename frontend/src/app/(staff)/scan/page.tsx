@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { scanApi, type Scan } from '@/lib/api/scan';
 import { PROVIDER_TYPES, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
@@ -104,7 +105,7 @@ export default function ScanPage() {
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Underdeclaration scans"
         subtitle="Aggregate provider inflows per taxpayer, compare to declared income, flag the gap."
@@ -195,6 +196,6 @@ export default function ScanPage() {
         limit={limit}
         onPageChange={setPage}
       />
-    </div>
+    </PageContainer>
   );
 }

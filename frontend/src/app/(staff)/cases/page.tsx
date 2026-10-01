@@ -16,6 +16,7 @@ import {
 } from '@/lib/api/cases';
 import { extractErrorMessage } from '@/lib/utils';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
+import PageContainer from '@/components/PageContainer';
 
 const STATUS_LABEL: Record<CaseStatus, string> = {
   OPEN: 'Open',
@@ -98,7 +99,7 @@ function CasesListInner() {
   const to = Math.min(page * PAGE_SIZE, total);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Underdeclaration cases"
         subtitle="Prioritized worklist of taxpayers whose observed flows exceed their declared income."
@@ -252,7 +253,7 @@ function CasesListInner() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

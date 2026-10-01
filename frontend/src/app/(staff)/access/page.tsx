@@ -6,6 +6,7 @@ import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { extractErrorMessage, formatDateTime } from '@/lib/utils';
 import AccessAssignments from '@/components/access/AccessAssignments';
 import GrantApprovals from '@/components/access/GrantApprovals';
+import PageContainer from '@/components/PageContainer';
 
 const APPROVER_ROLES = ['SUPER_ADMIN', 'ADMIN', 'SUPERVISOR'];
 const ASSIGNMENT_ADMIN_ROLES = ['SUPER_ADMIN', 'ADMIN'];
@@ -45,7 +46,7 @@ export default function AccessPage() {
   const g = mine?.grant;
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Sensitive-data access"
         subtitle="BVN and full account numbers are masked by default. Request time-boxed Just-in-Time access; a supervisor must approve."
@@ -121,6 +122,6 @@ export default function AccessPage() {
 
       {/* Raw-record access assignments (need-to-know) — SUPER_ADMIN/ADMIN only. */}
       {isAssignmentAdmin && <AccessAssignments />}
-    </div>
+    </PageContainer>
   );
 }

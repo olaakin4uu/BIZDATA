@@ -11,6 +11,7 @@ import {
   type SectorOverride,
 } from '@/lib/api/modelFeedback';
 import { extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const YEARS = [2026, 2025, 2024];
 
@@ -35,17 +36,17 @@ export default function MetricsPage() {
 
   if (forbidden) {
     return (
-      <div className="p-6 max-w-5xl mx-auto">
+      <PageContainer>
         <PageHeader title="Model governance & fairness" subtitle="Detection precision, flag distribution, and the analyst feedback loop." />
         <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-5 py-6 text-sm text-amber-800">
           You don’t have access to model &amp; fairness metrics. These are limited to Analyst, Supervisor and Admin roles. Ask an administrator if you need visibility.
         </div>
-      </div>
+      </PageContainer>
     );
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader title="Model governance & fairness" subtitle="Detection precision, the distribution of flags, and the analyst feedback loop that tunes the model — under a fairness gate." />
         <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-lg text-sm px-3 py-1.5">
@@ -70,7 +71,7 @@ export default function MetricsPage() {
       )}
 
       <FeedbackLoop year={year} />
-    </div>
+    </PageContainer>
   );
 }
 

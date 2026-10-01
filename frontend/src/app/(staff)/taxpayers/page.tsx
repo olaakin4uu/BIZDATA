@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { taxpayersApi, type Taxpayer } from '@/lib/api/taxpayers';
 import { TAXPAYER_TYPES, TAXPAYER_STATUSES, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 function nameOf(t: Taxpayer): string {
   if (t.type === 'INDIVIDUAL') return `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim() || '—';
@@ -72,7 +73,7 @@ export default function TaxpayersListPage() {
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Taxpayer registry"
         subtitle="Individuals and corporates the platform tracks."
@@ -131,6 +132,6 @@ export default function TaxpayersListPage() {
         limit={limit}
         onPageChange={setPage}
       />
-    </div>
+    </PageContainer>
   );
 }

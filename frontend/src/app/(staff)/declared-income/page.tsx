@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import DataTable, { type Column } from '@/components/DataTable';
 import { declaredIncomeApi, type DeclaredIncome } from '@/lib/api/declared-income';
 import { formatMoney, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
@@ -52,7 +53,7 @@ export default function DeclaredIncomeListPage() {
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Declared income"
         subtitle="Annual income declarations used in underdeclaration scans."
@@ -92,6 +93,6 @@ export default function DeclaredIncomeListPage() {
         limit={limit}
         onPageChange={setPage}
       />
-    </div>
+    </PageContainer>
   );
 }

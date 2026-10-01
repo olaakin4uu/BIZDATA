@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { scanApi, type Scan } from '@/lib/api/scan';
 import { formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Params = Promise<{ id: string }>;
 
@@ -40,7 +41,7 @@ export default function ScanDetailPage({ params }: { params: Params }) {
   );
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <PageContainer>
       <PageHeader
         title={`Scan ${scan.id.slice(0, 8)}`}
         subtitle={`Year ${scan.year} · threshold ${(Number(scan.threshold) * 100).toFixed(0)}%`}
@@ -85,7 +86,7 @@ export default function ScanDetailPage({ params }: { params: Params }) {
           </Link>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

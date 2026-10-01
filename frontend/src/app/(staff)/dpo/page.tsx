@@ -4,6 +4,7 @@ import PageHeader from '@/components/PageHeader';
 import StatCard from '@/components/StatCard';
 import { ndpaApi, type DpoReport } from '@/lib/api/ndpa';
 import { formatDate, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function DpoPage() {
   const [r, setR] = useState<DpoReport | null>(null);
@@ -16,7 +17,7 @@ export default function DpoPage() {
   useEffect(load, []);
 
   return (
-    <div className="p-6 max-w-4xl mx-auto">
+    <PageContainer>
       <PageHeader title="Data protection (NDPA 2023)" subtitle="DPO oversight: lawful basis, access events, and §28 storage-limitation status." />
 
       {err && (
@@ -48,7 +49,7 @@ export default function DpoPage() {
           Bank-report data past the retention horizon is purged automatically on a monthly schedule and recorded in the tamper-evident audit trail.
         </p>
       </div>
-    </div>
+    </PageContainer>
   );
 }
 

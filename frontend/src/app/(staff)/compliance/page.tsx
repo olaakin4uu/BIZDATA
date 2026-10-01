@@ -13,6 +13,7 @@ import {
 } from '@/lib/api/compliance';
 import { extractErrorMessage } from '@/lib/utils';
 import { readErrorMessage } from '@/lib/api/client';
+import PageContainer from '@/components/PageContainer';
 
 const YEARS = [2026, 2025, 2024];
 
@@ -104,7 +105,7 @@ export default function CompliancePage() {
   const issuedTotal = (penalties ?? []).reduce((s, p) => s + Number(p.amount), 0);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader
           title="Provider compliance"
@@ -308,6 +309,6 @@ export default function CompliancePage() {
           />
         )}
       </Modal>
-    </div>
+    </PageContainer>
   );
 }

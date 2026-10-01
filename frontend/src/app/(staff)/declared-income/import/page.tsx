@@ -4,6 +4,7 @@ import Link from 'next/link';
 import PageHeader from '@/components/PageHeader';
 import { declaredIncomeApi, type ImportResult } from '@/lib/api/declared-income';
 import { extractErrorMessage, formatBytes } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:4200/api';
 
@@ -64,7 +65,7 @@ export default function ImportDeclaredIncomePage() {
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Import declared income"
         subtitle="Bulk-upload declarations to compare against ingested provider data. Validate first, then commit."
@@ -138,7 +139,7 @@ export default function ImportDeclaredIncomePage() {
       {phase === 'done' && result && (
         <ResultCard result={result} showAllErrors={showAllErrors} onToggleErrors={() => setShowAllErrors((s) => !s)} />
       )}
-    </div>
+    </PageContainer>
   );
 }
 

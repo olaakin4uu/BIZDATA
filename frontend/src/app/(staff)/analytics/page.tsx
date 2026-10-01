@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { analyticsApi, type ProviderAnalytics, type SectorAnalytics } from '@/lib/api/analytics';
 import { formatMoneyShort, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Tab = 'provider' | 'sector';
 
@@ -25,7 +26,7 @@ export default function AnalyticsPage() {
   }, [year]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       {/* Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-7 py-6 mb-8 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-indigo-500/10" />
@@ -62,7 +63,7 @@ export default function AnalyticsPage() {
       </div>
 
       {tab === 'provider' ? <ProviderView data={prov} /> : <SectorView data={sect} />}
-    </div>
+    </PageContainer>
   );
 }
 
@@ -89,7 +90,7 @@ function ProviderView({ data }: { data: ProviderAnalytics | null }) {
         <Kpi label="Flagged records" value={data ? data.totals.flagged.toLocaleString() : '—'} hint="enforcement yield" tone="rose" />
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -159,7 +160,7 @@ function SectorView({ data }: { data: SectorAnalytics | null }) {
         <Kpi label="Top sector by est. tax" value={rows[0]?.sector.replace(/_/g, ' ') ?? '—'} hint={rows[0] ? formatMoneyShort(rows[0].estimatedTax) : ''} tone="rose" />
       </div>
 
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -216,7 +217,7 @@ function Kpi({ label, value, hint, tone }: { label: string; value: string | numb
   const c: Record<string, string> = { indigo: 'text-indigo-700 border-l-indigo-500', slate: 'text-slate-700 border-l-slate-400', emerald: 'text-emerald-700 border-l-emerald-500', rose: 'text-rose-700 border-l-rose-500' };
   const [text, border] = c[tone].split(' ');
   return (
-    <div className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${border}`}>
+    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm p-5 border-l-4 ${border}`}>
       <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
       <p className={`text-2xl font-bold mt-1 tabular-nums ${text}`}>{value}</p>
       <p className="text-xs text-slate-400 mt-1">{hint}</p>

@@ -7,6 +7,7 @@ import { governanceApi, type GovernanceReport, type BankMou, type KeyRotationSta
 import { formatNaira } from '@/lib/api/cases';
 import { extractErrorMessage } from '@/lib/utils';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
+import PageContainer from '@/components/PageContainer';
 
 const YEARS = [2026, 2025, 2024];
 
@@ -22,7 +23,7 @@ export default function GovernancePage() {
   }, [year]);
 
   return (
-    <div className="p-6 max-w-5xl mx-auto">
+    <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
         <PageHeader title="Governance & oversight" subtitle="Steering-committee report pack and bank MoU / onboarding status." />
         <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-lg text-sm px-3 py-1.5">
@@ -106,7 +107,7 @@ export default function GovernancePage() {
 
       <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mt-8 mb-3">PII key rotation</h2>
       <KeyRotationCard />
-    </div>
+    </PageContainer>
   );
 }
 

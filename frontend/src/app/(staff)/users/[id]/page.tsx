@@ -5,6 +5,7 @@ import PageHeader from '@/components/PageHeader';
 import PasswordInput from '@/components/PasswordInput';
 import { usersApi, type StaffUserRecord } from '@/lib/api/users';
 import { STAFF_ROLES, formatDateTime, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function UserDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = usePromise(params);
@@ -81,16 +82,16 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
 
   if (loadErr) {
     return (
-      <div className="p-6 max-w-3xl mx-auto">
+      <PageContainer>
         <Link href="/users" className="text-sm text-teal-700 hover:underline">← All users</Link>
         <div className="mt-4 px-4 py-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">{loadErr}</div>
-      </div>
+      </PageContainer>
     );
   }
   if (!user) return <div className="p-6 text-sm text-slate-400">Loading…</div>;
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <PageContainer>
       <Link href="/users" className="text-sm text-teal-700 hover:underline">← All users</Link>
       <PageHeader
         title={`${user.firstName} ${user.lastName}`}
@@ -146,7 +147,7 @@ export default function UserDetailPage({ params }: { params: Promise<{ id: strin
           </button>
         </form>
       </section>
-    </div>
+    </PageContainer>
   );
 }
 

@@ -7,6 +7,7 @@ import { statutoryApi, type StatutoryConfig, type StatutoryHistoryItem } from '@
 import { integrationApi, type ApiKeyRecord, type NewApiKey } from '@/lib/api/integration';
 import { applyBrandColor } from '@/lib/brand';
 import { extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function SettingsPage() {
   const [tenant, setTenant] = useState<Tenant | null>(null);
@@ -68,7 +69,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="p-6 max-w-3xl mx-auto">
+    <PageContainer>
       <PageHeader title="Settings" subtitle="Tenant profile and your account preferences." />
 
       {loading ? (
@@ -134,7 +135,7 @@ export default function SettingsPage() {
       {tenant && (
         <p className="text-xs text-slate-400 mt-6">Tenant ID: <span className="font-mono">{tenant.id}</span></p>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

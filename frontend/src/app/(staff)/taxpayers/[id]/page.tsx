@@ -9,6 +9,7 @@ import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import {
   formatDate, formatMoney, formatPercent, statusBadge, extractErrorMessage,
 } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Params = Promise<{ id: string }>;
 
@@ -48,7 +49,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
   );
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageContainer>
       <PageHeader
         title={tpName(tp)}
         subtitle={`${tp.type} · ${tp.tin ?? tp.nin ?? tp.cacRcNumber ?? 'unidentified'}`}
@@ -170,7 +171,7 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
           </div>
         )}
       </section>
-    </div>
+    </PageContainer>
   );
 }
 

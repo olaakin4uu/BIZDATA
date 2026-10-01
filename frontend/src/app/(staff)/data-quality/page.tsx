@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { dataQualityApi, type IdentifierQuality, type CoverageRow } from '@/lib/api/data-quality';
 import { extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const YEARS = Array.from({ length: 4 }, (_, i) => new Date().getFullYear() - i);
 
@@ -32,7 +33,7 @@ export default function DataQualityPage() {
   }, [year]);
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-900 px-7 py-6 mb-6 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-indigo-500/10" />
         <div className="relative flex items-start justify-between flex-wrap gap-4">
@@ -144,7 +145,7 @@ export default function DataQualityPage() {
           )}
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

@@ -9,6 +9,7 @@ import {
   type LinkageResult,
 } from '@/lib/api/linkage';
 import { formatMoneyShort, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 type Tab = 'identifier' | 'name';
 
@@ -53,7 +54,7 @@ export default function LinkagePage() {
   const result = tab === 'identifier' ? byId : byName;
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-teal-900 px-7 py-6 mb-6 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-teal-500/10" />
         <div className="relative">
@@ -134,7 +135,7 @@ export default function LinkagePage() {
           Showing the top {result.rows.length} by provider spread, then account count. Narrow the filters to see more.
         </p>
       )}
-    </div>
+    </PageContainer>
   );
 }
 

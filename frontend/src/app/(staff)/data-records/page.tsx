@@ -6,6 +6,7 @@ import DataTable, { type Column } from '@/components/DataTable';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { providersApi, type Provider } from '@/lib/api/providers';
 import { SECTION_29_PROVIDER_TYPES, REVIEW_STATUSES, formatMoney, statusBadge, extractErrorMessage } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 const CURRENT_YEAR = new Date().getFullYear();
 const YEARS = Array.from({ length: 6 }, (_, i) => CURRENT_YEAR - i);
@@ -88,7 +89,7 @@ export default function DataRecordsPage() {
   ];
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Data records"
         subtitle="All ingested rows across every provider type."
@@ -157,6 +158,6 @@ export default function DataRecordsPage() {
         limit={limit}
         onPageChange={setPage}
       />
-    </div>
+    </PageContainer>
   );
 }

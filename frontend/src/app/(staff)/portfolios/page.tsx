@@ -7,6 +7,7 @@ import { PROVIDER_TYPES, formatMoneyShort, extractErrorMessage } from '@/lib/uti
 import { Modal } from '@/components/Modal';
 import { Button } from '@/components/Button';
 import { Select } from '@/components/Field';
+import PageContainer from '@/components/PageContainer';
 
 const SECTORS = ['PROFESSIONAL_SERVICES', 'TRADING', 'REAL_ESTATE', 'HOSPITALITY', 'CONSTRUCTION', 'TECH', 'OTHER'];
 
@@ -37,7 +38,7 @@ export default function PortfoliosPage() {
   };
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
       {/* Banner */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-purple-900 px-7 py-6 mb-8 shadow-lg">
         <div className="pointer-events-none absolute -top-10 -right-10 h-52 w-52 rounded-full bg-purple-500/10" />
@@ -73,7 +74,7 @@ export default function PortfoliosPage() {
         ) : workload.length === 0 ? (
           <p className="text-sm text-slate-400 col-span-full">No analysts carry work or a portfolio yet. Assign one below.</p>
         ) : workload.map((w) => (
-          <div key={w.staff.id} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5">
+          <div key={w.staff.id} className="bg-white rounded-xl border border-slate-200 shadow-sm p-5">
             <div className="flex items-center justify-between mb-3">
               <div className="min-w-0">
                 <p className="font-semibold text-slate-800 truncate">{w.staff.firstName} {w.staff.lastName}</p>
@@ -93,7 +94,7 @@ export default function PortfoliosPage() {
 
       {/* Portfolio assignments */}
       <SectionTitle>Portfolio assignments</SectionTitle>
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
@@ -134,7 +135,7 @@ export default function PortfoliosPage() {
       </p>
 
       {showAssign && <AssignModal onClose={() => setShowAssign(false)} onDone={(m) => { setMsg(m); setShowAssign(false); load(); }} />}
-    </div>
+    </PageContainer>
   );
 }
 

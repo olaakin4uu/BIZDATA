@@ -19,6 +19,7 @@ import { auditApi } from '@/lib/api/audit';
 import { crossStateApi, type Referral } from '@/lib/api/crossState';
 import { extractErrorMessage, formatDate } from '@/lib/utils';
 import { APP_LONG_NAME } from '@/lib/appName';
+import PageContainer from '@/components/PageContainer';
 
 /* ─── RISK COLOUR MAP ─────────────────────────────────────────────────────── */
 const RISK_META: Record<RiskLevel, { label: string; bar: string; text: string; badge: string }> = {
@@ -75,7 +76,7 @@ export default function StaffDashboardPage() {
   const maxFunnel = Math.max(1, ...(stats?.funnel.map((f) => f.count) ?? [1]));
 
   return (
-    <div className="p-6 max-w-7xl mx-auto">
+    <PageContainer>
 
       {/* ── Welcome banner ────────────────────────────────────────────────── */}
       <div className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-slate-900 via-slate-800 to-teal-900 px-7 py-6 mb-8 shadow-lg">
@@ -190,7 +191,7 @@ export default function StaffDashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
 
         {/* Funnel */}
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <div className="lg:col-span-2 bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center gap-2 mb-5">
             <span className="h-3 w-3 rounded-full bg-teal-500" />
             <h3 className="text-sm font-semibold text-slate-800">Detection → recovery pipeline</h3>
@@ -218,7 +219,7 @@ export default function StaffDashboardPage() {
         </div>
 
         {/* Risk distribution */}
-        <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+        <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
           <div className="flex items-center gap-2 mb-5">
             <span className="h-3 w-3 rounded-full bg-rose-500" />
             <h3 className="text-sm font-semibold text-slate-800">Risk distribution</h3>
@@ -252,7 +253,7 @@ export default function StaffDashboardPage() {
       </div>
 
       {/* ── Top cases ─────────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mb-8">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mb-8">
         <div className="flex items-center justify-between mb-4">
           <div className="flex items-center gap-2">
             <span className="h-3 w-3 rounded-full bg-orange-500" />
@@ -307,7 +308,7 @@ export default function StaffDashboardPage() {
       <AgentsPanel year={year} />
 
       {/* ── Provider mix ──────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6 mt-6">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6 mt-6">
         <div className="flex items-center gap-2 mb-4">
           <span className="h-3 w-3 rounded-full bg-violet-500" />
           <h3 className="text-sm font-semibold text-slate-800">Provider mix</h3>
@@ -333,7 +334,7 @@ export default function StaffDashboardPage() {
           </div>
         )}
       </div>
-    </div>
+    </PageContainer>
   );
 }
 
@@ -362,7 +363,7 @@ function OpsCard({ href, label, value, hint, accent, valueColor, dot }: {
   accent: string; valueColor: string; dot: string;
 }) {
   return (
-    <Link href={href} className={`bg-white rounded-2xl border border-slate-100 shadow-sm p-5 border-l-4 ${accent} hover:shadow-md transition-shadow block`}>
+    <Link href={href} className={`bg-white rounded-xl border border-slate-200 shadow-sm p-5 border-l-4 ${accent} hover:shadow-md transition-shadow block`}>
       <div className="flex items-center gap-2 mb-1">
         <span className={`h-2 w-2 rounded-full ${dot}`} />
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</p>
@@ -432,7 +433,7 @@ function AgentsPanel({ year }: { year: number }) {
   ];
 
   return (
-    <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-6">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-6">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <span className="h-3 w-3 rounded-full bg-indigo-500" />

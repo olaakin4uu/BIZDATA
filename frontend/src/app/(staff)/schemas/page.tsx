@@ -4,6 +4,7 @@ import PageHeader from '@/components/PageHeader';
 import LoadingSpinner from '@/components/LoadingSpinner';
 import { schemasApi, type ProviderSchema } from '@/lib/api/schemas';
 import { extractErrorMessage, formatDateTime } from '@/lib/utils';
+import PageContainer from '@/components/PageContainer';
 
 export default function SchemasPage() {
   const [rows, setRows] = useState<ProviderSchema[]>([]);
@@ -57,7 +58,7 @@ export default function SchemasPage() {
   };
 
   return (
-    <div className="p-6 max-w-6xl mx-auto">
+    <PageContainer>
       <PageHeader
         title="Provider schemas"
         subtitle="CSV column expectations applied during submission ingestion. One schema per provider type."
@@ -151,6 +152,6 @@ export default function SchemasPage() {
           </div>
         </div>
       )}
-    </div>
+    </PageContainer>
   );
 }
