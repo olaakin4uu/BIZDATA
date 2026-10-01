@@ -6,6 +6,7 @@ import { formatNaira } from '@/lib/api/cases';
 import { formatDate, extractErrorMessage } from '@/lib/utils';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import PageContainer from '@/components/PageContainer';
+import { loadBranding } from '@/lib/branding';
 
 const YEARS = [2026, 2025, 2024];
 // Endpoints /cross-state/generate and /{id}/send are role-gated on the backend.
@@ -25,6 +26,15 @@ export default function CrossStatePage() {
   const [sendingId, setSendingId] = useState<string | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  // The authority's own territory, so this screen never names someone else's.
+  const [territory, setTerritory] = useState<string>('');
+
+  useEffect(() => {
+    loadBranding()
+      .then((b) => setTerritory(b?.homeTerritoryLabel || ''))
+      .catch(() => setTerritory(''));
+  }, []);
+  const resident = territory ? `${territory}-resident` : 'resident';
 
   const load = () => {
     setErr(null);
@@ -49,7 +59,7 @@ export default function CrossStatePage() {
   return (
     <PageContainer>
       <div className="flex items-start justify-between flex-wrap gap-3">
-        <PageHeader title="Cross-state referrals" subtitle="JRB Act 2025 §15 — refer non-FCT-resident taxpayers to their home State IRS (minimised data: TIN + amounts only)." />
+        <PageHeader title="Cross-state referrals" subtitle={`JRB Act 2025 §15 — refer taxpayers resident outside ${territory || 'this territory'} to their home State IRS (minimised data: TIN + amounts only).`} />
         <div className="flex items-center gap-2">
           <select value={year} onChange={(e) => setYear(Number(e.target.value))} className="border border-slate-300 rounded-lg text-sm px-3 py-1.5">
             {YEARS.map((y) => <option key={y} value={y}>{y}</option>)}
@@ -69,10 +79,10 @@ export default function CrossStatePage() {
         </div>
       )}
 
-      <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mt-6 mb-3">Candidates — non-FCT residents with flagged cases</h2>
+      <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mt-6 mb-3">{`Candidates — non-${resident} parties with flagged cases`}</h2>
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-8">
         {candidates === null ? <p className="text-xs text-slate-400 p-4">Loading…</p> : candidates.length === 0 ? (
-          <p className="text-xs text-slate-400 p-4">No outstanding candidates for {year} (all referred or FCT-resident).</p>
+          <p className="text-xs text-slate-400 p-4">No outstanding candidates for {year} (all referred, or resident here).</p>
         ) : (
           <div className="overflow-x-auto">
           <table className="w-full text-sm">

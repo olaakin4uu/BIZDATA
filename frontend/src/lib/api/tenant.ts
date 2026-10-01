@@ -32,4 +32,7 @@ export interface TenantBranding {
   shortName: string;
   logoUrl?: string | null;
   themeColor?: string | null;
+  /** This authority's own jurisdiction, for §15 cross-state wording. */
+  homeAuthority?: string | null;
+  homeTerritoryLabel?: string | null;
 }

@@ -4,17 +4,43 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
 import { CryptoService } from '../../common/services/crypto.service';
 
-// Home jurisdiction. States here are treated as "in-FCT"; everything else is a
-// cross-state candidate. (Move to tenant config when multi-tenant.)
-const HOME_AUTHORITY = 'FCT-IRS';
-const HOME_STATES = new Set(['FCT', 'ABUJA', 'FEDERAL CAPITAL TERRITORY']);
+// Fallback home jurisdiction, used only when the tenant has not set one. This was
+// previously hardcoded, which meant every taxpayer of any authority other than
+// FCT-IRS was treated as a non-resident and offered up for §15 referral — an
+// authority was invited to refer its own residents to itself.
+const FALLBACK_HOME_AUTHORITY = 'FCT-IRS';
+const FALLBACK_HOME_STATES = ['FCT', 'ABUJA', 'FEDERAL CAPITAL TERRITORY'];
+const FALLBACK_TERRITORY_LABEL = 'FCT';
 
 @Injectable()
 export class CrossStateService {
   constructor(private prisma: PrismaService, private audit: AuditService, private crypto: CryptoService) {}
 
-  private isHome(state?: string | null) {
-    return HOME_STATES.has((state || '').trim().toUpperCase());
+  // Read once per short window: the tenant row changes rarely and this is on the
+  // path of every candidate listing.
+  private homeCache?: { at: number; authority: string; states: Set<string>; label: string };
+  private static readonly HOME_TTL_MS = 60_000;
+
+  /** The tenant's own jurisdiction — who counts as a resident, and what to call it. */
+  private async home() {
+    const hit = this.homeCache;
+    if (hit && Date.now() - hit.at < CrossStateService.HOME_TTL_MS) return hit;
+    const t = await this.prisma.tenant.findFirst({
+      select: { homeAuthority: true, homeStates: true, homeTerritoryLabel: true, shortName: true },
+    });
+    const states: string[] = t?.homeStates?.length ? t.homeStates : FALLBACK_HOME_STATES;
+    const resolved = {
+      at: Date.now(),
+      authority: t?.homeAuthority || FALLBACK_HOME_AUTHORITY,
+      states: new Set(states.map((s) => s.trim().toUpperCase())),
+      label: t?.homeTerritoryLabel || states[0] || FALLBACK_TERRITORY_LABEL,
+    };
+    this.homeCache = resolved;
+    return resolved;
+  }
+
+  private isHomeState(state: string | null | undefined, states: Set<string>) {
+    return states.has((state || '').trim().toUpperCase());
   }
   private authorityFor(state: string) {
     return `${state} State IRS`;
@@ -32,8 +58,9 @@ export class CrossStateService {
       select: { taxpayerId: true },
     });
     const referred = new Set(existing.map((r) => r.taxpayerId));
+    const home = await this.home();
     return cases
-      .filter((c) => c.taxpayer && !this.isHome(c.taxpayer.stateOfResidence) && !referred.has(c.taxpayerId))
+      .filter((c) => c.taxpayer && !this.isHomeState(c.taxpayer.stateOfResidence, home.states) && !referred.has(c.taxpayerId))
       .map((c) => ({
         caseId: c.id,
         taxpayerId: c.taxpayerId,
@@ -68,7 +95,7 @@ export class CrossStateService {
         data: {
           taxpayerId: cand.taxpayerId,
           direction: 'OUTBOUND',
-          fromAuthority: HOME_AUTHORITY,
+          fromAuthority: (await this.home()).authority,
           toAuthority: cand.toAuthority,
           state: cand.state || 'Unknown',
           year,
@@ -111,7 +138,7 @@ export class CrossStateService {
         taxpayerId,
         direction: 'INBOUND',
         fromAuthority: dto.fromAuthority,
-        toAuthority: HOME_AUTHORITY,
+        toAuthority: (await this.home()).authority,
         state: dto.state || 'Unknown',
         year: dto.summary?.year ?? null,
         payload: { name: dto.name, ...dto.summary } as any,

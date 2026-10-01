@@ -24,7 +24,12 @@ export class TenantService {
   /** Public branding (safe subset) for the unauthenticated login screen. */
   async branding() {
     const t = await this.get();
-    return { name: t.name, shortName: t.shortName, logoUrl: t.logoUrl, themeColor: t.themeColor };
+    return {
+      name: t.name, shortName: t.shortName, logoUrl: t.logoUrl, themeColor: t.themeColor,
+      // So screens can name the authority's own territory instead of hardcoding one.
+      homeAuthority: t.homeAuthority,
+      homeTerritoryLabel: t.homeTerritoryLabel,
+    };
   }
 
   /** Store an uploaded logo as a self-contained data URI in logoUrl. */

@@ -97,6 +97,13 @@ model Tenant {
   address     String?
   logoUrl     String?
   themeColor  String?  @default("#0f766e")
+  // Home jurisdiction for JRB Act 2025 §15 cross-state referrals. A taxpayer
+  // resident in one of homeStates belongs to this authority; anyone else is a
+  // referral candidate. Previously hardcoded to FCT-IRS, which made every
+  // taxpayer of any other authority look like a non-resident to be referred away.
+  homeAuthority String?   // e.g. "FCT-IRS", "Ogun State IRS"
+  homeStates    String[]  @default([])  // upper-case, e.g. ["FCT","ABUJA"] or ["OGUN"]
+  homeTerritoryLabel String? // what to call the territory on screen, e.g. "FCT", "Ogun"
   scanThreshold Decimal @default(0.20) @db.Decimal(5, 4)
   retentionYears Int    @default(6) // NDPA §28 storage limitation (Nigeria tax 6-yr standard)
   isActive    Boolean  @default(true)
