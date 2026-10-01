@@ -10,6 +10,9 @@ import ThemeToggle from '@/components/shell/ThemeToggle';
 import CommandPalette, { COMMAND_OPEN_EVENT } from '@/components/shell/CommandPalette';
 import RouteProgress from '@/components/shell/RouteProgress';
 import AppFooter from '@/components/shell/AppFooter';
+import IdleWarningDialog from '@/components/shell/IdleWarningDialog';
+import { useIdleTimeout } from '@/hooks/useIdleTimeout';
+import { IDLE_TIMEOUT_MS, IDLE_WARNING_MS, STAFF_IDLE_KEY } from '@/lib/sessionPolicy';
 import { pushRecent } from '@/lib/navFavorites';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { authApi } from '@/lib/api/auth';
@@ -68,13 +71,36 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
     router.replace('/login');
   };
 
+  // Idle sign-out on the wall clock — runs for any signed-in session, including
+  // the forced change-password screen; public auth routes are left alone.
+  const { isWarning, secondsLeft, stayLoggedIn } = useIdleTimeout({
+    idleMs: IDLE_TIMEOUT_MS,
+    warningMs: IDLE_WARNING_MS,
+    enabled: hasHydrated && !!token && !!user && !isPublicAuthRoute,
+    onLogout: handleSignOut,
+    storageKey: STAFF_IDLE_KEY,
+  });
+  const idleWarning = (
+    <IdleWarningDialog
+      open={isWarning}
+      secondsLeft={secondsLeft}
+      onStayLoggedIn={stayLoggedIn}
+      onLogoutNow={handleSignOut}
+    />
+  );
+
   const handleUploadAvatar = async (file: File) => {
     const updated = await authApi.uploadStaffAvatar(file);
     setUser(updated);
   };
 
   if (isBareRoute) {
-    return <>{children}</>;
+    return (
+      <>
+        {children}
+        {idleWarning}
+      </>
+    );
   }
 
   // Wait for hydration before rendering or redirecting — avoids the flicker.
@@ -156,6 +182,9 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
         <AppFooter />
       </div>
+
+      {/* Idle session timeout warning */}
+      {idleWarning}
     </div>
   );
 }

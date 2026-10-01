@@ -4,6 +4,9 @@ import Link from 'next/link';
 import { Button } from '@/components/Button';
 import { Input, Select, Textarea } from '@/components/Field';
 import PasswordInput from '@/components/PasswordInput';
+import IdleWarningDialog from '@/components/shell/IdleWarningDialog';
+import { resetIdleClock, useIdleTimeout } from '@/hooks/useIdleTimeout';
+import { ASSESSMENT_ADMIN_IDLE_KEY, IDLE_TIMEOUT_MS, IDLE_WARNING_MS } from '@/lib/sessionPolicy';
 import {
   adminApi,
   adminToken,
@@ -52,8 +55,30 @@ export default function AdminPage() {
       });
   }, []);
 
+  // Same sign-out as the dashboard's button; the login form renders in place.
+  const signOut = useCallback(() => {
+    adminToken.clear();
+    setAuthed(false);
+  }, []);
+
+  // Idle sign-out on the wall clock, while an administrator is signed in.
+  const { isWarning, secondsLeft, stayLoggedIn } = useIdleTimeout({
+    idleMs: IDLE_TIMEOUT_MS,
+    warningMs: IDLE_WARNING_MS,
+    enabled: authed === true,
+    onLogout: signOut,
+    storageKey: ASSESSMENT_ADMIN_IDLE_KEY,
+  });
+
   if (authed === null) return <div className="min-h-screen flex items-center justify-center text-[var(--ink-3)]">Loading…</div>;
-  return authed ? <Dashboard onLogout={() => setAuthed(false)} /> : <AdminLogin onAuthed={() => setAuthed(true)} />;
+  return authed ? (
+    <>
+      <Dashboard onLogout={() => setAuthed(false)} />
+      <IdleWarningDialog open={isWarning} secondsLeft={secondsLeft} onStayLoggedIn={stayLoggedIn} onLogoutNow={signOut} />
+    </>
+  ) : (
+    <AdminLogin onAuthed={() => setAuthed(true)} />
+  );
 }
 
 function AdminLogin({ onAuthed }: { onAuthed: () => void }) {
@@ -74,6 +99,8 @@ function AdminLogin({ onAuthed }: { onAuthed: () => void }) {
     try {
       const { token } = await adminApi.login(username.trim(), password);
       adminToken.set(token);
+      // A fresh sign-in starts a fresh idle clock.
+      resetIdleClock(ASSESSMENT_ADMIN_IDLE_KEY);
       onAuthed();
     } catch (err) {
       setError((err as Error).message || 'Login failed');

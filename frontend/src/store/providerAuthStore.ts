@@ -2,6 +2,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ProviderUser } from '@/lib/api/auth';
+import { resetIdleClock } from '@/hooks/useIdleTimeout';
+import { PROVIDER_IDLE_KEY } from '@/lib/sessionPolicy';
 
 interface ProviderAuthState {
   user: ProviderUser | null;
@@ -18,7 +20,11 @@ export const useProviderAuthStore = create<ProviderAuthState>()(
       user: null,
       token: null,
       setAuth: (user, token) => {
-        if (typeof window !== 'undefined') localStorage.setItem('bizdata_provider_token', token);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('bizdata_provider_token', token);
+          // A fresh sign-in starts a fresh idle clock.
+          resetIdleClock(PROVIDER_IDLE_KEY);
+        }
         set({ user, token });
       },
       setUser: (user) => set({ user }),

@@ -1,13 +1,16 @@
 'use client';
-import { useEffect } from 'react';
+import { useCallback, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import ProviderNav from '@/components/ProviderNav';
+import IdleWarningDialog from '@/components/shell/IdleWarningDialog';
+import { useIdleTimeout } from '@/hooks/useIdleTimeout';
+import { IDLE_TIMEOUT_MS, IDLE_WARNING_MS, PROVIDER_IDLE_KEY } from '@/lib/sessionPolicy';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
 
 export default function ProviderPortalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
   const router = useRouter();
-  const { token, user } = useProviderAuthStore();
+  const { token, user, clearAuth } = useProviderAuthStore();
   // Public auth routes render without the portal chrome and need no session.
   const isPublicAuthRoute =
     pathname === '/provider/login' ||
@@ -24,6 +27,21 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
     if (!token || !user) { router.replace('/provider/login'); return; }
     if (mustChange && !onProfile) router.replace('/provider/profile');
   }, [isPublicAuthRoute, token, user, mustChange, onProfile, router]);
+
+  // Same sign-out as the portal nav's button.
+  const handleSignOut = useCallback(() => {
+    clearAuth();
+    router.replace('/provider/login');
+  }, [clearAuth, router]);
+
+  // Idle sign-out on the wall clock, for any signed-in provider session.
+  const { isWarning, secondsLeft, stayLoggedIn } = useIdleTimeout({
+    idleMs: IDLE_TIMEOUT_MS,
+    warningMs: IDLE_WARNING_MS,
+    enabled: !!token && !!user && !isPublicAuthRoute,
+    onLogout: handleSignOut,
+    storageKey: PROVIDER_IDLE_KEY,
+  });
 
   if (isPublicAuthRoute) return <>{children}</>;
 
@@ -50,6 +68,14 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
     <div className="min-h-screen flex flex-col">
       <ProviderNav />
       <main className="flex-1 max-w-6xl w-full mx-auto px-6 py-8">{children}</main>
+
+      {/* Idle session timeout warning */}
+      <IdleWarningDialog
+        open={isWarning}
+        secondsLeft={secondsLeft}
+        onStayLoggedIn={stayLoggedIn}
+        onLogoutNow={handleSignOut}
+      />
     </div>
   );
 }

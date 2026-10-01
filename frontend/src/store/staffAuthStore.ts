@@ -2,6 +2,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { StaffUser } from '@/lib/api/auth';
+import { resetIdleClock } from '@/hooks/useIdleTimeout';
+import { STAFF_IDLE_KEY } from '@/lib/sessionPolicy';
 
 interface StaffAuthState {
   user: StaffUser | null;
@@ -21,7 +23,11 @@ export const useStaffAuthStore = create<StaffAuthState>()(
       token: null,
       hasHydrated: false,
       setAuth: (user, token) => {
-        if (typeof window !== 'undefined') localStorage.setItem('bizdata_staff_token', token);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('bizdata_staff_token', token);
+          // A fresh sign-in starts a fresh idle clock.
+          resetIdleClock(STAFF_IDLE_KEY);
+        }
         set({ user, token });
       },
       setUser: (user) => set({ user }),
