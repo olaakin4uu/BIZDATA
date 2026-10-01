@@ -30,6 +30,7 @@ import * as bcrypt from 'bcrypt';
 import * as fs from 'fs';
 import * as path from 'path';
 import { CryptoService } from '../src/common/services/crypto.service';
+import { resolveAuthority, NEIGHBOUR_STATES } from './demo-authorities';
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter: new PrismaPg(pool) });
@@ -41,27 +42,13 @@ const pick = <T>(a: readonly T[]): T => a[Math.floor(rnd() * a.length)];
 const int = (lo: number, hi: number) => lo + Math.floor(rnd() * (hi - lo + 1));
 const pad = (n: number | string, w: number) => String(n).padStart(w, '0');
 
-const FIRST = ['Adebayo', 'Folasade', 'Oluwaseun', 'Chinwe', 'Babatunde', 'Yetunde', 'Ifeoluwa',
-  'Gbenga', 'Morayo', 'Tolulope', 'Segun', 'Aderonke', 'Kehinde', 'Taiwo', 'Bolanle', 'Femi',
-  'Abiodun', 'Omolara', 'Damilola', 'Funmilayo', 'Olamide', 'Temitope', 'Sikiru', 'Ayodeji',
-  'Halima', 'Emeka', 'Ngozi', 'Ibrahim', 'Blessing', 'Chukwuemeka'];
-const LAST = ['Adeyemi', 'Ogunleye', 'Balogun', 'Odutola', 'Sonaike', 'Adewale', 'Onabanjo',
-  'Kuforiji', 'Ademola', 'Oyelaran', 'Shodipo', 'Ogundipe', 'Dosunmu', 'Anjorin', 'Oluwole',
-  'Bankole', 'Ilori', 'Fadipe', 'Salako', 'Odunsi', 'Okonkwo', 'Eze', 'Bello', 'Danjuma'];
 
-// Invented businesses: Ogun localities + generic trade words. Not taken from any
-// real register.
-const BIZ_HEAD = ['Abeokuta', 'Ijebu', 'Sagamu', 'Ota', 'Ilaro', 'Ayetoro', 'Owode', 'Iperu',
-  'Odogbolu', 'Ifo', 'Agbara', 'Remo', 'Egba', 'Yewa', 'Obafemi', 'Ewekoro'];
 const BIZ_TAIL = ['Agro Allied', 'Cement & Aggregates', 'Textile Mills', 'Logistics', 'Poultry Farms',
   'Foods & Beverages', 'Plastics', 'Construction', 'Petroleum Services', 'Pharmaceuticals',
   'Quarry & Mining', 'Printing Works', 'Furniture', 'Cold Chain', 'Packaging', 'Paints & Chemicals',
   'Steel Works', 'Motors', 'Timber', 'Rubber Estates'];
 const BIZ_SUFFIX = ['Limited', 'Nigeria Limited', 'Enterprises', 'Industries Plc', 'Ventures', '& Sons Limited'];
 
-const LGAS = ['Abeokuta North', 'Abeokuta South', 'Ado-Odo/Ota', 'Egbado North', 'Egbado South',
-  'Ewekoro', 'Ifo', 'Ijebu East', 'Ijebu North', 'Ijebu Ode', 'Ikenne', 'Imeko Afon', 'Ipokia',
-  'Obafemi Owode', 'Odeda', 'Odogbolu', 'Ogun Waterside', 'Remo North', 'Sagamu'];
 
 const SECTORS = ['Manufacturing', 'Agriculture', 'Construction', 'Trade', 'Logistics',
   'Professional Services', 'Hospitality', 'Education', 'Healthcare', 'Real Estate'];
@@ -78,7 +65,7 @@ const PROVIDERS: { name: string; type: string }[] = [
   { name: 'Harbour Community Bank Ltd', type: 'BANK' },
   { name: 'PayBridge Technologies Ltd', type: 'FINTECH' },
   { name: 'Swiftpay Solutions Ltd', type: 'PAYMENT_PROCESSOR' },
-  { name: 'Olumo Insurance Plc', type: 'INSURANCE' },
+  { name: 'Sentinel Assurance Plc', type: 'INSURANCE' },
   { name: 'Lakeview Bureau De Change Ltd', type: 'FX_BUREAU' },
   { name: 'Corral POS Aggregators Ltd', type: 'POS_AGGREGATOR' },
 ];
@@ -106,9 +93,15 @@ function filedQuarters(now: Date): { q: number; label: string; endsOn: Date; due
 }
 
 async function main() {
+  const A = resolveAuthority(process.env.DEMO_AUTHORITY);
   const url = String(process.env.DATABASE_URL || '');
-  if (!/findata_demo/.test(url)) {
-    throw new Error('Refusing to run: DATABASE_URL is not findata_demo — ' + url.replace(/:[^:@]*@/, ':***@'));
+  // Each authority has its own database, and the seed writes to that one only —
+  // so a mistyped DATABASE_URL can never land synthetic rows on live data, nor
+  // one authority's demo on another's.
+  if (!url.includes(A.database)) {
+    throw new Error(
+      `Refusing to run: DEMO_AUTHORITY=${A.shortName} expects database "${A.database}", ` +
+      `but DATABASE_URL is ${url.replace(/:[^:@]*@/, ':***@')}`);
   }
 
   const crypto = new CryptoService();
@@ -116,7 +109,7 @@ async function main() {
   const enc = (v: string) => crypto.encrypt(v);
   const idx = (v: string) => crypto.blindIndex(v);
 
-  console.log('Seeding DEMO tenant (synthetic data only)…');
+  console.log(`Seeding DEMO tenant for ${A.shortName} (synthetic data only)…`);
 
   // Idempotent: clear the generated rows so a re-run replaces rather than
   // duplicates. Safe because the guard above proves this is the demo database.
@@ -127,30 +120,28 @@ async function main() {
   console.log('  cleared previous demo rows');
 
   // ── 1. Tenant ──────────────────────────────────────────────────────────────
-  const logoPath = path.join(__dirname, 'demo-assets', 'ogirs-logo.b64');
-  const logoUrl = fs.existsSync(logoPath) ? fs.readFileSync(logoPath, 'utf8').trim() : null;
-  let tenant = await prisma.tenant.findFirst();
-  if (!tenant) {
-    tenant = await prisma.tenant.create({
-      data: {
-        name: 'OGUN STATE INTERNAL REVENUE SERVICE',
-        shortName: 'OGIRS',
-        contactEmail: 'info@ogirs.og.gov.ng',
-        themeColor: '#0f766e',
-        ...(logoUrl ? { logoUrl } : {}),
-      } as never,
-    });
-  }
-  console.log('  tenant:', tenant.name, logoUrl ? '(with logo)' : '(NO LOGO)');
+  const logoPath = A.logoFile ? path.join(__dirname, 'demo-assets', A.logoFile) : null;
+  const logoUrl = logoPath && fs.existsSync(logoPath) ? fs.readFileSync(logoPath, 'utf8').trim() : null;
+  const branding = {
+    name: A.name,
+    shortName: A.shortName,
+    contactEmail: `info@${A.emailDomain}`,
+    themeColor: '#0f766e',
+    // Who this authority treats as its own residents, for §15 referral.
+    homeAuthority: A.homeAuthority,
+    homeStates: A.homeStates,
+    homeTerritoryLabel: A.homeTerritoryLabel,
+    ...(logoUrl ? { logoUrl } : {}),
+  };
+  const existingTenant = await prisma.tenant.findFirst();
+  const tenant = existingTenant
+    ? await prisma.tenant.update({ where: { id: existingTenant.id }, data: branding as never })
+    : await prisma.tenant.create({ data: branding as never });
+  console.log('  tenant:', tenant.name, logoUrl ? '(with logo)' : '(NO LOGO — supply ' + A.logoFile + ')');
+  console.log('  home jurisdiction:', A.homeAuthority, '— residents:', A.homeStates.join(', '));
 
   // ── 2. Staff ───────────────────────────────────────────────────────────────
-  const staff = [
-    { email: 'admin@ogirs.og.gov.ng', role: 'SUPER_ADMIN', firstName: 'Adeola', lastName: 'Ogunsanya' },
-    { email: 'analyst@ogirs.og.gov.ng', role: 'ANALYST', firstName: 'Ifeoluwa', lastName: 'Bankole' },
-    { email: 'supervisor@ogirs.og.gov.ng', role: 'SUPERVISOR', firstName: 'Tunde', lastName: 'Kuforiji' },
-    { email: 'auditor@ogirs.og.gov.ng', role: 'AUDIT_OFFICER', firstName: 'Morayo', lastName: 'Shodipo' },
-    { email: 'dpo@ogirs.og.gov.ng', role: 'DPO', firstName: 'Segun', lastName: 'Onabanjo' },
-  ] as const;
+  const staff = A.staff.map((s) => ({ ...s, email: `${s.local}@${A.emailDomain}` }));
   const hash = await bcrypt.hash('Demo@2026', 10);
   for (const s of staff) {
     await prisma.user.upsert({
@@ -191,8 +182,13 @@ async function main() {
     const nin = isCo ? '' : '2' + pad(int(100000000, 999999999), 10).slice(0, 10);
     const bvn = '1' + pad(int(100000000, 999999999), 10).slice(0, 10);
     const tin = pad(int(10000000, 99999999), 8) + '-0001';
-    const first = pick(FIRST), last = pick(LAST);
-    const businessName = `${pick(BIZ_HEAD)} ${pick(BIZ_TAIL)} ${pick(BIZ_SUFFIX)}`;
+    const first = pick(A.firstNames), last = pick(A.lastNames);
+    const businessName = `${pick(A.placeNames)} ${pick(BIZ_TAIL)} ${pick(BIZ_SUFFIX)}`;
+    // About one in eight banks in the territory but lives elsewhere. These are the
+    // genuine JRB §15 referral candidates; without them Cross-State is empty, and
+    // if every party were resident the screen would be empty too.
+    const nonResident = rnd() < 0.12;
+    const state = nonResident ? pick(NEIGHBOUR_STATES) : A.residentState;
     const row = await prisma.taxpayer.create({
       data: {
         type: isCo ? 'CORPORATE' : 'INDIVIDUAL',
@@ -206,8 +202,10 @@ async function main() {
         // Registry TIN coverage is deliberately partial, so Data Quality has a
         // real gap to report rather than a perfect 100%.
         ...(rnd() < 0.62 ? { tinEnc: enc(tin), tinIndex: idx(tin) } : {}),
-        stateOfResidence: 'Ogun',
-        address: `${int(1, 240)} ${pick(BIZ_HEAD)} Road, ${pick(LGAS)}, Ogun State`,
+        stateOfResidence: state,
+        address: nonResident
+          ? `${int(1, 240)} Market Road, ${state}`
+          : `${int(1, 240)} ${pick(A.placeNames)} Road, ${pick(A.localities)}, ${A.residentState}`,
         sector: pick(SECTORS),
         riskScore: 0,
         riskLevel: 'LOW',
