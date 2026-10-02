@@ -29,6 +29,12 @@ export class CrossStateController {
     return this.service.generate(parseInt(dto?.year ?? new Date().getFullYear(), 10), u.id);
   }
 
+  @Post('send-batch')
+  @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')
+  sendMany(@Body() dto: { ids?: string[] }, @CurrentStaff() u: any) {
+    return this.service.sendMany(Array.isArray(dto?.ids) ? dto.ids : [], u.id);
+  }
+
   @Post(':id/send')
   @Roles('SUPER_ADMIN', 'ADMIN', 'SUPERVISOR')
   send(@Param('id') id: string, @CurrentStaff() u: any) {

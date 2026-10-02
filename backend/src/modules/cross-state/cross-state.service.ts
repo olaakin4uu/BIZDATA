@@ -125,6 +125,27 @@ export class CrossStateService {
     return r;
   }
 
+  /** Mark several DRAFT outbound referrals as sent in one action. Anything not a DRAFT outbound is skipped. */
+  async sendMany(ids: string[], staffId?: string) {
+    const drafts = await this.prisma.crossStateReferral.findMany({
+      where: { id: { in: ids ?? [] }, direction: 'OUTBOUND', status: 'DRAFT' },
+      select: { id: true, toAuthority: true },
+    });
+    if (!drafts.length) return { sent: 0 };
+    await this.prisma.crossStateReferral.updateMany({
+      where: { id: { in: drafts.map((d) => d.id) }, status: 'DRAFT' },
+      data: { status: 'SENT' },
+    });
+    for (const d of drafts) {
+      await this.audit.log({
+        actorType: 'STAFF', actorId: staffId, staffId,
+        action: 'CROSS_STATE_SEND', entity: 'CrossStateReferral', entityId: d.id,
+        afterJson: { toAuthority: d.toAuthority, batch: true },
+      });
+    }
+    return { sent: drafts.length };
+  }
+
   /** Accept an INBOUND referral about a taxpayer transacting in/from another state. */
   async inbound(dto: { fromAuthority: string; tin?: string; name?: string; state?: string; summary?: any }, staffId?: string) {
     // Try to link to a known taxpayer by TIN blind index.

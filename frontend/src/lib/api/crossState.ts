@@ -28,4 +28,5 @@ export const crossStateApi = {
   list: () => apiFetch<Referral[]>('/cross-state'),
   generate: (year: number) => apiFetch<{ created: number }>('/cross-state/generate', { method: 'POST', body: { year } }),
   send: (id: string) => apiFetch<Referral>(`/cross-state/${id}/send`, { method: 'POST' }),
+  sendMany: (ids: string[]) => apiFetch<{ sent: number }>('/cross-state/send-batch', { method: 'POST', body: { ids } }),
 };

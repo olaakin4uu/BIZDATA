@@ -24,6 +24,8 @@ export default function CrossStatePage() {
   const [refs, setRefs] = useState<Referral[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [sendingId, setSendingId] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [sendingMany, setSendingMany] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
   // The authority's own territory, so this screen never names someone else's.
@@ -40,6 +42,7 @@ export default function CrossStatePage() {
     setErr(null);
     crossStateApi.candidates(year).then(setCandidates).catch((e) => { setCandidates([]); setErr(extractErrorMessage(e)); });
     crossStateApi.list().then(setRefs).catch((e) => { setRefs([]); setErr(extractErrorMessage(e)); });
+    setSelected(new Set());
   };
   useEffect(load, [year]);
 
@@ -54,6 +57,22 @@ export default function CrossStatePage() {
     try { await crossStateApi.send(id); setMsg('Referral sent.'); load(); }
     catch (e) { setMsg(extractErrorMessage(e)); }
     finally { setSendingId(null); }
+  };
+
+  // Only outbound drafts can be sent; selection is limited to those.
+  const sendable = (refs ?? []).filter((r) => r.direction === 'OUTBOUND' && r.status === 'DRAFT');
+  const allSelected = sendable.length > 0 && sendable.every((r) => selected.has(r.id));
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(sendable.map((r) => r.id)));
+  const toggle = (id: string) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const sendSelected = async () => {
+    setSendingMany(true); setMsg(null);
+    try { const r = await crossStateApi.sendMany(Array.from(selected)); setMsg(`${r.sent} referral(s) sent.`); load(); }
+    catch (e) { setMsg(extractErrorMessage(e)); }
+    finally { setSendingMany(false); }
   };
 
   return (
@@ -102,7 +121,14 @@ export default function CrossStatePage() {
         )}
       </div>
 
-      <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide mb-3">Referrals</h2>
+      <div className="flex items-center justify-between gap-3 mb-3">
+        <h2 className="text-sm font-semibold text-slate-700 uppercase tracking-wide">Referrals</h2>
+        {canRefer && sendable.length > 0 && (
+          <button onClick={sendSelected} disabled={sendingMany || selected.size === 0} className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-teal-600 hover:bg-teal-700 text-white disabled:opacity-50">
+            {sendingMany ? 'Sending…' : `Send selected (${selected.size})`}
+          </button>
+        )}
+      </div>
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         {refs === null ? <p className="text-xs text-slate-400 p-4">Loading…</p> : refs.length === 0 ? (
           <p className="text-xs text-slate-400 p-4">No referrals yet.</p>
@@ -110,10 +136,22 @@ export default function CrossStatePage() {
           <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="text-left text-xs uppercase tracking-wide text-slate-400 border-b border-slate-100 bg-slate-50/50">
+              {canRefer && (
+                <th className="py-2.5 pl-4 w-8">
+                  <input type="checkbox" aria-label="Select all drafts" checked={allSelected} disabled={sendable.length === 0} onChange={toggleAll} className="accent-teal-600" />
+                </th>
+              )}
               <th className="py-2.5 px-4 font-medium">Direction</th><th className="py-2.5 px-4 font-medium">From → To</th><th className="py-2.5 px-4 font-medium">State</th><th className="py-2.5 px-4 font-medium">Status</th><th className="py-2.5 px-4 font-medium">When</th><th className="py-2.5 px-4"></th>
             </tr></thead>
             <tbody>{refs.map((r) => (
               <tr key={r.id} className="border-b border-slate-50">
+                {canRefer && (
+                  <td className="py-2.5 pl-4 w-8">
+                    {r.direction === 'OUTBOUND' && r.status === 'DRAFT' && (
+                      <input type="checkbox" aria-label="Select referral" checked={selected.has(r.id)} onChange={() => toggle(r.id)} className="accent-teal-600" />
+                    )}
+                  </td>
+                )}
                 <td className="py-2.5 px-4"><span className={`text-xs font-medium ${r.direction === 'OUTBOUND' ? 'text-teal-700' : 'text-indigo-700'}`}>{r.direction}</span></td>
                 <td className="py-2.5 px-4 text-slate-600 text-xs">{r.fromAuthority} → {r.toAuthority}</td>
                 <td className="py-2.5 px-4 text-slate-600">{r.state}</td>
