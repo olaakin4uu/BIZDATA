@@ -15,6 +15,8 @@ export default function AuditPage() {
   const [actorType, setActorType] = useState('');
   const [entity, setEntity] = useState('');
   const [action, setAction] = useState('');
+  const [kind, setKind] = useState<'' | 'views' | 'security'>('');
+  const [recordId, setRecordId] = useState('');
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [loading, setLoading] = useState(false);
@@ -28,6 +30,8 @@ export default function AuditPage() {
       actorType: actorType || undefined,
       entity: entity || undefined,
       action: action || undefined,
+      kind: kind || undefined,
+      recordId: recordId.trim() || undefined,
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       page,
@@ -38,7 +42,7 @@ export default function AuditPage() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(load, [page, actorType, entity, action, dateFrom, dateTo]);
+  useEffect(load, [page, actorType, entity, action, kind, dateFrom, dateTo]);
 
   const columns: Column<AuditLog>[] = [
     { key: 'when', header: 'When', cell: (r) => <span className="text-xs text-slate-500 whitespace-nowrap">{formatDateTime(r.createdAt)}</span> },
@@ -67,6 +71,23 @@ export default function AuditPage() {
       </div>
 
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4 flex flex-wrap items-end gap-3">
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Show</label>
+          <select value={kind} onChange={(e) => { setKind(e.target.value as typeof kind); setPage(1); }}
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm bg-white">
+            <option value="">All events</option>
+            <option value="views">Personal-data views</option>
+            <option value="security">Security events</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-slate-600 mb-1">Record ID</label>
+          <input value={recordId} onChange={(e) => setRecordId(e.target.value)}
+            onBlur={() => { setPage(1); load(); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') { setPage(1); load(); } }}
+            placeholder="Who opened this record?"
+            className="px-3 py-2 border border-slate-300 rounded-lg text-sm" />
+        </div>
         <div>
           <label className="block text-xs font-medium text-slate-600 mb-1">Actor type</label>
           <select value={actorType} onChange={(e) => { setActorType(e.target.value); setPage(1); }}

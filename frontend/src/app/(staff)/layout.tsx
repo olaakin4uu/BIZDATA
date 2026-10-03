@@ -11,11 +11,13 @@ import CommandPalette, { COMMAND_OPEN_EVENT } from '@/components/shell/CommandPa
 import RouteProgress from '@/components/shell/RouteProgress';
 import AppFooter from '@/components/shell/AppFooter';
 import IdleWarningDialog from '@/components/shell/IdleWarningDialog';
+import ViewerWatermark, { STAFF_WATERMARK_ROUTES, needsWatermark } from '@/components/shell/ViewerWatermark';
 import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import { IDLE_TIMEOUT_MS, IDLE_WARNING_MS, STAFF_IDLE_KEY } from '@/lib/sessionPolicy';
 import { pushRecent } from '@/lib/navFavorites';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
 import { authApi } from '@/lib/api/auth';
+import { reportSecurityEvent } from '@/lib/api/audit';
 
 export default function StaffLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
@@ -88,6 +90,14 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
       onLogoutNow={handleSignOut}
     />
   );
+
+  // A removed watermark is recorded, then the session ends. The report is
+  // awaited (bounded) so it isn't lost to the sign-out clearing the token.
+  const handleWatermarkTamper = (reason: string) => {
+    const report = reportSecurityEvent('WATERMARK_TAMPER', reason, pathname).catch(() => {});
+    const pause = new Promise((r) => setTimeout(r, 3000));
+    Promise.all([report, pause]).then(handleSignOut);
+  };
 
   const handleUploadAvatar = async (file: File) => {
     const updated = await authApi.uploadStaffAvatar(file);
@@ -185,6 +195,11 @@ export default function StaffLayout({ children }: { children: React.ReactNode })
 
       {/* Idle session timeout warning */}
       {idleWarning}
+
+      {/* Screens with individual-level data carry the viewer's name. */}
+      {needsWatermark(pathname, STAFF_WATERMARK_ROUTES) && (
+        <ViewerWatermark name={`${user.firstName} ${user.lastName}`.trim() || user.email} email={user.email} onTamper={handleWatermarkTamper} />
+      )}
     </div>
   );
 }

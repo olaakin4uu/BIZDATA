@@ -185,3 +185,7 @@ export const providerPortalApi = {
     URL.revokeObjectURL(url);
   },
 };
+
+/** Report a client-side security event (e.g. a removed watermark) against the current provider session. */
+export const reportProviderSecurityEvent = (type: 'WATERMARK_TAMPER', reason: string, path: string) =>
+  providerApiFetch<void>('/provider-portal/security-events', { method: 'POST', body: { type, reason, path } });

@@ -3,7 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { RequestContextService } from './request-context.service';
 import { AuditService } from './audit.service';
 
-export type PiiFieldType = 'bvn' | 'account' | 'nin';
+export type PiiFieldType = 'bvn' | 'account' | 'nin' | 'phone';
 
 /**
  * Decides whether the current viewer may see sensitive PII (BVN, full account

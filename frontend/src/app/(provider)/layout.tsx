@@ -3,9 +3,11 @@ import { useCallback, useEffect } from 'react';
 import { usePathname, useRouter } from 'next/navigation';
 import ProviderNav from '@/components/ProviderNav';
 import IdleWarningDialog from '@/components/shell/IdleWarningDialog';
+import ViewerWatermark, { PROVIDER_WATERMARK_ROUTES, needsWatermark } from '@/components/shell/ViewerWatermark';
 import { useIdleTimeout } from '@/hooks/useIdleTimeout';
 import { IDLE_TIMEOUT_MS, IDLE_WARNING_MS, PROVIDER_IDLE_KEY } from '@/lib/sessionPolicy';
 import { useProviderAuthStore } from '@/store/providerAuthStore';
+import { reportProviderSecurityEvent } from '@/lib/api/provider-portal';
 
 export default function ProviderPortalLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname() ?? '';
@@ -33,6 +35,14 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
     clearAuth();
     router.replace('/provider/login');
   }, [clearAuth, router]);
+
+  // A removed watermark is recorded, then the session ends (report first, so
+  // the sign-out doesn't clear the token out from under it).
+  const handleWatermarkTamper = useCallback((reason: string) => {
+    const report = reportProviderSecurityEvent('WATERMARK_TAMPER', reason, pathname).catch(() => {});
+    const pause = new Promise((r) => setTimeout(r, 3000));
+    Promise.all([report, pause]).then(handleSignOut);
+  }, [pathname, handleSignOut]);
 
   // Idle sign-out on the wall clock, for any signed-in provider session.
   const { isWarning, secondsLeft, stayLoggedIn } = useIdleTimeout({
@@ -76,6 +86,10 @@ export default function ProviderPortalLayout({ children }: { children: React.Rea
         onStayLoggedIn={stayLoggedIn}
         onLogoutNow={handleSignOut}
       />
+
+      {needsWatermark(pathname, PROVIDER_WATERMARK_ROUTES) && (
+        <ViewerWatermark name={`${user.firstName} ${user.lastName}`.trim() || user.email} email={user.email} onTamper={handleWatermarkTamper} />
+      )}
     </div>
   );
 }

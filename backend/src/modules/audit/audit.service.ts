@@ -52,6 +52,17 @@ export class AuditQueryService {
             },
           }
         : {}),
+      AND: [
+        // "Who looked at personal data" / "who tampered with a watermark".
+        ...(query.kind === 'views'
+          ? [{ OR: [{ action: { startsWith: 'VIEW_' } }, { action: { startsWith: 'SEARCH_' } }, { action: 'PII_ACCESS' }, { action: 'PII_REVEAL' }] }]
+          : []),
+        ...(query.kind === 'security' ? [{ action: { startsWith: 'SECURITY_' } }] : []),
+        // A record shows up either as the entry's subject or among the ids a list returned.
+        ...(query.recordId
+          ? [{ OR: [{ entityId: String(query.recordId) }, { afterJson: { path: ['ids'], array_contains: [String(query.recordId)] } }] }]
+          : []),
+      ],
     };
     const [logs, total] = await Promise.all([
       this.prisma.auditLog.findMany({

@@ -24,7 +24,7 @@ export class DataRecordsService {
       accountNumber: this.pii.reveal(this.crypto.decrypt(r.accountNumber), 'account', allowClear),
       bvn: this.pii.reveal(this.crypto.decrypt(r.bvn), 'bvn', allowClear),
       nin: this.pii.reveal(this.crypto.decrypt(r.nin), 'nin', allowClear),
-      phoneNumber: this.crypto.decrypt(r.phoneNumber),
+      phoneNumber: this.pii.reveal(this.crypto.decrypt(r.phoneNumber), 'phone', allowClear),
       taxpayer: r.taxpayer
         ? {
             ...r.taxpayer,

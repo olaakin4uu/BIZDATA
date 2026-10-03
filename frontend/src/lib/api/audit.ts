@@ -24,6 +24,8 @@ export const auditApi = {
       actorType?: string;
       action?: string;
       entity?: string;
+      kind?: 'views' | 'security';
+      recordId?: string;
       dateFrom?: string;
       dateTo?: string;
       page?: number;
@@ -42,3 +44,7 @@ export const auditApi = {
   get: (id: string) => apiFetch<AuditLog>(`/audit/${id}`),
   verify: () => apiFetch<{ verified: boolean; count: number; headHash?: string | null; brokenAt?: number; entryId?: string; reason?: string; action?: string }>(`/audit/verify`),
 };
+
+/** Report a client-side security event (e.g. a removed watermark) against the current staff session. */
+export const reportSecurityEvent = (type: 'WATERMARK_TAMPER', reason: string, path: string) =>
+  apiFetch<void>('/security-events', { method: 'POST', body: { type, reason, path } });

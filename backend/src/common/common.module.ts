@@ -11,6 +11,7 @@ import { RequestContextService } from './services/request-context.service';
 import { PiiAccessService } from './services/pii-access.service';
 import { MailService } from './services/mail.service';
 import { RequestContextInterceptor } from './interceptors/request-context.interceptor';
+import { RecordViewInterceptor } from './interceptors/record-view.interceptor';
 
 @Global()
 @Module({
@@ -34,6 +35,7 @@ import { RequestContextInterceptor } from './interceptors/request-context.interc
     PiiAccessService,
     MailService,
     { provide: APP_INTERCEPTOR, useClass: RequestContextInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: RecordViewInterceptor },
   ],
   exports: [JwtModule, AuditService, CryptoService, RequestContextService, PiiAccessService, MailService, PassportModule],
 })

@@ -4,16 +4,18 @@ import {
   Controller,
   Get,
   Header,
+  HttpCode,
   Param,
   Patch,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import type { Response } from 'express';
+import type { Request, Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { ProviderPortalService } from './provider-portal.service';
@@ -21,6 +23,8 @@ import { SubmissionsService } from '../submissions/submissions.service';
 import { AuthService } from '../auth/auth.service';
 import { ProviderAuthGuard } from '../../common/guards/provider-auth.guard';
 import { CurrentProviderUser } from '../../common/decorators/current-provider-user.decorator';
+import { AuditService } from '../../common/services/audit.service';
+import { securityEventLog } from '../audit/security-events.controller';
 
 @ApiTags('Provider Portal')
 @ApiBearerAuth()
@@ -31,7 +35,20 @@ export class ProviderPortalController {
     private service: ProviderPortalService,
     private submissions: SubmissionsService,
     private auth: AuthService,
+    private audit: AuditService,
   ) {}
+
+  /** The portal reports client-side security events (e.g. a removed watermark) against its own session. */
+  @Post('security-events')
+  @HttpCode(204)
+  async securityEvent(@Body() dto: any, @CurrentProviderUser() u: any, @Req() req: Request) {
+    const { action, afterJson } = securityEventLog(dto);
+    await this.audit.log({
+      actorType: 'PROVIDER_USER', actorId: u.id,
+      action, entity: 'Session', afterJson: { ...afterJson, providerId: u.providerId ?? null },
+      ip: req.ip, userAgent: req.headers['user-agent'],
+    });
+  }
 
   @Get('me')
   me(@CurrentProviderUser() u: any) {
