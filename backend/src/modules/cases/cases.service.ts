@@ -288,7 +288,9 @@ export class CasesService {
     for (const r of records) {
       const pname = r.provider?.name ?? r.providerType;
       if (!provMap.has(pname)) provMap.set(pname, { provider: pname, accts: new Map() });
-      const acctNo = r.accountNumber ?? '(no account no.)';
+      // Stored encrypted with a random IV, so group on the decrypted number (the
+      // ciphertext differs per row) and show it masked unless the viewer may see it.
+      const acctNo = this.pii.reveal(this.crypto.decrypt(r.accountNumber), 'account', clear) ?? '(no account no.)';
       const accts = provMap.get(pname)!.accts;
       if (!accts.has(acctNo)) accts.set(acctNo, []);
       accts.get(acctNo)!.push(r);
@@ -459,11 +461,12 @@ export class CasesService {
       orderBy: [{ provider: { name: 'asc' } }, { accountNumber: 'asc' }, { totalInflow: 'desc' }],
     });
 
+    const clear = await this.pii.canRevealPii();
     const rows = records.map((r) => {
       const pl = (r.payload ?? {}) as { transactionDate?: string };
       return {
         provider: r.provider?.name ?? r.providerType,
-        accountNumber: r.accountNumber ?? '',
+        accountNumber: this.pii.reveal(this.crypto.decrypt(r.accountNumber), 'account', clear) ?? '',
         accountName: r.accountName ?? '',
         transactionDate: pl.transactionDate ?? '',
         period: r.periodLabel,

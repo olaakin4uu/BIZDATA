@@ -242,11 +242,12 @@ export class ProvidersService {
     const rows = records.map((r) => ({
       id: r.id,
       accountName: r.accountName,
-      accountNumber: r.accountNumber,
-      bvn: r.bvn ?? this.crypto.decrypt(r.taxpayer?.bvnEnc),
-      nin: r.nin ?? this.crypto.decrypt(r.taxpayer?.ninEnc),
+      // Record columns are encrypted at rest — decrypt them, not just the taxpayer's.
+      accountNumber: this.crypto.decrypt(r.accountNumber),
+      bvn: this.crypto.decrypt(r.bvn) ?? this.crypto.decrypt(r.taxpayer?.bvnEnc),
+      nin: this.crypto.decrypt(r.nin) ?? this.crypto.decrypt(r.taxpayer?.ninEnc),
       tin: this.crypto.decrypt(r.taxpayer?.tinEnc),
-      phoneNumber: r.phoneNumber,
+      phoneNumber: this.crypto.decrypt(r.phoneNumber),
       periodLabel: r.periodLabel,
       totalInflow: r.totalInflow,
       totalOutflow: r.totalOutflow,
@@ -308,11 +309,11 @@ export class ProvidersService {
     const lines = [header.join(',')];
     for (const r of records) {
       lines.push([
-        r.accountName, r.accountNumber,
-        r.bvn ?? this.crypto.decrypt(r.taxpayer?.bvnEnc),
-        r.nin ?? this.crypto.decrypt(r.taxpayer?.ninEnc),
+        r.accountName, this.crypto.decrypt(r.accountNumber),
+        this.crypto.decrypt(r.bvn) ?? this.crypto.decrypt(r.taxpayer?.bvnEnc),
+        this.crypto.decrypt(r.nin) ?? this.crypto.decrypt(r.taxpayer?.ninEnc),
         this.crypto.decrypt(r.taxpayer?.tinEnc),
-        r.phoneNumber, r.periodLabel, r.totalInflow, r.totalOutflow,
+        this.crypto.decrypt(r.phoneNumber), r.periodLabel, r.totalInflow, r.totalOutflow,
         r.transactionCount, r.matchMethod, r.flaggedAsUnderdeclared ? 'YES' : '',
       ].map(esc).join(','));
     }

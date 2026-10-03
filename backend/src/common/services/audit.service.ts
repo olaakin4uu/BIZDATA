@@ -54,48 +54,60 @@ export function auditHash(prevHash: string, payload: string): string {
   return createHash('sha256').update(prevHash + payload).digest('hex');
 }
 
+/** Arbitrary constant key for the advisory lock that guards the audit chain head. */
+const AUDIT_CHAIN_LOCK = 7_020_291;
+
 @Injectable()
 export class AuditService {
   constructor(private prisma: PrismaService) {}
 
   async log(opts: AuditLogOptions) {
     try {
-      const prev = await this.prisma.auditLog.findFirst({
-        orderBy: { createdAt: 'desc' },
-        select: { hashChainCurr: true },
-      });
-      const prevHash = prev?.hashChainCurr || '';
+      // Read-the-head-then-append must be one critical section: two concurrent
+      // writers would both link to the same head, forking the chain, and
+      // verify() would then report the log as tampered. The transaction-scoped
+      // advisory lock serialises appends across every backend instance.
+      await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw`SELECT pg_advisory_xact_lock(${AUDIT_CHAIN_LOCK})`;
+        const prev = await tx.auditLog.findFirst({
+          orderBy: { createdAt: 'desc' },
+          select: { hashChainCurr: true, createdAt: true },
+        });
+        const prevHash = prev?.hashChainCurr || '';
 
-      // Stamp our own timestamp so the hash can be reproduced from stored data.
-      const ts = new Date();
-      const payload = auditPayload({
-        actorType: opts.actorType,
-        actorId: opts.actorId ?? null,
-        action: opts.action,
-        entity: opts.entity,
-        entityId: opts.entityId ?? null,
-        beforeJson: opts.beforeJson ?? null,
-        afterJson: opts.afterJson ?? null,
-        ts: ts.toISOString(),
-      });
-      const hashChainCurr = auditHash(prevHash, payload);
-
-      await this.prisma.auditLog.create({
-        data: {
+        // Stamp our own timestamp so the hash can be reproduced from stored data.
+        // Strictly after the head, so verify()'s createdAt ordering can't tie.
+        const now = Date.now();
+        const ts = new Date(prev && prev.createdAt.getTime() >= now ? prev.createdAt.getTime() + 1 : now);
+        const payload = auditPayload({
           actorType: opts.actorType,
-          actorId: opts.actorId,
-          staffId: opts.staffId,
+          actorId: opts.actorId ?? null,
           action: opts.action,
           entity: opts.entity,
-          entityId: opts.entityId,
-          beforeJson: opts.beforeJson ?? undefined,
-          afterJson: opts.afterJson ?? undefined,
-          ip: opts.ip,
-          userAgent: opts.userAgent,
-          createdAt: ts,
-          hashChainPrev: prevHash || null,
-          hashChainCurr,
-        },
+          entityId: opts.entityId ?? null,
+          beforeJson: opts.beforeJson ?? null,
+          afterJson: opts.afterJson ?? null,
+          ts: ts.toISOString(),
+        });
+        const hashChainCurr = auditHash(prevHash, payload);
+
+        await tx.auditLog.create({
+          data: {
+            actorType: opts.actorType,
+            actorId: opts.actorId,
+            staffId: opts.staffId,
+            action: opts.action,
+            entity: opts.entity,
+            entityId: opts.entityId,
+            beforeJson: opts.beforeJson ?? undefined,
+            afterJson: opts.afterJson ?? undefined,
+            ip: opts.ip,
+            userAgent: opts.userAgent,
+            createdAt: ts,
+            hashChainPrev: prevHash || null,
+            hashChainCurr,
+          },
+        });
       });
     } catch (err) {
       // Audit failure must not break the request
