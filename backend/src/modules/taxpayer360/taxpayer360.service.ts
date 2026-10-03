@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { PII_MASKED_ON_SCREEN } from '../../common/services/pii-access.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CryptoService } from '../../common/services/crypto.service';
 import { PiiAccessService } from '../../common/services/pii-access.service';
@@ -22,7 +23,7 @@ export class Taxpayer360Service {
     const tp = await this.prisma.taxpayer.findUnique({ where: { id } });
     if (!tp) throw new NotFoundException('Taxpayer not found');
 
-    const allowClear = await this.pii.canRevealPii();
+    const allowClear = PII_MASKED_ON_SCREEN;
 
     // Decrypt identifiers, then mask unless the viewer holds a reveal grant.
     const nin = this.pii.reveal(this.crypto.decrypt(tp.ninEnc), 'nin', allowClear);
@@ -95,7 +96,7 @@ export class Taxpayer360Service {
     const term = (q ?? '').trim();
     if (!term) return [];
 
-    const allowClear = await this.pii.canRevealPii();
+    const allowClear = PII_MASKED_ON_SCREEN;
     const blind = this.crypto.blindIndex(term);
 
     const or: any[] = [

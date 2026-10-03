@@ -71,8 +71,8 @@ export default function TaxpayerDetailPage({ params }: { params: Params }) {
             <span className={`inline-flex px-2 py-0.5 text-xs font-medium rounded-full ${statusBadge(tp.status)}`}>{tp.status}</span>
           } />
           <Info label="Risk" value={`${tp.riskLevel} (${tp.riskScore})`} />
-          <Info label="NIN" value={<SensitiveValue value={tp.nin} />} />
-          <Info label="BVN" value={<SensitiveValue value={(tp as { bvn?: string | null }).bvn} />} />
+          <Info label="NIN" value={<SensitiveValue value={tp.nin} reveal={{ entity: 'Taxpayer', id: tp.id, field: 'nin' }} />} />
+          <Info label="BVN" value={<SensitiveValue value={(tp as { bvn?: string | null }).bvn} reveal={{ entity: 'Taxpayer', id: tp.id, field: 'bvn' }} />} />
           <Info label="CAC RC" value={tp.cacRcNumber ?? '—'} />
           {tp.type !== 'INDIVIDUAL' && (
             <Info label="Legal form" value={

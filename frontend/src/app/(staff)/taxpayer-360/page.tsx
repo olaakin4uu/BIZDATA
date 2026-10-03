@@ -102,8 +102,8 @@ export default function Taxpayer360Page() {
               <span className="px-2.5 py-1 rounded-full text-xs font-semibold bg-slate-100 text-slate-700">{tp.riskLevel} ({tp.riskScore})</span>
             </div>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4 text-sm">
-              <Info label="NIN"><SensitiveValue value={tp.nin} /></Info>
-              <Info label="BVN"><SensitiveValue value={tp.bvn} /></Info>
+              <Info label="NIN"><SensitiveValue value={tp.nin} reveal={{ entity: 'Taxpayer', id: tp.id, field: 'nin' }} /></Info>
+              <Info label="BVN"><SensitiveValue value={tp.bvn} reveal={{ entity: 'Taxpayer', id: tp.id, field: 'bvn' }} /></Info>
               <Info label="TIN">{tp.tin ?? '—'}</Info>
               <Info label="CAC">{tp.cacRcNumber ?? '—'}</Info>
             </div>

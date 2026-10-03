@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { PII_MASKED_ON_SCREEN } from '../../common/services/pii-access.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -901,7 +902,7 @@ export class SubmissionsService {
     });
     if (!submission) throw new NotFoundException('Submission not found');
     // Decrypt PII on the returned records and their linked taxpayers (masked unless allowed).
-    const clear = await this.pii.canRevealPii();
+    const clear = PII_MASKED_ON_SCREEN;
     return {
       ...submission,
       records: submission.records.map((r) => ({

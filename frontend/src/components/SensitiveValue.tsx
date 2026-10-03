@@ -1,6 +1,11 @@
 'use client';
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useStaffAuthStore } from '@/store/staffAuthStore';
+import { revealPii, type RevealTarget } from '@/lib/api/audit';
+import { extractErrorMessage } from '@/lib/utils';
+
+/** How long a revealed value stays on screen before it is masked again. */
+const REVEAL_MS = 60_000;
 
 /**
  * Renders a sensitive PII value (BVN, account number, NIN) with confidentiality
@@ -14,9 +19,32 @@ import { useStaffAuthStore } from '@/store/staffAuthStore';
  * timestamp behind the value, and deters (does not prevent) copy/select. It is
  * NOT a hard control — a determined user can still read the DOM. Do not rely on
  * it as an access boundary.
+ *
+ * Screens receive these values masked. With `reveal`, a masked value gets a
+ * Reveal button that fetches the clear value for this one field (checked and
+ * logged on the server) and masks it again after a minute.
  */
-export default function SensitiveValue({ value }: { value?: string | null }) {
+export default function SensitiveValue({ value: given, reveal }: { value?: string | null; reveal?: RevealTarget }) {
   const user = useStaffAuthStore((s) => s.user);
+  const [clear, setClear] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [denied, setDenied] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (clear == null) return;
+    const t = setTimeout(() => setClear(null), REVEAL_MS);
+    return () => clearTimeout(t);
+  }, [clear]);
+
+  const doReveal = async () => {
+    if (!reveal) return;
+    setBusy(true); setDenied(null);
+    try { const r = await revealPii(reveal); setClear(r.value); }
+    catch (e) { setDenied(extractErrorMessage(e)); }
+    finally { setBusy(false); }
+  };
+
+  const value = clear ?? given;
 
   const watermark = useMemo(() => {
     const who = user?.email ?? 'officer';
@@ -42,8 +70,17 @@ export default function SensitiveValue({ value }: { value?: string | null }) {
   const isMasked = value.includes('•');
   if (isMasked) {
     return (
-      <span className="font-mono text-[var(--ink-3)]" title="Masked — request elevated access to reveal">
-        {value}
+      <span className="inline-flex flex-wrap items-center gap-2">
+        <span className="font-mono text-[var(--ink-3)]" title="Masked — request elevated access to reveal">
+          {value}
+        </span>
+        {reveal && (
+          <button type="button" onClick={doReveal} disabled={busy}
+            className="text-xs font-medium text-teal-700 hover:underline disabled:opacity-50">
+            {busy ? 'Revealing…' : 'Reveal'}
+          </button>
+        )}
+        {denied && <span className="text-xs text-[var(--bad)]">{denied}</span>}
       </span>
     );
   }

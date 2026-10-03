@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { PII_MASKED_ON_SCREEN } from '../../common/services/pii-access.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -89,7 +90,7 @@ export class TaxpayersService {
       entityId: tp.id,
     });
 
-    return this.decryptOut(tp, await this.pii.canRevealPii());
+    return this.decryptOut(tp, PII_MASKED_ON_SCREEN);
   }
 
   async findAll(query: any) {
@@ -125,7 +126,7 @@ export class TaxpayersService {
       this.prisma.taxpayer.count({ where }),
     ]);
 
-    const clear = await this.pii.canRevealPii();
+    const clear = PII_MASKED_ON_SCREEN;
     return { taxpayers: taxpayers.map((t) => this.decryptOut(t, clear)), total, page, limit };
   }
 
@@ -137,7 +138,7 @@ export class TaxpayersService {
       },
     });
     if (!tp) throw new NotFoundException('Taxpayer not found');
-    return this.decryptOut(tp, await this.pii.canRevealPii());
+    return this.decryptOut(tp, PII_MASKED_ON_SCREEN);
   }
 
   async update(id: string, dto: any, actorId?: string) {
@@ -170,7 +171,7 @@ export class TaxpayersService {
       entityId: id,
     });
 
-    return this.decryptOut(tp, await this.pii.canRevealPii());
+    return this.decryptOut(tp, PII_MASKED_ON_SCREEN);
   }
 
   async importCsv(csvText: string, actorId?: string) {

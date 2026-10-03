@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { PII_MASKED_ON_SCREEN } from '../../common/services/pii-access.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -66,7 +67,7 @@ export class DeclaredIncomeService {
       }),
       this.prisma.declaredIncome.count({ where }),
     ]);
-    const clear = await this.pii.canRevealPii();
+    const clear = PII_MASKED_ON_SCREEN;
     const decrypted = records.map((r) => ({
       ...r,
       taxpayer: r.taxpayer ? { ...r.taxpayer, nin: this.pii.reveal(this.crypto.decrypt(r.taxpayer.ninEnc), 'nin', clear) } : r.taxpayer,

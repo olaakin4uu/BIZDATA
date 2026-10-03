@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { PII_MASKED_ON_SCREEN } from '../../common/services/pii-access.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -92,7 +93,7 @@ export class DataRecordsService {
       : [];
     const byId = new Map(found.map((r) => [r.id, r]));
     const records = pageIds.map((id) => byId.get(id)).filter((r): r is (typeof found)[number] => !!r);
-    const clear = await this.pii.canRevealPii();
+    const clear = PII_MASKED_ON_SCREEN;
     return { records: records.map((r) => this.decryptRecord(r, clear)), total, page, limit };
   }
 
@@ -107,7 +108,7 @@ export class DataRecordsService {
       },
     });
     if (!record) throw new NotFoundException('Record not found');
-    return this.decryptRecord(record, await this.pii.canRevealPii());
+    return this.decryptRecord(record, PII_MASKED_ON_SCREEN);
   }
 
   async review(id: string, dto: { reviewStatus: 'CLEARED' | 'CONFIRMED'; reviewNotes?: string }, staffId: string) {

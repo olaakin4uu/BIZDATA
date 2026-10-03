@@ -6,6 +6,7 @@ import LoadingSpinner from '@/components/LoadingSpinner';
 import { dataRecordsApi, type DataRecord } from '@/lib/api/data-records';
 import { formatMoney, formatPercent, formatDateTime, statusBadge, extractErrorMessage } from '@/lib/utils';
 import PageContainer from '@/components/PageContainer';
+import SensitiveValue from '@/components/SensitiveValue';
 
 type Params = Promise<{ id: string }>;
 
@@ -69,10 +70,10 @@ export default function DataRecordDetailPage({ params }: { params: Params }) {
         <Info label="Taxpayer" value={rec.taxpayer ? (
           <Link href={`/taxpayers/${rec.taxpayer.id}`} className="text-teal-700 hover:underline">{tpName(rec.taxpayer)}</Link>
         ) : <span className="text-slate-400">unlinked</span>} />
-        <Info label="Account #" value={rec.accountNumber ?? '—'} />
-        <Info label="BVN" value={rec.bvn ?? '—'} />
-        <Info label="NIN" value={rec.nin ?? '—'} />
-        <Info label="Phone" value={rec.phoneNumber ?? '—'} />
+        <Info label="Account #" value={<SensitiveValue value={rec.accountNumber} reveal={{ entity: 'DataRecord', id: rec.id, field: 'account' }} />} />
+        <Info label="BVN" value={<SensitiveValue value={rec.bvn} reveal={{ entity: 'DataRecord', id: rec.id, field: 'bvn' }} />} />
+        <Info label="NIN" value={<SensitiveValue value={rec.nin} reveal={{ entity: 'DataRecord', id: rec.id, field: 'nin' }} />} />
+        <Info label="Phone" value={<SensitiveValue value={rec.phoneNumber} reveal={{ entity: 'DataRecord', id: rec.id, field: 'phone' }} />} />
         <Info label="Wallet ID" value={rec.walletId ?? '—'} />
         <Info label="Merchant ID" value={rec.merchantId ?? '—'} />
         <Info label="Account name" value={rec.accountName ?? '—'} />

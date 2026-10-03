@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { PII_MASKED_ON_SCREEN } from '../../common/services/pii-access.service';
 import { randomBytes } from 'crypto';
 import { Prisma, CaseStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -208,7 +209,7 @@ export class CasesService {
     if (!c.taxpayerId || !(await this.reportable.isReportable(c.taxpayerId, { year: c.year ?? undefined }))) {
       throw new NotFoundException('Case not found');
     }
-    const clear = await this.pii.canRevealPii();
+    const clear = PII_MASKED_ON_SCREEN;
     return {
       ...c,
       taxpayer: c.taxpayer

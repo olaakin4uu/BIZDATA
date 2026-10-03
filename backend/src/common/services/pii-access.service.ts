@@ -6,6 +6,16 @@ import { AuditService } from './audit.service';
 export type PiiFieldType = 'bvn' | 'account' | 'nin' | 'phone';
 
 /**
+ * Screens always receive BVN/NIN/account/phone masked, whoever is looking. A
+ * clear value is fetched one field at a time through POST /pii/reveal, which
+ * applies canRevealPii() and records each reveal (PII_REVEAL) — so the audit
+ * trail says which identifier was seen, not just that a page was opened.
+ * Exports behind the four-eyes grant (evidence bundle, tax report) still
+ * resolve canRevealPii() themselves.
+ */
+export const PII_MASKED_ON_SCREEN = false;
+
+/**
  * Decides whether the current viewer may see sensitive PII (BVN, full account
  * number, NIN) in the clear, and masks it otherwise. Implements the §5.3 access
  * model:

@@ -48,3 +48,11 @@ export const auditApi = {
 /** Report a client-side security event (e.g. a removed watermark) against the current staff session. */
 export const reportSecurityEvent = (type: 'WATERMARK_TAMPER', reason: string, path: string) =>
   apiFetch<void>('/security-events', { method: 'POST', body: { type, reason, path } });
+
+export type RevealTarget =
+  | { entity: 'Taxpayer'; id: string; field: 'nin' | 'bvn' }
+  | { entity: 'DataRecord'; id: string; field: 'account' | 'bvn' | 'nin' | 'phone' };
+
+/** Fetch one clear PII value; the server checks the viewer's access and logs the reveal. */
+export const revealPii = (t: RevealTarget) =>
+  apiFetch<{ value: string | null }>('/pii/reveal', { method: 'POST', body: t });

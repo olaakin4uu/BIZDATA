@@ -28,6 +28,7 @@ import { GovernanceModule } from './modules/governance/governance.module';
 import { Taxpayer360Module } from './modules/taxpayer360/taxpayer360.module';
 import { NdpaModule } from './modules/ndpa/ndpa.module';
 import { CrossStateModule } from './modules/cross-state/cross-state.module';
+import { PiiModule } from './modules/pii/pii.module';
 import { AuditModule } from './modules/audit/audit.module';
 import { SchemasModule } from './modules/schemas/schemas.module';
 import { ProviderPortalModule } from './modules/provider-portal/provider-portal.module';
@@ -75,6 +76,7 @@ import { TriageModule } from './modules/triage/triage.module';
     Taxpayer360Module,
     NdpaModule,
     CrossStateModule,
+    PiiModule,
     AuditModule,
     SchemasModule,
     ProviderPortalModule,
