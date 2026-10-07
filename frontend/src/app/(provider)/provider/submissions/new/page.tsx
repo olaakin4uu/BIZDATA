@@ -29,7 +29,7 @@ export default function NewProviderSubmissionPage() {
     <div className="rise-in">
       <PageHeader
         title="New submission"
-        subtitle={`Upload a CSV for ${user?.providerName ?? user?.provider?.name ?? 'your organisation'}.`}
+        subtitle={`Upload a CSV or Excel file for ${user?.providerName ?? user?.provider?.name ?? 'your organisation'}.`}
         icon="upload"
         actions={
           <Link href="/provider/submissions" className="text-sm text-[var(--ink-2)] transition-colors hover:text-[var(--ink)]">

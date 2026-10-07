@@ -23,6 +23,7 @@ import {
   SchemaTemplate,
   ValidationContext,
 } from './submission-parser';
+import { xlsxToCsvText } from './spreadsheet-to-csv';
 import { validateIngestionRow, isValidBvnModulo11 } from './ingestion-validators';
 import { assertSection29ProviderType } from '../../common/section29';
 import { createHash } from 'crypto';
@@ -421,32 +422,28 @@ export class SubmissionsService {
   }
 
   private async processFile(submissionId: string, buffer: Buffer, providerType: string, providerId: string, providerCode?: string, submissionPeriodLabel?: string, fileName?: string) {
-    // Check the file TYPE before anything else. An .xlsx renamed to .csv parses
-    // as binary noise, which trips whichever guard happens to run first — and
-    // "No data rows found" sends the provider looking for missing rows in a
-    // spreadsheet that is full of them.
-    // Submissions are CSV only. Checked by NAME as well as by content: a
-    // spreadsheet saved straight to .ods/.xlsx is the common mistake, and
-    // refusing it by extension gives the clearer message before we ever try to
-    // read the bytes as text.
+    // Check the file TYPE before anything else. An Excel workbook (.xlsx) is read
+    // as CSV text; the old binary .xls, OpenDocument .ods and zipped files can't
+    // be read here, so the provider is told how to save them as CSV. Checked by
+    // NAME as well as by content: a workbook renamed to .csv is still a workbook.
     const ext = (fileName ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
-    if (ext && ext !== 'csv' && ext !== 'txt') {
+    const kind = detectSpreadsheetKind(buffer);
+    let csvText: string;
+    if (kind === 'xlsx') {
+      csvText = (await xlsxToCsvText(buffer)).csv;
+    } else if (kind) {
       throw new BadRequestException(
-        `Returns must be uploaded as a CSV file. This one is a .${ext} file. ` +
+        `${spreadsheetConversionAdvice(kind)} Renaming the file to .csv does not convert it — it has to be saved as CSV.`,
+      );
+    } else if (ext && ext !== 'csv' && ext !== 'txt' && ext !== 'xlsx') {
+      throw new BadRequestException(
+        `Returns must be uploaded as a CSV or Excel (.xlsx) file. This one is a .${ext} file. ` +
         `Open it in your spreadsheet program, choose File → Save As, set the type to CSV ` +
         `("CSV (Comma delimited)" in Excel, "Text CSV" in LibreOffice), then upload the .csv file.`,
       );
+    } else {
+      csvText = buffer.toString('utf8');
     }
-
-    const kind = detectSpreadsheetKind(buffer);
-    if (kind) {
-      throw new BadRequestException(
-        `${spreadsheetConversionAdvice(kind)} Renaming the file to .csv does not convert it — 
-         it has to be saved as CSV.`.replace(/\s+/g, ' '),
-      );
-    }
-
-    const csvText = buffer.toString('utf8');
     const { headers, rows, lineNumbers } = parseCsvText(csvText);
     if (rows.length === 0) {
       throw new BadRequestException(

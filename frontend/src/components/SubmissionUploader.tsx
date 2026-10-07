@@ -87,16 +87,20 @@ export default function SubmissionUploader({
       setError(`File too large (${formatBytes(f.size)}). Max 100 MB.`);
       return;
     }
-    // Returns are CSV only. The picker's accept filter is advisory — it is
-    // bypassed by drag-and-drop and by choosing "All files" — so check here
+    // Returns are CSV or Excel (.xlsx). The picker's accept filter is advisory —
+    // it is bypassed by drag-and-drop and by choosing "All files" — so check here
     // too and say so before the provider waits on an upload that cannot succeed.
     const ext = f.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
-    if (ext && ext !== 'csv' && ext !== 'txt') {
+    if (ext && ext !== 'csv' && ext !== 'txt' && ext !== 'xlsx') {
       setError(
-        `Returns must be a CSV file — this is a .${ext} file. In your spreadsheet program choose ` +
+        `Returns must be a CSV or Excel (.xlsx) file — this is a .${ext} file. In your spreadsheet program choose ` +
         `File → Save As and set the type to CSV ("CSV (Comma delimited)" in Excel, "Text CSV" in ` +
         `LibreOffice), then upload the .csv file. Renaming it will not work.`,
       );
+      return;
+    }
+    if (ext === 'xlsx' && f.size > 15 * 1024 * 1024) {
+      setError(`This Excel file is ${formatBytes(f.size)}; Excel uploads can be up to 15 MB. Save it as CSV (File → Save As → CSV (Comma delimited)) and upload the .csv file.`);
       return;
     }
     setFile(f);
@@ -194,16 +198,14 @@ export default function SubmissionUploader({
               </p>
             ) : (
               <>
-                <p className="text-sm font-medium text-[var(--ink)]">Drag a CSV file here</p>
-                <p className="text-xs text-[var(--ink-3)]">or click to browse — max 100 MB</p>
-                {/* Say this BEFORE they pick a file. Uploading a spreadsheet
-                    straight from Excel or LibreOffice is the single most common
-                    failure, and the file name gives no clue that it will be
-                    refused — .ods and .xlsx look like data files to everyone. */}
+                <p className="text-sm font-medium text-[var(--ink)]">Drag a CSV or Excel file here</p>
+                <p className="text-xs text-[var(--ink-3)]">or click to browse — CSV up to 100 MB, Excel (.xlsx) up to 15 MB</p>
+                {/* Say this BEFORE they pick a file: the older spreadsheet formats
+                    still have to be saved as CSV, and the file name gives no clue. */}
                 <p className="mt-2 text-xs text-[var(--ink-2)]">
-                  <strong>CSV only.</strong> An Excel (.xlsx) or LibreOffice (.ods) file must be saved as CSV first —
-                  {' '}File → Save As → “CSV (Comma delimited)” in Excel, “Text CSV” in LibreOffice.
-                  {' '}Renaming it to .csv does not convert it.
+                  <strong>CSV or Excel (.xlsx).</strong> For Excel, the first sheet with data is read. An older Excel (.xls) or
+                  {' '}LibreOffice (.ods) file must be saved as CSV first — File → Save As → “CSV (Comma delimited)” in Excel,
+                  {' '}“Text CSV” in LibreOffice.
                 </p>
               </>
             )}
@@ -211,7 +213,7 @@ export default function SubmissionUploader({
               ref={fileRef}
               id="submission-file"
               type="file"
-              accept=".csv,text/csv"
+              accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
               onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               className="hidden"
             />

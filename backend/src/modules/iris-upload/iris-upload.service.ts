@@ -6,6 +6,7 @@ import { AuditService } from '../../common/services/audit.service';
 import { SubmissionsService } from '../submissions/submissions.service';
 import { LlmFactory } from '../iris/llm/llm.factory';
 import { detectSpreadsheetKind, parseCsvText, SchemaTemplate, spreadsheetConversionAdvice } from '../submissions/submission-parser';
+import { xlsxToCsvText } from '../submissions/spreadsheet-to-csv';
 import { assertSection29ProviderType } from '../../common/section29';
 import {
   ColumnMapping,
@@ -135,25 +136,32 @@ export class IrisUploadService {
   }
 
   async analyze(ctx: Ctx, file: { buffer: Buffer; originalname?: string }, period: Period) {
-    if (!file?.buffer) throw new BadRequestException('A CSV file is required.');
+    if (!file?.buffer) throw new BadRequestException('A CSV or Excel file is required.');
     if (!period.periodLabel) throw new BadRequestException('A reporting period is required.');
     const providerType = await this.providerType(ctx.providerId);
     const schema = await this.submissions.getEffectiveSchema(providerType);
 
-    // Same file-type checks as the classic uploader: a workbook read as text is binary
-    // noise (NUL bytes) that Postgres refuses to store - the provider saw a bare 500.
+    // Same file handling as the classic uploader: an Excel workbook (.xlsx) is read
+    // as CSV text; .xls / .ods / zip get Save-As-CSV advice. (Read raw, a workbook is
+    // binary noise with NUL bytes that Postgres refuses - providers saw a bare 500.)
+    if (!file.buffer.length) throw new BadRequestException('That file is empty.');
     const ext = (file.originalname ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
     const kind = detectSpreadsheetKind(file.buffer);
-    if (kind) throw new BadRequestException(`${spreadsheetConversionAdvice(kind)} Renaming the file to .csv does not convert it - it has to be saved as CSV.`);
-    if (ext && ext !== 'csv' && ext !== 'txt') {
+    let text: string;
+    if (kind === 'xlsx') {
+      text = (await xlsxToCsvText(file.buffer)).csv;
+    } else if (kind) {
+      throw new BadRequestException(`${spreadsheetConversionAdvice(kind)} Renaming the file to .csv does not convert it - it has to be saved as CSV.`);
+    } else if (ext && ext !== 'csv' && ext !== 'txt' && ext !== 'xlsx') {
       throw new BadRequestException(
-        `I can only read CSV files. This one is a .${ext} file. Open it in your spreadsheet program, choose File → Save As, ` +
+        `I can read CSV or Excel (.xlsx) files. This one is a .${ext} file. Open it in your spreadsheet program, choose File → Save As, ` +
         `set the type to CSV ("CSV (Comma delimited)" in Excel, "Text CSV" in LibreOffice), then upload the .csv file.`,
       );
-    }
-    const text = file.buffer.toString('utf8');
-    if (text.includes('\u0000')) {
-      throw new BadRequestException('That file is not a CSV text file. Save it as CSV (Comma delimited) and upload the .csv file.');
+    } else {
+      text = file.buffer.toString('utf8');
+      if (text.includes('\u0000')) {
+        throw new BadRequestException('That file is not a CSV or Excel file. Save it as CSV (Comma delimited) and upload the .csv file.');
+      }
     }
 
     const { headers, rows } = parseCsvText(text);
@@ -233,7 +241,7 @@ export class IrisUploadService {
     // Push the cleaned CSV through the UNCHANGED upload pipeline — all rules apply.
     const submission = await this.submissions.upload({
       providerId: draft.providerId,
-      fileName: `iris-cleaned-${draft.fileName || 'upload.csv'}`,
+      fileName: `iris-cleaned-${(draft.fileName || 'upload').replace(/\.(xlsx|csv|txt)$/i, '')}.csv`,
       fileBuffer: Buffer.from(csv, 'utf8'),
       periodLabel: draft.periodLabel,
       periodYear: draft.periodYear ?? undefined,

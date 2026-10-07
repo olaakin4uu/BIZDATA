@@ -58,7 +58,32 @@ export default function UploadAssistant({
   const [mapping, setMapping] = useState<{ source: string; target: string }[]>([]);
   const [busy, setBusy] = useState<null | 'analyze' | 'recheck' | 'approve'>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dragOver, setDragOver] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  // CSV or Excel (.xlsx). The picker's accept filter is bypassed by drag-and-drop,
+  // so check here before the provider waits on an upload that cannot succeed.
+  const pickFile = (f: File | null) => {
+    setError(null);
+    if (!f) return setFile(null);
+    const ext = f.name.toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+    if (ext && ext !== 'csv' && ext !== 'txt' && ext !== 'xlsx') {
+      setFile(null);
+      return setError(
+        `I can read CSV or Excel (.xlsx) files — this is a .${ext} file. In your spreadsheet program choose File → Save As and ` +
+        `set the type to CSV ("CSV (Comma delimited)" in Excel, "Text CSV" in LibreOffice), then upload the .csv file.`,
+      );
+    }
+    const max = ext === 'xlsx' ? 15 : 50;
+    if (f.size > max * 1024 * 1024) {
+      setFile(null);
+      return setError(
+        `That file is ${(f.size / 1024 / 1024).toFixed(1)} MB; ${ext === 'xlsx' ? 'Excel' : 'CSV'} files can be up to ${max} MB here.` +
+        (ext === 'xlsx' ? ' Save it as CSV and try again, or use Classic upload.' : ' Use Classic upload for larger files.'),
+      );
+    }
+    setFile(f);
+  };
 
   const reset = () => {
     setPreview(null);
@@ -138,17 +163,39 @@ export default function UploadAssistant({
             </select>
           </label>
 
-          <label className="block">
-            <span className="mb-1 block text-xs font-medium text-[var(--ink-2)]">CSV file</span>
-            <input
-              ref={fileRef}
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-              className="w-full rounded-lg border border-[var(--line)] bg-[var(--surface)] px-3 py-1.5 text-sm text-[var(--ink-2)] file:mr-3 file:rounded-md file:border-0 file:bg-[var(--surface-2)] file:px-3 file:py-1.5 file:text-sm file:text-[var(--ink)]"
-            />
-          </label>
         </div>
+
+        <label
+          htmlFor="assistant-file"
+          onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => { e.preventDefault(); setDragOver(false); pickFile(e.dataTransfer.files?.[0] ?? null); }}
+          className={`mt-4 block cursor-pointer rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+            dragOver ? 'border-teal-500 bg-teal-50' : 'border-[var(--line)] hover:border-teal-400 hover:bg-[var(--surface-2)]'
+          }`}
+        >
+          <span className={`mx-auto mb-2 flex h-11 w-11 items-center justify-center rounded-full ring-1 transition-colors ${dragOver ? 'bg-teal-100 text-teal-700 ring-teal-200' : 'bg-teal-50 text-teal-700 ring-teal-100'}`}>
+            <Icon name="upload" width={20} height={20} />
+          </span>
+          {file ? (
+            <p className="text-sm font-medium text-[var(--ink)]">
+              {file.name} <span className="font-normal text-[var(--ink-3)]">({(file.size / 1024 / 1024).toFixed(1)} MB) — click to choose another</span>
+            </p>
+          ) : (
+            <>
+              <p className="text-sm font-medium text-[var(--ink)]">Drag a CSV or Excel file here</p>
+              <p className="text-xs text-[var(--ink-3)]">or click to browse — CSV up to 50 MB, Excel (.xlsx) up to 15 MB; for Excel the first sheet with data is read</p>
+            </>
+          )}
+          <input
+            ref={fileRef}
+            id="assistant-file"
+            type="file"
+            accept=".csv,.xlsx,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={(e) => pickFile(e.target.files?.[0] ?? null)}
+            className="hidden"
+          />
+        </label>
 
         {error && <p className="mt-3 rounded-lg bg-[var(--bad-soft)] px-3 py-2 text-sm text-[var(--bad)]">{error}</p>}
 
