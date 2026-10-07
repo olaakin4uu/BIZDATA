@@ -5,7 +5,7 @@ import { CryptoService } from '../../common/services/crypto.service';
 import { AuditService } from '../../common/services/audit.service';
 import { SubmissionsService } from '../submissions/submissions.service';
 import { LlmFactory } from '../iris/llm/llm.factory';
-import { parseCsvText, SchemaTemplate } from '../submissions/submission-parser';
+import { detectSpreadsheetKind, parseCsvText, SchemaTemplate, spreadsheetConversionAdvice } from '../submissions/submission-parser';
 import { assertSection29ProviderType } from '../../common/section29';
 import {
   ColumnMapping,
@@ -140,7 +140,23 @@ export class IrisUploadService {
     const providerType = await this.providerType(ctx.providerId);
     const schema = await this.submissions.getEffectiveSchema(providerType);
 
-    const { headers, rows } = parseCsvText(file.buffer.toString('utf8'));
+    // Same file-type checks as the classic uploader: a workbook read as text is binary
+    // noise (NUL bytes) that Postgres refuses to store - the provider saw a bare 500.
+    const ext = (file.originalname ?? '').toLowerCase().match(/\.([a-z0-9]+)$/)?.[1];
+    const kind = detectSpreadsheetKind(file.buffer);
+    if (kind) throw new BadRequestException(`${spreadsheetConversionAdvice(kind)} Renaming the file to .csv does not convert it - it has to be saved as CSV.`);
+    if (ext && ext !== 'csv' && ext !== 'txt') {
+      throw new BadRequestException(
+        `I can only read CSV files. This one is a .${ext} file. Open it in your spreadsheet program, choose File → Save As, ` +
+        `set the type to CSV ("CSV (Comma delimited)" in Excel, "Text CSV" in LibreOffice), then upload the .csv file.`,
+      );
+    }
+    const text = file.buffer.toString('utf8');
+    if (text.includes('\u0000')) {
+      throw new BadRequestException('That file is not a CSV text file. Save it as CSV (Comma delimited) and upload the .csv file.');
+    }
+
+    const { headers, rows } = parseCsvText(text);
     if (headers.length === 0 || rows.length === 0) throw new BadRequestException('I could not read any data rows from that file.');
     if (rows.length > MAX_ROWS) throw new BadRequestException(`That file has ${rows.length.toLocaleString()} rows — please use the standard uploader for files over ${MAX_ROWS.toLocaleString()} rows.`);
 
