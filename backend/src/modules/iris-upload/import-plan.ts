@@ -205,21 +205,13 @@ export function validateCorrected(
   rows: Record<string, string>[],
   schema: SchemaTemplate,
   providerType: string,
-  /**
-   * The reporting period the provider chose on the form. The return has no period
-   * column — the period belongs to the submission — and the real pipeline stamps it
-   * onto each row before the integrity gate. Do the same here, for the check only
-   * (the cleaned CSV stays as it is), or every row reads "Missing period".
-   */
-  periodLabel?: string | null,
 ): { accept: number; reject: number; issues: RowIssue[] } {
   let accept = 0;
   let reject = 0;
   const issues: RowIssue[] = [];
   rows.forEach((row, i) => {
     const res = validateRow(row, schema);
-    const forGate = periodLabel && !row.periodLabel ? { ...row, periodLabel } : row;
-    const integrity = validateIngestionRow(forGate, providerType);
+    const integrity = validateIngestionRow(row, providerType);
     const errors = [...res.errors, ...integrity];
     if (errors.length === 0) {
       accept++;

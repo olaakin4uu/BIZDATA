@@ -103,9 +103,9 @@ export class IrisUploadService {
     }
   }
 
-  private preview(schema: SchemaTemplate, providerType: string, headers: string[], rows: Record<string, string>[], mapping: ColumnMapping[], draftId: string, fileName: string | undefined, aiUsed: boolean, expiresAt: Date, periodLabel?: string) {
+  private preview(schema: SchemaTemplate, providerType: string, headers: string[], rows: Record<string, string>[], mapping: ColumnMapping[], draftId: string, fileName: string | undefined, aiUsed: boolean, expiresAt: Date) {
     const corrected = applyMapping(headers, rows, mapping, schema);
-    const validation = validateCorrected(corrected.rows, schema, providerType, periodLabel);
+    const validation = validateCorrected(corrected.rows, schema, providerType);
     return {
       draftId,
       providerType,
@@ -171,7 +171,7 @@ export class IrisUploadService {
     const llmMappings = await this.proposeMapping(schema, columnSamples(headers, rows));
     const mapping = resolveMapping(headers, schema, llmMappings);
     const corrected = applyMapping(headers, rows, mapping, schema);
-    const validation = validateCorrected(corrected.rows, schema, providerType, period.periodLabel);
+    const validation = validateCorrected(corrected.rows, schema, providerType);
     const expiresAt = new Date(Date.now() + DRAFT_TTL_MS);
 
     const draft = await this.prisma.importDraft.create({
@@ -202,7 +202,7 @@ export class IrisUploadService {
       afterJson: { fileName: file.originalname, mapping, stats: { total: rows.length, accept: validation.accept, reject: validation.reject }, aiUsed: llmMappings.length > 0 },
     });
 
-    return this.preview(schema, providerType, headers, rows, mapping, draft.id, file.originalname, llmMappings.length > 0, expiresAt, period.periodLabel);
+    return this.preview(schema, providerType, headers, rows, mapping, draft.id, file.originalname, llmMappings.length > 0, expiresAt);
   }
 
   async revalidate(ctx: Ctx, draftId: string, mappingOverride: { source: string; target: string }[]) {
@@ -219,13 +219,13 @@ export class IrisUploadService {
     });
 
     const corrected = applyMapping(headers, rows, mapping, schema);
-    const validation = validateCorrected(corrected.rows, schema, providerType, draft.periodLabel);
+    const validation = validateCorrected(corrected.rows, schema, providerType);
     await this.prisma.importDraft.update({
       where: { id: draft.id },
       data: { mapping: mapping as unknown as object, acceptRows: validation.accept, rejectRows: validation.reject },
     });
 
-    return this.preview(schema, providerType, headers, rows, mapping, draft.id, draft.fileName ?? undefined, false, draft.expiresAt, draft.periodLabel);
+    return this.preview(schema, providerType, headers, rows, mapping, draft.id, draft.fileName ?? undefined, false, draft.expiresAt);
   }
 
   async approve(ctx: Ctx, draftId: string) {

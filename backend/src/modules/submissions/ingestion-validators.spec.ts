@@ -94,10 +94,12 @@ describe('validateIngestionRow', () => {
     expect(validateIngestionRow(goodBankRow, 'BANK', '057')).toEqual([]);
   });
 
-  it('flags a row with no identifier and no period', () => {
+  it('flags a row with no identifier, but never for a missing period', () => {
+    // The period belongs to the submission (chosen and validated at upload), so a
+    // row is not asked for one.
     const errs = validateIngestionRow({}, 'BANK', '057');
     expect(errs.join(' ')).toMatch(/no taxpayer identifier/i);
-    expect(errs.join(' ')).toMatch(/missing period/i);
+    expect(errs.join(' ')).not.toMatch(/period/i);
   });
 
   it('flags a bad NUBAN for a bank', () => {

@@ -121,12 +121,12 @@ export function validateIngestionRow(
 ): string[] {
   const errors: string[] = [];
 
-  // Completeness: must be matchable (an identifier or a name) and have a period.
+  // Completeness: must be matchable (an identifier or a name). There is no period
+  // check here on purpose: the reporting period belongs to the submission, is
+  // chosen by the provider and validated up front (SubmissionsService.upload), and
+  // is stamped onto every row — a row can never legitimately arrive without one.
   if (!row.bvn && !row.nin && !row.accountName) {
     errors.push('No taxpayer identifier (bvn / nin / accountName) — row cannot be matched');
-  }
-  if (!row.periodLabel) {
-    errors.push('Missing period');
   }
 
   // BVN format (where provided)
