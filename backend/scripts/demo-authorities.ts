@@ -104,6 +104,37 @@ export const AUTHORITIES: Record<string, AuthorityProfile> = {
       { local: 'dpo', role: 'DPO', firstName: 'Suleiman', lastName: 'Garba' },
     ],
   },
+
+  tirs: {
+    database: 'findata_demo_taraba',
+    name: 'TARABA STATE INTERNAL REVENUE SERVICE',
+    shortName: 'TIRS',
+    emailDomain: 'tirs.tarabastate.gov.ng',
+    logoFile: null,
+
+    homeAuthority: 'Taraba State IRS',
+    homeStates: ['TARABA'],
+    homeTerritoryLabel: 'Taraba',
+
+    residentState: 'Taraba',
+    // Taraba's 16 Local Government Areas.
+    localities: ['Ardo-Kola', 'Bali', 'Donga', 'Gashaka', 'Gassol', 'Ibi', 'Jalingo', 'Karim Lamido',
+      'Kurmi', 'Lau', 'Sardauna', 'Takum', 'Ussa', 'Wukari', 'Yorro', 'Zing'],
+    placeNames: ['Jalingo', 'Wukari', 'Takum', 'Bali', 'Gembu', 'Mutum Biyu', 'Zing', 'Ibi',
+      'Serti', 'Lau', 'Donga', 'Gassol', 'Yorro', 'Kurmi', 'Bantaje', 'Gashaka'],
+    firstNames: ['Danladi', 'Hauwa', 'Jonathan', 'Amina', 'Musa', 'Rebecca', 'Joseph', 'Ladi',
+      'Emmanuel', 'Naomi', 'Yakubu', 'Grace', 'Dauda', 'Salamatu', 'Habila', 'Rahila', 'Audu',
+      'Mary', 'Bitrus', 'Rifkatu', 'Suleiman', 'Gideon'],
+    lastNames: ['Kefas', 'Danjuma', 'Bello', 'Garba', 'Adamu', 'Ishaku', 'Yusuf', 'Audu', 'Tanko',
+      'Haruna', 'Gambo', 'Jibrin', 'Sunday', 'Nuhu', 'Maigari', 'Abubakar', 'Musa', 'Yohanna'],
+    staff: [
+      { local: 'admin', role: 'SUPER_ADMIN', firstName: 'Danladi', lastName: 'Kefas' },
+      { local: 'analyst', role: 'ANALYST', firstName: 'Hauwa', lastName: 'Garba' },
+      { local: 'supervisor', role: 'SUPERVISOR', firstName: 'Jonathan', lastName: 'Ishaku' },
+      { local: 'auditor', role: 'AUDIT_OFFICER', firstName: 'Amina', lastName: 'Bello' },
+      { local: 'dpo', role: 'DPO', firstName: 'Musa', lastName: 'Tanko' },
+    ],
+  },
 };
 
 /**
