@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../../common/services/audit.service';
@@ -131,6 +131,14 @@ export class ProviderComplianceService {
       orderBy: { receivedAt: 'asc' },
     });
 
+    // Waived penalties: the period stays LATE/MISSING (the filing record does
+    // not change) but no penalty is owed, so it drops out of the exposure.
+    const waivedRows = await this.prisma.providerPenalty.findMany({
+      where: { periodYear: year, status: 'WAIVED', ...(providerId ? { providerId } : {}) },
+      select: { providerId: true, periodLabel: true },
+    });
+    const waived = new Set(waivedRows.map((w) => `${w.providerId}|${w.periodLabel}`));
+
     return providers.map((p) => {
       const mine = subs.filter((s) => s.providerId === p.id);
       const expected = this.expectedPeriods(year, p.reportingFrequency, dueDays);
@@ -148,11 +156,13 @@ export class ProviderComplianceService {
         const enforced = inDefault && (!pEffective || e.due >= pEffective);
         const asOf = status === 'LATE' ? first!.receivedAt : now;
         const months = enforced ? monthsInDefault(e.due, asOf) : 0;
-        const penalty = s101Penalty(months, pFirst, pPer);
+        const isWaived = inDefault && waived.has(`${p.id}|${e.label}`);
+        const penalty = isWaived ? 0 : s101Penalty(months, pFirst, pPer);
         return {
           period: e.label, dueAt: e.due, status, receivedAt: first?.receivedAt ?? null,
           monthsInDefault: months, penalty,
           penaltyEnforced: enforced, // false when before the commencement date
+          penaltyWaived: isWaived,
         };
       });
 
@@ -281,6 +291,7 @@ export class ProviderComplianceService {
     for (const r of rows) {
       for (const p of r.periods) {
         if (p.status !== 'LATE' && p.status !== 'MISSING') continue;
+        if (p.penaltyWaived) continue;
         try {
           await this.issuePenalty(r.provider.id, p.period, staffId);
           results.push({ providerId: r.provider.id, period: p.period, amount: p.penalty });
@@ -294,6 +305,38 @@ export class ProviderComplianceService {
       afterJson: { year, issued },
     });
     return { year, issued, results };
+  }
+
+  /**
+   * Waive one issued penalty (e.g. management approval). The record is kept
+   * for the audit trail with status WAIVED, the reason and who waived it; it no
+   * longer counts in the compliance exposure, a rescan never reopens it, and no
+   * demand notice can be served on it. A PAID penalty cannot be waived.
+   */
+  async waivePenalty(penaltyId: string, reason: string, staffId?: string) {
+    const why = (reason ?? '').trim();
+    if (!why) throw new BadRequestException('A reason for the waiver is required.');
+    const p = await this.prisma.providerPenalty.findUnique({ where: { id: penaltyId } });
+    if (!p) throw new NotFoundException('Penalty not found');
+    if (p.status === 'PAID') throw new BadRequestException('This penalty has been paid and cannot be waived.');
+    if (p.status === 'WAIVED') return p;
+    const staff = staffId
+      ? await this.prisma.user.findUnique({ where: { id: staffId }, select: { firstName: true, lastName: true, email: true } })
+      : null;
+    const by = staff ? [staff.firstName, staff.lastName].filter(Boolean).join(' ') || staff.email : 'system';
+    const stamp = new Date();
+    const note = `Waived ${stamp.toISOString().slice(0, 10)} by ${by}: ${why}`;
+    const saved = await this.prisma.providerPenalty.update({
+      where: { id: p.id },
+      data: { status: 'WAIVED', resolvedAt: stamp, notes: p.notes ? `${p.notes}\n${note}` : note },
+    });
+    await this.audit.log({
+      actorType: 'STAFF', actorId: staffId, staffId,
+      action: 'WAIVE_PROVIDER_PENALTY', entity: 'ProviderPenalty', entityId: p.id,
+      beforeJson: { status: p.status, amount: Number(p.amount) },
+      afterJson: { status: 'WAIVED', reason: why, providerId: p.providerId, periodLabel: p.periodLabel, noticeRef: p.noticeRef },
+    });
+    return saved;
   }
 
   /** List issued penalties (optionally scoped to a provider or year). */
@@ -321,6 +364,7 @@ export class ProviderComplianceService {
       include: { provider: { select: { name: true, providerType: true, contactEmail: true, address: true } } },
     });
     if (!p) throw new NotFoundException('Penalty not found');
+    if (p.status === 'WAIVED') throw new BadRequestException('This penalty has been waived - there is no demand to serve.');
 
     const tenant = await this.prisma.tenant.findFirst({ select: { name: true, shortName: true, logoUrl: true, address: true, contactEmail: true, contactPhone: true } });
     const orgName = tenant?.name || 'Internal Revenue Service';

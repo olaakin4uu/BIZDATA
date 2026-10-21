@@ -100,9 +100,28 @@ export default function CompliancePage() {
     finally { setNoticeLoading(null); }
   };
 
+  // Waive an issued penalty (e.g. management approval). Reason is required
+  // and recorded on the penalty and in the audit trail.
+  const waive = async (p: ProviderPenalty) => {
+    const reason = window.prompt(
+      `Waive penalty ${p.noticeRef ?? p.periodLabel} for ${p.provider?.name ?? 'this provider'}?\n\nReason for the waiver:`,
+      'Management approval',
+    );
+    if (reason === null) return;
+    if (!reason.trim()) { setErr('A reason for the waiver is required.'); return; }
+    setBusy(p.id); setErr(null); setMsg(null);
+    try {
+      await complianceApi.waivePenalty(p.id, reason.trim());
+      flash(`Penalty ${p.noticeRef ?? p.periodLabel} waived.`);
+      load();
+    } catch (e) { setErr(extractErrorMessage(e)); }
+    finally { setBusy(null); }
+  };
+
   const hasDefault = (r: ProviderCompliance) =>
-    r.periods.some((p) => (p.status === 'LATE' || p.status === 'MISSING') && p.penaltyEnforced !== false);
-  const issuedTotal = (penalties ?? []).reduce((s, p) => s + Number(p.amount), 0);
+    r.periods.some((p) => (p.status === 'LATE' || p.status === 'MISSING') && p.penaltyEnforced !== false && !p.penaltyWaived);
+  // Waived penalties are no longer owed, so they are left out of the total.
+  const issuedTotal = (penalties ?? []).filter((p) => p.status !== 'WAIVED').reduce((s, p) => s + Number(p.amount), 0);
 
   return (
     <PageContainer>
@@ -218,7 +237,7 @@ export default function CompliancePage() {
         <div className="flex items-baseline justify-between mb-2">
           <h2 className="text-sm font-semibold text-slate-800">Issued penalties</h2>
           {penalties && penalties.length > 0 && (
-            <span className="text-xs text-slate-500">{penalties.length} issued · {ngn(issuedTotal)} total</span>
+            <span className="text-xs text-slate-500">{penalties.length} issued{penalties.some((p) => p.status === 'WAIVED') ? ` (${penalties.filter((p) => p.status === 'WAIVED').length} waived)` : ''} · {ngn(issuedTotal)} owed</span>
           )}
         </div>
         <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
@@ -253,10 +272,21 @@ export default function CompliancePage() {
                       <td className="py-2.5 px-4 text-center">
                         <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ring-1 ${PENALTY_STATUS_TONE[p.status] ?? 'bg-slate-100 text-slate-500 ring-slate-200'}`}>{p.status}</span>
                       </td>
-                      <td className="py-2.5 px-4 text-right">
-                        <Button variant="ghost" size="sm" disabled={noticeLoading !== null} onClick={() => openNotice(p)}>
-                          {noticeLoading === p.id ? 'Loading…' : 'View notice'}
-                        </Button>
+                      <td className="py-2.5 px-4 text-right whitespace-nowrap">
+                        {p.status === 'WAIVED' ? (
+                          <span className="text-xs text-slate-400" title={p.notes ?? undefined}>Waived</span>
+                        ) : (
+                          <>
+                            <Button variant="ghost" size="sm" disabled={noticeLoading !== null} onClick={() => openNotice(p)}>
+                              {noticeLoading === p.id ? 'Loading…' : 'View notice'}
+                            </Button>
+                            {p.status !== 'PAID' && (
+                              <Button variant="ghost" size="sm" disabled={busy !== null} onClick={() => waive(p)}>
+                                {busy === p.id ? 'Waiving…' : 'Waive'}
+                              </Button>
+                            )}
+                          </>
+                        )}
                       </td>
                     </tr>
                   ))}

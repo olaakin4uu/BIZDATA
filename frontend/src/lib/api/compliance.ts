@@ -10,6 +10,7 @@ export interface CompliancePeriod {
   monthsInDefault?: number;
   penalty?: number;          // NTAA §101 penalty for this period (0 if none / not enforced)
   penaltyEnforced?: boolean; // false when before the commencement date
+  penaltyWaived?: boolean;   // an issued penalty for this period was waived
 }
 
 export interface ProviderCompliance {
@@ -47,6 +48,8 @@ export interface ProviderPenalty {
   status: string;            // ASSESSED | NOTIFIED | WAIVED | PAID
   noticeRef: string | null;
   notifiedAt: string | null;
+  resolvedAt?: string | null;
+  notes?: string | null;
   createdAt: string;
   provider?: { id: string; name: string; providerType: string };
 }
@@ -68,6 +71,8 @@ export const complianceApi = {
     apiFetch<{ year: number; issued: number; results: { providerId: string; period: string; amount: number }[] }>(
       '/providers/penalties/issue-all', { method: 'POST', body: { year } },
     ),
+  waivePenalty: (penaltyId: string, reason: string) =>
+    apiFetch<ProviderPenalty>(`/providers/penalties/${penaltyId}/waive`, { method: 'POST', body: { reason } }),
   /** Path of the formal demand notice (fetched with the auth token, rendered in-app). */
   noticePath: (penaltyId: string) => `/providers/penalties/${penaltyId}/notice`,
 };

@@ -75,6 +75,13 @@ export class ProvidersController {
     return this.compliance.issueAllForYear(dto?.year ?? new Date().getFullYear(), u.id);
   }
 
+  /** Waive an issued penalty (status WAIVED, reason recorded, audited). */
+  @Post('penalties/:id/waive')
+  @Roles('SUPER_ADMIN', 'ADMIN')
+  waivePenalty(@Param('id') id: string, @Body() dto: { reason?: string }, @CurrentStaff() u: any) {
+    return this.compliance.waivePenalty(id, dto?.reason ?? '', u.id);
+  }
+
   /** Formal printable penalty notice (HTML → print/PDF). Marks the penalty NOTIFIED. */
   @Get('penalties/:id/notice')
   @Roles('SUPER_ADMIN', 'ADMIN')
