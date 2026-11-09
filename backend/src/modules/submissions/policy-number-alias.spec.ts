@@ -65,6 +65,27 @@ describe('insurance: policyNumber is read as accountNumber', () => {
   });
 });
 
+describe('insurance: row errors say Policy number', () => {
+  const blank = { nin: '12345678901', accountNumber: '', accountName: 'A', bvn: '22212345678', customerType: 'INDIVIDUAL', totalInflow: '1', totalOutflow: '1' };
+
+  it('an insurer with no policy number is told so in policy words', () => {
+    const r = validateRow({ ...blank }, DEFAULT_SCHEMAS.INSURANCE);
+    expect(r.ok).toBe(false);
+    expect(r.errors.join(' ')).toContain('Policy number is empty — enter the insurance policy number');
+    expect(r.errors.join(' ')).not.toContain('Account number');
+  });
+
+  it('a bank still hears Account number', () => {
+    const r = validateRow({ ...blank }, DEFAULT_SCHEMAS.BANK);
+    expect(r.errors.join(' ')).toContain('Account number is empty');
+  });
+
+  it('a damaged (scientific-notation) policy number is also named as a policy number', () => {
+    const r = validateRow({ ...blank, accountNumber: '1.23457E+09' }, DEFAULT_SCHEMAS.INSURANCE);
+    expect(r.errors.join(' ')).toContain('Policy number "1.23457E+09"');
+  });
+});
+
 describe('insurance template says Policy number', () => {
   const make = (providerType: string) => {
     const prisma: any = {

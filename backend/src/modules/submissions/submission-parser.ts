@@ -396,8 +396,16 @@ const BLANK_HINTS: Record<string, string> = {
 };
 
 /** Human name for a column, falling back to the header itself. */
-export function fieldLabel(name: string): string {
+export function fieldLabel(name: string, providerType?: string): string {
+  // An insurer's identifier is a policy, not an account (its template header says policyNumber).
+  if (providerType === 'INSURANCE' && name === 'accountNumber') return 'Policy number';
   return FIELD_LABELS[name] ?? name;
+}
+
+/** The "what to enter" hint for a blank compulsory column, worded for the provider type. */
+export function blankHint(name: string, providerType?: string): string | undefined {
+  if (providerType === 'INSURANCE' && name === 'accountNumber') return 'enter the insurance policy number';
+  return BLANK_HINTS[name];
 }
 
 export function validateRow(
@@ -407,6 +415,7 @@ export function validateRow(
 ): { ok: boolean; errors: string[]; warnings: string[] } {
   const errors: string[] = [];
   const warnings: string[] = [];
+  const label = (name: string) => fieldLabel(name, schema.providerType);
   for (const col of schema.columns) {
     const raw = (row[col.name] ?? '').trim();
     const present = raw !== '';
@@ -418,11 +427,11 @@ export function validateRow(
       // becomes mandatory on the enforcement date.
       if (col.validation?.enforceFrom && !graceElapsed(col, ctx)) {
         const when = (ctx?.enforceFrom ?? col.validation.enforceFrom);
-        warnings.push(`${fieldLabel(col.name)} is empty — it becomes compulsory from ${when}`);
+        warnings.push(`${label(col.name)} is empty — it becomes compulsory from ${when}`);
       } else {
-        const hint = BLANK_HINTS[col.name];
+        const hint = blankHint(col.name, schema.providerType);
         errors.push(
-          `${fieldLabel(col.name)} is empty${hint ? ` — ${hint}` : ' — this column cannot be left blank'}`,
+          `${label(col.name)} is empty${hint ? ` — ${hint}` : ' — this column cannot be left blank'}`,
         );
       }
       continue;
@@ -442,31 +451,31 @@ export function validateRow(
         const stripped = raw.replace(/[,  ]/g, '');
         if (!Number.isNaN(Number(stripped))) {
           errors.push(
-            `${fieldLabel(col.name)} "${shown}" must be a plain number — remove the thousands separators ` +
+            `${label(col.name)} "${shown}" must be a plain number — remove the thousands separators ` +
               `(format the column as Number before export)`,
           );
         } else if (!Number.isNaN(Number(stripped.replace(/^[₦$#N]/i, '')))) {
-          errors.push(`${fieldLabel(col.name)} "${shown}" must be a plain number — remove the currency sign`);
+          errors.push(`${label(col.name)} "${shown}" must be a plain number — remove the currency sign`);
         } else if (/^\(.+\)$/.test(stripped) && !Number.isNaN(Number(stripped.slice(1, -1)))) {
           errors.push(
-            `${fieldLabel(col.name)} "${shown}" must be a plain number — use a minus sign for negatives, not parentheses`,
+            `${label(col.name)} "${shown}" must be a plain number — use a minus sign for negatives, not parentheses`,
           );
         } else {
-          errors.push(`${fieldLabel(col.name)} "${shown}" is not a number — enter digits only, e.g. 1500000`);
+          errors.push(`${label(col.name)} "${shown}" is not a number — enter digits only, e.g. 1500000`);
         }
         continue;
       }
       if (col.type === 'integer' && !Number.isInteger(n)) {
-        errors.push(`${fieldLabel(col.name)} must be a whole number — no decimals`);
+        errors.push(`${label(col.name)} must be a whole number — no decimals`);
       }
       if (v?.min != null && n < v.min) {
         errors.push(
           v.min === 0
-            ? `${fieldLabel(col.name)} is ${raw} — it cannot be negative. Report money out under Total outflow, not as a negative inflow.`
-            : `${fieldLabel(col.name)} is ${raw} — it must be at least ${v.min}`,
+            ? `${label(col.name)} is ${raw} — it cannot be negative. Report money out under Total outflow, not as a negative inflow.`
+            : `${label(col.name)} is ${raw} — it must be at least ${v.min}`,
         );
       }
-      if (v?.max != null && n > v.max) errors.push(`${fieldLabel(col.name)} is ${raw} — it must be at most ${v.max}`);
+      if (v?.max != null && n > v.max) errors.push(`${label(col.name)} is ${raw} — it must be at most ${v.max}`);
     }
 
     // String constraints
@@ -480,7 +489,7 @@ export function validateRow(
             : /\D/.test(raw) ? `contains something other than digits ("${raw}")`
             : `is ${raw.length} digits, not ${v.length} ("${raw}")`;
           errors.push(
-            `${fieldLabel(col.name)} ${what} — it must be exactly ${v.length} digits, ` +
+            `${label(col.name)} ${what} — it must be exactly ${v.length} digits, ` +
               `with no spaces, dashes or letters`,
           );
         }
@@ -490,7 +499,7 @@ export function validateRow(
       // simply wrong while reporting the submission as a success.
       if (v.identifier && SCIENTIFIC_NOTATION_RE.test(raw)) {
         errors.push(
-          `${fieldLabel(col.name)} "${raw}" is in scientific notation — the original digits have been lost. ` +
+          `${label(col.name)} "${raw}" is in scientific notation — the original digits have been lost. ` +
             `Format the column as Text in your spreadsheet and export again.`,
         );
       }
@@ -503,19 +512,19 @@ export function validateRow(
         raw.length !== v.bankAccountDigits
       ) {
         warnings.push(
-          `${fieldLabel(col.name)} "${raw}" is ${raw.length} digits — a NUBAN is ${v.bankAccountDigits}. ` +
+          `${label(col.name)} "${raw}" is ${raw.length} digits — a NUBAN is ${v.bankAccountDigits}. ` +
             `Check the leading zero was not dropped in export.`,
         );
       }
       // Enumerated values (case-insensitive), e.g. customerType.
       if (v.enum && !v.enum.map((e) => e.toUpperCase()).includes(raw.toUpperCase())) {
         errors.push(
-          `${fieldLabel(col.name)} "${raw}" is not one we recognise — use one of: ${v.enum.join(', ')}`,
+          `${label(col.name)} "${raw}" is not one we recognise — use one of: ${v.enum.join(', ')}`,
         );
       }
       // Named formats
       if (v.format === 'email' && !EMAIL_RE.test(raw)) {
-        errors.push(`${fieldLabel(col.name)} "${raw}" is not a valid email address`);
+        errors.push(`${label(col.name)} "${raw}" is not a valid email address`);
       }
       if (v.format === 'date') {
         // Accept common date formats (DD/MM/YYYY, Excel serial, …) and normalise
@@ -526,13 +535,13 @@ export function validateRow(
         if (normalised) {
           row[col.name] = normalised; // self-heal for clean storage
         } else if (col.required) {
-          errors.push(`${fieldLabel(col.name)} "${raw}" is not a date we can read — use 2026-03-31 or 31/03/2026`);
+          errors.push(`${label(col.name)} "${raw}" is not a date we can read — use 2026-03-31 or 31/03/2026`);
         } else {
           warnings.push(`${col.name} "${raw}" is not a recognised date and was left as-is`);
         }
       }
       if (v.format === 'currency' && !CURRENCY_RE.test(raw)) {
-        errors.push(`${fieldLabel(col.name)} "${raw}" must be a 3-letter currency code, e.g. NGN`);
+        errors.push(`${label(col.name)} "${raw}" must be a 3-letter currency code, e.g. NGN`);
       }
       // Regex pattern (if a schema ever defines one)
       if (v.pattern && !new RegExp(v.pattern).test(raw)) {
