@@ -176,6 +176,36 @@ export const DEFAULT_SCHEMAS: Record<string, SchemaTemplate> = Object.fromEntrie
 );
 
 /**
+ * An insurance company files POLICIES, not accounts. Its template names the column
+ * `policyNumber`, but the value is stored and validated exactly like every other
+ * provider's `accountNumber` (one canonical field downstream: matching, duplicate
+ * detection, encryption, IRIS upload). So for INSURANCE, `policyNumber` is read as
+ * an alias of `accountNumber`; an old file that still says `accountNumber` keeps
+ * working. Other provider types are untouched.
+ */
+export const POLICY_NUMBER_HEADER = 'policyNumber';
+
+const looseKey = (h: string) => h.trim().toLowerCase().replace(/[^a-z0-9]/g, '');
+
+/** Headers as the column check should see them: an insurer's `policyNumber` counts as `accountNumber`. */
+export function headersForColumnCheck(providerType: string, headers: string[]): string[] {
+  if (providerType !== 'INSURANCE') return headers;
+  if (headers.some((h) => looseKey(h) === 'accountnumber')) return headers;
+  return headers.map((h) => (looseKey(h) === 'policynumber' ? 'accountNumber' : h));
+}
+
+/** Copy an insurer's `policyNumber` into `accountNumber` on each row (never overwrites a given accountNumber). */
+export function applyPolicyNumberAlias(providerType: string, rows: Record<string, any>[]): void {
+  if (providerType !== 'INSURANCE') return;
+  for (const row of rows) {
+    const key = Object.keys(row).find((k) => looseKey(k) === 'policynumber');
+    if (!key) continue;
+    const current = row.accountNumber;
+    if (current == null || String(current).trim() === '') row.accountNumber = row[key];
+  }
+}
+
+/**
  * Split a single CSV line into fields, honouring RFC-4180 quoting: a field
  * wrapped in double-quotes may contain commas, and a doubled quote ("") inside
  * such a field is a literal quote. Without this, an address or business name

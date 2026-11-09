@@ -10,6 +10,8 @@ import {
   parseCsvText,
   validateRow,
   missingRequiredColumns,
+  headersForColumnCheck,
+  applyPolicyNumberAlias,
   explainHeaderProblem,
   detectSpreadsheetKind,
   spreadsheetConversionAdvice,
@@ -458,7 +460,7 @@ export class SubmissionsService {
     // provider-type template, or a file with no proper header) with a clear
     // message, rather than failing every row with confusing per-row errors.
     const schema = await this.resolveSchema(providerType);
-    const missing = missingRequiredColumns(headers, schema);
+    const missing = missingRequiredColumns(headersForColumnCheck(providerType, headers), schema);
     if (missing.length) {
       throw new BadRequestException(
         explainHeaderProblem({
@@ -528,6 +530,8 @@ export class SubmissionsService {
   ) {
     const lineOf = (i: number) => lineNumbers?.[i] ?? i + rowOffset;
     const rows = rawRows;
+    // An insurer's policyNumber is its accountNumber (CSV and JSON alike).
+    applyPolicyNumberAlias(providerType, rows);
     const schema = await this.resolveSchema(providerType);
     const enforceBvnCheckDigit = process.env.BVN_CHECKDIGIT_ENFORCED === 'true';
     const validationCtx = await this.resolveValidationContext();

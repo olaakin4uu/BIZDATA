@@ -8,6 +8,7 @@ import {
   COMPULSORY_FIELD_ENFORCE_FROM,
   RETURN_COLUMNS,
   RETURN_TEMPLATE_CHANGED_AT,
+  POLICY_NUMBER_HEADER,
   type SchemaTemplate,
   type FieldDef,
 } from '../submissions/submission-parser';
@@ -76,7 +77,12 @@ export class ProviderPortalService {
       ? { providerType: type, columns: (stored.columns as any) || DEFAULT_SCHEMAS[type]?.columns || DEFAULT_SCHEMAS.OTHER.columns }
       : DEFAULT_SCHEMAS[type] || DEFAULT_SCHEMAS.OTHER;
 
-    const cols = schema.columns;
+    // An insurer files policies: its template calls the identifier policyNumber (read back as accountNumber on upload).
+    const cols = type === 'INSURANCE'
+      ? schema.columns.map((c) => (c.name === 'accountNumber'
+          ? { ...c, name: POLICY_NUMBER_HEADER, validation: { ...(c.validation ?? {}), bankAccountDigits: undefined } }
+          : c))
+      : schema.columns;
     const typeLabel = type.replace(/_/g, ' ');
     const requiredNow = cols.filter((c) => c.required && !c.validation?.enforceFrom).length;
     const softCols = cols.filter((c) => c.required && c.validation?.enforceFrom);
@@ -283,6 +289,7 @@ function exampleValue(c: FieldDef): string {
   if (n === 'nin') return '12345678901';
   if (n === 'tin') return '12345678-0001';
   if (n === 'rcnumber') return 'RC123456';
+  if (n === 'policynumber') return 'POL/2026/000123';
   if (n === 'accountnumber') return '0123456788'; // valid NUBAN for bank code 057 (passes check-digit)
   if (n === 'accountname') return 'ADACHI VENTURES LTD';
   if (n === 'customeraddress') return '12 Ahmadu Bello Way, Kano';
@@ -381,7 +388,7 @@ const COLUMN_HINTS: Record<string, string> = {
   phonenumber: 'MSISDN, e.g. 0803...',
   sector: 'economic sector, e.g. TRADING, HOSPITALITY, TECH',
   businesstype: 'nature of business, e.g. "Retail shop"',
-  policynumber: 'insurance policy number',
+  policynumber: 'the insurance policy number — format the column as Text so leading zeros are not lost (stored as the account identifier)',
   sumassured: 'sum assured (₦)',
   residentialstate: 'account holder state of residence',
   accountopeneddate: 'YYYY-MM-DD',
