@@ -106,6 +106,16 @@ MANIFEST = {
              'Back office · Provider portal · Security model · Integration API\n'
              'Supersedes the generic manuals of 19 July 2026',
     ),
+    # Training manual for insurance providers using the provider portal.
+    'insurer-training': dict(
+        src='docs/INSURANCE-PROVIDER-TRAINING-MANUAL.md',
+        out='FinData-KIRS-Insurance-Provider-Training-Manual.docx',
+        subtitle='Provider Portal — Training Manual for Insurance Companies',
+        eyebrow='Training manual · Prepared for the Kano State Internal Revenue Service',
+        tagline='Filing your §29 return with KIRS, from first sign-in to receipt',
+        meta='Version 1.0   ·   For insurer compliance, finance and IT staff\n'
+             'Account · Dashboard · Return template · Filing · Corrections · Penalties · Security',
+    ),
     'overview': dict(
         src='docs/INTEGRATION-OVERVIEW.md',
         out='BIZDATA-Revenue-Integration-Overview.docx',

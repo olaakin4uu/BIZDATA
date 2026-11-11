@@ -234,6 +234,9 @@ pre code{background:none; padding:0; font-size:13px; line-height:1.62; display:b
   body{font-size:10.5pt}
   h2,h3,h4{break-after:avoid}
   pre,blockquote,.tablewrap,figure.shot{break-inside:avoid}
+  /* A code line wider than the page would be cut off in print — wrap it instead. */
+  pre{white-space:pre-wrap; overflow-wrap:anywhere; overflow:visible}
+  td code,th code{white-space:normal; overflow-wrap:anywhere; word-break:break-word}
   figure.shot img{max-width:100%; height:auto}
   thead th{background:#0F625C!important; -webkit-print-color-adjust:exact; print-color-adjust:exact}
   a{color:#000; text-decoration:none}
