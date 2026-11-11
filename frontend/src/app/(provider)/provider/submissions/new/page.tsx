@@ -84,7 +84,7 @@ export default function NewProviderSubmissionPage() {
         <SubmissionUploader
           reportingFrequency={freq}
           submissionLinkPrefix="/provider/submissions"
-          description={`Your reporting frequency is set to ${freq}. Upload a CSV file (up to 100 MB) — a spreadsheet saved as .xlsx or .ods must be converted to CSV first. Every row is validated against the ${providerType || APP_NAME} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
+          description={`Your reporting frequency is set to ${freq}. Upload a CSV file (up to 100 MB) or an Excel .xlsx file (up to 15 MB) — an older .xls or an .ods spreadsheet must be saved as CSV first. Every row is validated against the ${providerType || APP_NAME} schema — required fields must be present and correctly formatted. The file is accepted only if every row is valid; if any row fails, the whole file is rejected and we list the rows to fix.`}
           onUpload={(payload) => providerPortalApi.upload(payload)}
         />
       )}

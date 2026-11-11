@@ -1,4 +1,4 @@
-import { applyMapping, validateCorrected, type ColumnMapping } from './import-plan';
+import { applyMapping, heuristicMapping, validateCorrected, type ColumnMapping } from './import-plan';
 import { DEFAULT_SCHEMAS } from '../submissions/submission-parser';
 
 const schema = DEFAULT_SCHEMAS.BANK;
@@ -32,5 +32,21 @@ describe('IRIS upload — reporting period', () => {
     const v = validateCorrected(out.rows, schema, 'BANK');
     expect(v.reject).toBe(2);
     expect(allErrors(v).some((e) => /outflow/i.test(e))).toBe(true);
+  });
+});
+
+describe('IRIS upload — the insurer template', () => {
+  const insurer = DEFAULT_SCHEMAS.INSURANCE;
+  const target = (h: string) => heuristicMapping([h], insurer)[0].target;
+
+  it('maps policyNumber (the insurer template heading) to the account identifier', () => {
+    expect(target('policyNumber')).toBe('accountNumber');
+    expect(target('Policy No')).toBe('accountNumber');
+    expect(target('POLICY_NUMBER')).toBe('accountNumber');
+  });
+
+  it('maps a policyholder column to the account name', () => {
+    expect(target('Policyholder Name')).toBe('accountName');
+    expect(target('Insured')).toBe('accountName');
   });
 });

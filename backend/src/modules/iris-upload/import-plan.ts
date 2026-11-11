@@ -106,8 +106,9 @@ export function buildMappingPrompt(schema: SchemaTemplate, samples: { header: st
 /* ─── Heuristic fallback (no LLM / model disabled) ──────────────────────────── */
 
 const ALIASES: Record<string, string[]> = {
-  accountNumber: ['acctno', 'accountno', 'accountnumber', 'accno', 'acct', 'nuban'],
-  accountName: ['acctname', 'accountname', 'customername', 'name', 'holdername', 'accountholder'],
+  // An insurer's template headers this column policyNumber (stored as the account identifier).
+  accountNumber: ['acctno', 'accountno', 'accountnumber', 'accno', 'acct', 'nuban', 'policynumber', 'policyno', 'policynum', 'policyid'],
+  accountName: ['acctname', 'accountname', 'customername', 'name', 'holdername', 'accountholder', 'policyholder', 'policyholdername', 'insured', 'insuredname'],
   bankCode: ['bankcode', 'code'],
   bankName: ['bankname', 'bank'],
   bvn: ['bvn', 'bankverificationnumber'],
